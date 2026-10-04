@@ -1,0 +1,2 @@
+# Optional public collection worker; install into its own virtual environment.
+Scrapy==2.19.0

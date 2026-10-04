@@ -1,0 +1,84 @@
+{
+  "name": "Chief synthetic handshake v1 \u2014 no business actions",
+  "active": false,
+  "nodes": [
+    {
+      "id": "chief-webhook",
+      "name": "Authenticated handshake",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chief-handshake-v1",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "chief-validate",
+      "name": "Validate synthetic request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const b = $json.body;\nif (!b || Object.keys(b).sort().join(',') !== 'contract,deadline,domain,operation_id,purpose' ||\n    b.contract !== 'chief.handshake.v1' || b.purpose !== 'synthetic-handshake-only' ||\n    typeof b.operation_id !== 'string' || !/^[a-f0-9]{32}$/.test(b.operation_id) ||\n    typeof b.domain !== 'string' || !/^[a-z][a-z0-9_-]{0,63}$/.test(b.domain) ||\n    typeof b.deadline !== 'number' || !Number.isFinite(b.deadline) ||\n    b.deadline <= Date.now()/1000 || b.deadline > Date.now()/1000 + 30) {\n  throw new Error('Invalid or expired synthetic handshake');\n}\nreturn [{json:{contract:'chief.handshake.v1', operation_id:b.operation_id,\n  domain:b.domain, status:'COMPLETED', result:'synthetic-handshake-only'}}];"
+      }
+    },
+    {
+      "id": "chief-response",
+      "name": "Return handshake receipt",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Authenticated handshake": {
+      "main": [
+        [
+          {
+            "node": "Validate synthetic request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate synthetic request": {
+      "main": [
+        [
+          {
+            "node": "Return handshake receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  },
+  "pinData": {}
+}

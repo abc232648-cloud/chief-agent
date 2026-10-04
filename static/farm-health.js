@@ -1,0 +1,32 @@
+'use strict';
+async function mountHealthRecords(){
+  if(document.getElementById('farmHealthRecords')){document.getElementById('farmHealthRecords').querySelector('form').refreshCatalog();return;}
+  const root=document.createElement('section');root.id='farmHealthRecords';root.className='card';document.getElementById('farmRecords').append(root);
+  const add=(tag,text,parent=root)=>{const e=document.createElement(tag);if(text)e.textContent=text;parent.append(e);return e;};
+  add('h2','Flock health and treatments');add('p','Record observations, vet visits, results and treatments already administered. This page does not suggest a medicine or dose.');
+  const form=add('form'),fields={};
+  function input(key,label,type='text'){const l=add('label',label,form),e=add('input',null,l);e.type=type;e.id='farmHealth_'+key;fields[key]=e;return e;}
+  function select(key,label,options){const l=add('label',label,form),e=add('select',null,l);e.id='farmHealth_'+key;fields[key]=e;for(const [value,text] of options){const o=add('option',text,e);o.value=value;}return e;}
+  select('kind','Record type',[['OBSERVATION','Health observation'],['VACCINATION','Vaccination administered'],['MEDICINE','Medicine administered'],['VET_VISIT','Vet visit'],['LAB_RESULT','Lab result']]);
+  select('entity_id','Flock',farmCatalog.filter(e=>e.entity_type==='FLOCK').map(e=>[e.entity_id,e.name])).required=true;
+  input('observed_at','Observed or administered at (Lagos)','datetime-local').required=true;
+  input('summary','What happened').required=true;
+  for(const [key,label] of [['product','Product (treatment only)'],['quantity','Quantity administered (leave blank if unknown)'],['unit','Quantity unit'],['administered_by','Administered by'],['batch','Product batch (if known)']])input(key,label);
+  input('expires_on','Product expiry date (if known)','date');input('source_reference','Source or document reference');
+  input('instructions','Recorded vet/document instructions (optional)');input('instruction_source','Source of those instructions');input('reason','Reason for correction (corrections only)');
+  const save=add('button','Save health record',form);save.type='submit';const cancel=add('button','Cancel health correction',form);cancel.type='button';cancel.hidden=true;
+  const status=add('p');status.id='farmHealthStatus';status.setAttribute('role','status');const list=add('div');list.id='farmHealthHistory';
+  let pending=null,corrects=null,originalTime=null,offset=0;
+  form.refreshCatalog=()=>{if(corrects||pending)return;const previous=fields.entity_id.value;fields.entity_id.replaceChildren();for(const flock of farmCatalog.filter(e=>e.entity_type==='FLOCK')){const option=add('option',flock.name,fields.entity_id);option.value=flock.entity_id;}if([...fields.entity_id.options].some(o=>o.value===previous))fields.entity_id.value=previous;};
+  function showFields(){const treatment=['VACCINATION','MEDICINE'].includes(fields.kind.value);for(const key of ['product','quantity','unit','administered_by','batch','expires_on']){fields[key].parentElement.hidden=!treatment;if(!treatment)fields[key].value='';}fields.product.required=fields.administered_by.required=treatment;fields.reason.parentElement.hidden=!corrects;fields.reason.required=!!corrects;}
+  fields.kind.onchange=showFields;showFields();
+  const newer=add('button','Newer health records'),older=add('button','Older health records');newer.type=older.type='button';
+  function reset(){form.reset();corrects=null;originalTime=null;cancel.hidden=true;for(const key of ['kind','entity_id','observed_at'])fields[key].disabled=false;save.textContent='Save health record';showFields();}
+  cancel.onclick=()=>{if(pending){status.textContent='Retry pending save unchanged or reload first.';return;}reset();};
+  async function refresh(){const data=await api('/api/farm/health-records?offset='+offset);list.replaceChildren();for(const r of data.items){const p=r.payload,row=add('article',null,list);add('p',(farmCatalog.find(e=>e.entity_id===p.entity_id)?.name||'Flock')+' — '+p.summary+' — '+farmDateText(p.observed_at)+' — '+(r.is_current?'Current':'Corrected'),row);if(p.product)add('p',p.product+' — '+(p.quantity===null?'Quantity unknown':p.quantity+' '+p.unit)+' — '+p.administered_by,row);if(p.batch)add('p','Batch: '+p.batch,row);if(p.expires_on)add('p','Recorded expiry: '+p.expires_on,row);if(p.source_reference)add('p','Source: '+p.source_reference,row);if(p.instructions)add('p','Recorded instructions: '+p.instructions+' — source: '+p.instruction_source,row);if(r.expired_at_administration)add('p','Recorded expiry predates administration. Review the record with the responsible professional.',row);
+      if(data.can_correct&&r.is_current){const edit=add('button','Correct health record',row);edit.type='button';edit.onclick=()=>{if(pending){status.textContent='Retry pending save unchanged or reload first.';return;}for(const key of Object.keys(fields))fields[key].value=key==='observed_at'?new Date(new Date(p[key]).getTime()+3600000).toISOString().slice(0,16):p[key]??'';fields.reason.value='';corrects=p.event_id;originalTime=p.observed_at;for(const key of ['kind','entity_id','observed_at'])fields[key].disabled=true;save.textContent='Save health correction';cancel.hidden=false;showFields();fields.summary.focus();};}
+    }newer.disabled=offset===0;older.disabled=data.next_offset===null;}
+  newer.onclick=()=>{offset=Math.max(0,offset-100);refresh().catch(e=>status.textContent=e.message);};older.onclick=()=>{offset+=100;refresh().catch(e=>status.textContent=e.message);};
+  form.onsubmit=async e=>{e.preventDefault();save.disabled=true;try{const values=Object.fromEntries(Object.entries(fields).map(([k,v])=>[k,v.value]));values.observed_at=originalTime||new Date(values.observed_at+'+01:00').toISOString();values.quantity=values.quantity||null;values.expires_on=values.expires_on||null;values.corrects=corrects;const signature=JSON.stringify(values);if(pending&&pending.signature!==signature)throw Error('Retry unchanged or reload: previous save outcome unknown.');if(!pending)pending={signature,payload:{...values,event_id:crypto.randomUUID()}};await farmPost('/api/farm/health-records',pending.payload);pending=null;reset();status.textContent='Health history saved. No treatment action or recommendation was created.';await refresh();}catch(error){if(error.status>=400&&error.status<500)pending=null;status.textContent=error.message;}finally{save.disabled=false;}};
+  await refresh();
+}

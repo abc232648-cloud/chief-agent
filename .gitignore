@@ -1,0 +1,43 @@
+# =========================
+# Chief Agent - Git Ignore
+# =========================
+
+# Private secrets / credentials
+private_secrets/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Runtime logs
+logs/
+*.log
+
+# Local/runtime state
+*.pid
+*.sock
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*~
