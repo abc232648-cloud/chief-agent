@@ -1,0 +1,3 @@
+.workPortal {display:block}.workPortal .topbar {position:static;margin:0;min-height:3rem;padding:1rem;display:flex;gap:1rem;flex-wrap:wrap}.workPortal #workNavigation {position:static;width:auto;height:auto;display:flex;gap:.5rem;flex-wrap:wrap;padding:1rem;background:#173d39}.workPortal main {margin:0 auto;padding:1rem;max-width:65rem}.workPortal form {display:grid;gap:.75rem}.workPortal input,.workPortal select,.workPortal textarea {max-width:100%;box-sizing:border-box}.workPortal .item button {margin:.25rem}.workPortal .hidden {display:none!important}
+.workPortal #workNavigation {box-shadow:none;gap:.5rem;padding:.75rem 1rem;z-index:auto;}
+.workPortal #workNavigation button {width:auto;margin:0;min-height:44px;flex:0 1 auto;}

@@ -1,0 +1,51 @@
+from playwright.sync_api import sync_playwright,expect
+from browser_navigation import navigate
+
+
+def test_chief_agent_controls_notifications_and_report_browser(dashboard):
+    dashboard.store.add_notification('Fixture notification','A specific actionable message','CRITICAL',domain='jobs')
+    report=dashboard.app.ROOT/'logs';report.mkdir();(report/'fixture.txt').write_text('Downloadable audit fixture')
+    dashboard.store.add_report('Browser audit',str(report/'fixture.txt'))
+    with sync_playwright() as p:
+        browser=p.chromium.launch(headless=True);page=browser.new_page();errors=[]
+        page.on('pageerror',lambda e:errors.append(str(e)))
+        page.on('console',lambda m:errors.append(m.text) if m.type=='error' else None)
+        page.on('requestfailed',lambda r:errors.append(r.url))
+        page.on('dialog',lambda d:d.accept())
+        page.goto(dashboard.url)
+        expect(page.locator('#workspaceName')).to_have_text('Chief Agent')
+        expect(page.locator('#chiefAgents')).to_contain_text('Job Agent')
+        expect(page.locator('#chiefAgents')).to_contain_text('Farm Agent')
+        expect(page.locator('#notificationBadge')).to_have_text('1')
+        page.locator('#notificationDropdown summary').click()
+        page.locator('#notificationPreview [data-action="notice-read"]').click()
+        expect(page.locator('#notificationBadge')).to_have_text('0')
+        page.reload();expect(page.locator('#notificationBadge')).to_have_text('0')
+        navigate(page,'domains')
+        control=page.locator('#domainList [data-action="agent-control"][data-id="farming"][data-key="autostart"]')
+        control.click();expect(control).to_have_attribute('aria-checked','false')
+        page.locator('#domainList [data-action="open-agent"][data-id="jobs"]').click()
+        expect(page.locator('#workspaceName')).to_have_text('Job Agent')
+        navigate(page,'facts')
+        page.locator('#newFactText').fill('A test fact');page.locator('[data-action="add-fact"]').click()
+        expect(page.locator('#factList')).to_contain_text('A test fact')
+        page.locator('[data-action="fact-status"][data-status="USER_CONFIRMED"]').click()
+        expect(page.locator('#factList')).to_contain_text('USER CONFIRMED')
+        navigate(page,'scheduler')
+        page.locator('[data-action="add-schedule"]').click()
+        expect(page.locator('#monitoringList')).to_contain_text('job market refresh')
+        page.locator('[data-action="pause-schedule"]').first.click()
+        expect(page.locator('#monitoringList')).to_contain_text('Paused')
+        navigate(page,'reports')
+        page.locator('[data-action="report-preview"]').click()
+        expect(page.locator('#reportPreview')).to_have_text('Downloadable audit fixture')
+        with page.expect_download() as download:page.get_by_role('link',name='Download TXT',exact=True).click()
+        assert download.value.suggested_filename.endswith('.txt')
+        assert open(download.value.path(),'rb').read()==b'Downloadable audit fixture'
+        with page.expect_download() as pdf:page.get_by_role('link',name='Download PDF',exact=True).click()
+        assert open(pdf.value.path(),'rb').read().startswith(b'%PDF-')
+        page.locator('#sidebarToggle').click();expect(page.locator('nav')).to_be_hidden()
+        page.reload();expect(page.locator('nav')).to_be_hidden()
+        expect(page.locator('#notificationDropdown')).to_be_visible()
+        assert not errors,errors
+        browser.close()

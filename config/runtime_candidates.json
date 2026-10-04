@@ -1,0 +1,47 @@
+{
+  "snapshot_date": "2026-09-24",
+  "candidates": [
+    {
+      "id": "openclaw-2026.9.5",
+      "product": "OpenClaw",
+      "version": "2026.9.5",
+      "release_date": "2026-09-19",
+      "release_url": "https://github.com/openclaw/openclaw/releases/tag/v2026.9.5",
+      "documentation_urls": [
+        "https://docs.openclaw.ai/gateway/multiple-gateways",
+        "https://docs.openclaw.ai/web/control-ui",
+        "https://docs.openclaw.ai/nodes/command-policy",
+        "https://docs.openclaw.ai/install/updating/rollback-and-recovery",
+        "https://docs.openclaw.ai/network"
+      ],
+      "documented_capabilities": [
+        "isolated named gateway profiles with separate config/state/workspace/ports",
+        "loopback-first gateway with authenticated non-loopback modes",
+        "Control UI can be mounted below a base path and disabled independently",
+        "paired device/node command surface with declaration plus approval/allowlist checks",
+        "managed update and rollback workflow with explicit state-migration cautions"
+      ]
+    },
+    {
+      "id": "hermes-agent-0.21.3",
+      "product": "Hermes Agent",
+      "version": "0.21.3",
+      "release_date": "2026-09-14",
+      "release_url": "https://github.com/NousResearch/hermes-agent/releases/tag/v2026.9.14",
+      "documentation_urls": [
+        "https://hermes-agent.nousresearch.com/docs/user-guide/profiles",
+        "https://hermes-agent.nousresearch.com/docs/user-guide/security",
+        "https://hermes-agent.nousresearch.com/docs/user-guide/checkpoints-and-rollback",
+        "https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins",
+        "https://hermes-agent.nousresearch.com/docs/user-guide/configuration"
+      ],
+      "documented_capabilities": [
+        "independent profiles with separate config/keys/memory/sessions/skills/cron/state",
+        "dangerous-command approval plus optional Docker/remote sandbox backends",
+        "isolated subagent and worktree workflows",
+        "MCP and plugin extensibility with explicit trust caveats",
+        "optional checkpoint/rollback for workspace changes"
+      ]
+    }
+  ]
+}

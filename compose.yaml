@@ -1,0 +1,5 @@
+services:
+  gateway:
+    build: {context: ., dockerfile: gateway/Dockerfile}
+    env_file: [.env]
+    command: python -m gateway.main

@@ -1,0 +1,47 @@
+CHIEF AGENT — DESIGN DECISIONS AND ANSWERS
+
+HOW THE HOME PAGE IS DYNAMIC
+The backend registry declares the specialist agents, labels, capabilities and pages. /api/chief combines those declarations with persisted enable/autostart/pause settings, recent task records, worker heartbeat, approval counts and unread notifications. The browser loads that data and refreshes the visible home and notifications every five seconds. A registered specialist gets a card and standard controls without hard-coding a new card in the page. Its actual specialist capabilities and new custom pages still need implementation; the registry does not invent working features.
+Recorded working time starts with this instrumentation. Historical timing not recorded by earlier versions cannot be reconstructed accurately. Paused agents retain queued work for later. Pausing prevents new work; it cannot undo an operation already performed on a website.
+
+TERMS
+Chief Agent: whole system. Job Agent / Farm Agent: specialist agents. Worker: execution process. Task: work request. Action: an operation within a task. Capability: permission to perform an operation. Policy Gate: deterministic checks before execution. Approval: the user's decision allowing a specific action. A status key is the field name; FAILED or REVIEW is its value.
+
+NOTIFICATIONS
+The global header contains the notification dropdown on all pages, plus View all to the dedicated page. Read and already-presented states persist. Marking read does not approve an action. Search/agent/date/severity filters change the view, not stored notifications. Popup delivery preferences currently govern dashboard popups; they are not universal external-channel preferences. New source alerts use existing available local/desktop/email channels, with delivery failures recorded.
+
+FACTS AND FILES
+Candidate facts are structured statements with status and provenance, not an unrestricted attachment folder. Add/edit/revoke controls are provided. An edit removes previous confirmation and requires reconfirmation. Historical application snapshots remain intact. PDF, DOCX and UTF-8 TXT are supported CV inputs; arbitrary executables, archives, images and other formats are not needed for this flow. A file's contents never become confirmed candidate facts merely by upload.
+Uploads have size/type/content checks and bounded parser subprocesses. Downloads use registered records and restricted storage paths. Reports export TXT/PDF/JSON; CVs download in their original allowed format. These are concrete protections, not a claim that every malicious document can be detected or that the product is certified secure.
+
+HOW TO CHECK THE SYSTEM IS NOT SENDING RUBBISH
+Use synthetic jobs and confirmed test facts to test rejection of unsupported claims, review the exact proposed field values and fact references, verify destination/source permission, require explicit approval, compare the reviewed content to the actual form, then demand an explicit submission receipt. A click alone does not prove submission. Interrupted or ambiguous outcomes require inspection before retrying to avoid duplicate applications. VM tests use controlled fixtures; real platform validation is reserved for a user-reviewed application on Folio. A passing fixture cannot establish that a real platform will accept an application.
+
+UPWORK
+API credentials come from Upwork, not a third-party seller. Approval and current eligibility requirements apply; creating a new profile does not itself qualify for access. The official requirements page reviewed during this work lists identity/payment verification and account-history thresholds, including $25,000 lifetime earnings/spend and 90% JSS for freelancers/agencies. Recheck eligibility when applying because platform rules can change.
+https://support.upwork.com/hc/en-us/articles/115015857647-How-to-request-an-API-key-from-Upwork
+OAuth is the intended authorized account-access mechanism for approved API use:
+https://support.upwork.com/hc/en-us/articles/115015933448-API-authentication-and-security
+HTTP403 means the request was refused, not proof that changing headers will make automation permissible. No browser-cookie workaround is assumed:
+https://support.upwork.com/hc/en-us/articles/43342677368467-Use-bots-and-other-automation-properly
+
+LOGIN AND SESSION CONTROL
+For supported websites, sign-in opens the project's visible Chromium browser on Folio; enter passwords and verification codes yourself. It is a separate browser session from your everyday browser. The system can retain restricted site session data on Folio, controlled through Job Agent / Sources and sessions. Pause, timed suspension and revoke govern future use. Sessions can expire or be invalidated by the website. Possession of a session is not authorization to violate platform rules. OAuth/API access is preferred where the platform requires it.
+The local dashboard currently has no separate multi-user login/logout session. Loopback binding and host/origin checks restrict its intended local use. Do not mistake website session controls for dashboard authentication or expose the dashboard publicly. Remote VPS use should keep it private through authenticated SSH access until any public authentication layer is separately designed and tested.
+
+FOLIO AND STARTUP
+Folio is the user's Xubuntu PC/server. No connection is needed merely to finish VM tests; deployment will need its reachable address and a dedicated authorized SSH setup. Avoid unrestricted access to unrelated projects. Existing Linux service enablement is not a substitute for an actual reboot test. Permission is required immediately before reboot. Per-agent autostart is separate from starting the Chief Agent services.
+
+APP ICON AND PORTABILITY
+The icon and web manifest provide browser-app identity where supported; they do not turn the package into a signed native app or prove universal OS compatibility. Browser installation support differs by browser/platform. See Deployment-platforms.txt for Linux, Windows, macOS and VPS distinctions. Real personal login is reserved for Folio, including after portable deployment work.
+
+PERSONAL-USE SECURITY AND PATENTS
+Focus on applicable platform terms, credential protection, least privilege, backups, provenance and approval checks, and secure input/output handling. OWASP ASVS and its file-upload guidance can guide security verification; NIST AI RMF can guide AI risk management. They are not a certification claim, nor do they mean this personal project needs every enterprise certification before use. Applicable legal obligations depend on actual use and jurisdiction.
+https://github.com/OWASP/ASVS
+https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html
+https://www.nist.gov/itl/ai-risk-management-framework
+"Nothing we have tested establishes patentability" means that functional/security tests do not establish legal novelty, inventive step/non-obviousness or patent eligibility. Those need a separate prior-art and legal assessment.
+https://www.wipo.int/en/web/patents/faq_patents
+
+WHY RECOVERED FEATURES WERE MISSING
+The earlier dashboard repair established a sound asset architecture but did not reconcile every historical requirement against the rendered controls. Some promised controls existed in earlier code or discussion and were missing from the repaired interface. The requirements reconciliation records those discrepancies explicitly. Architectural separation and passing syntax checks were never sufficient evidence of feature completeness.

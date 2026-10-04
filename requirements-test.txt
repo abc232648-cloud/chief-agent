@@ -1,0 +1,3 @@
+-r requirements.txt
+# Generate ephemeral test TLS certificates; never bundled credentials.
+cryptography==50.0.1

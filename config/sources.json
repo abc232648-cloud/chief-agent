@@ -1,0 +1,26 @@
+{
+  "sources": [
+    {
+      "name": "linkedin",
+      "domains": [
+        "linkedin.com"
+      ],
+      "enabled": true,
+      "read_only": true,
+      "start_urls": [
+        "https://www.linkedin.com/jobs/search/?keywords=cybersecurity&location=Worldwide&f_WT=2"
+      ]
+    },
+    {
+      "name": "upwork",
+      "domains": [
+        "upwork.com"
+      ],
+      "enabled": true,
+      "read_only": true,
+      "start_urls": [
+        "https://www.upwork.com/freelance-jobs/security-analysis/"
+      ]
+    }
+  ]
+}

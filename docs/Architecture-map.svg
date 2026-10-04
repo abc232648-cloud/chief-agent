@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1150" viewBox="0 0 1500 1150" role="img" aria-label="Chief Agent — architecture">
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#587087"/></marker></defs>
+<rect width="1500" height="1150" fill="#f3f6fa"/>
+<style>text{font-family:Arial,sans-serif;fill:#173047}.title{font-size:34px;font-weight:700}.subtitle{font-size:19px;fill:#4e6578}.heading{font-size:23px;font-weight:700}.body{font-size:18px}.arrow{fill:none;stroke:#587087;stroke-width:2.5;marker-end:url(#arrow)}</style>
+<text x="60" y="65" class="title">Chief Agent — architecture</text><text x="60" y="102" class="subtitle">Registry-driven workspaces • shared runtime • per-agent permissions and startup controls</text>
+<rect x="60" y="145" width="420" height="170" rx="16" fill="#e4efff" stroke="#cbd7e1"/>
+<text x="82" y="181" class="heading">Chief Agent dashboard</text>
+<text x="82" y="215" class="body">All agents, activity and notifications</text>
+<text x="82" y="244" class="body">Specialist pages + editable controls</text>
+<text x="82" y="273" class="body">Review evidence and specific actions</text>
+<rect x="540" y="145" width="420" height="170" rx="16" fill="#ffffff" stroke="#cbd7e1"/>
+<text x="562" y="181" class="heading">Dashboard HTTP server</text>
+<text x="562" y="215" class="body">dashboard_app.py + HTML/CSS/JS</text>
+<text x="562" y="244" class="body">Local address: 127.0.0.1:8765</text>
+<text x="562" y="273" class="body">Queues commands; records approvals</text>
+<rect x="1020" y="145" width="420" height="170" rx="16" fill="#e4f5ee" stroke="#cbd7e1"/>
+<text x="1042" y="181" class="heading">Manual sign-in on Folio</text>
+<text x="1042" y="215" class="body">User enters credentials; approved sites</text>
+<text x="1042" y="244" class="body">Site session saved on that machine</text>
+<text x="1042" y="273" class="body">Pause / timed suspension / revoke</text>
+<path d="M480,230 L540,230" class="arrow"/>
+<path d="M960,230 L1020,230" class="arrow"/>
+<rect x="60" y="405" width="420" height="190" rx="16" fill="#ffffff" stroke="#cbd7e1"/>
+<text x="82" y="441" class="heading">Registry + shared worker</text>
+<text x="82" y="475" class="body">Access / pause / independent autostart</text>
+<text x="82" y="504" class="body">Declared capabilities + Policy Gate</text>
+<text x="82" y="533" class="body">Heartbeat and recorded task activity</text>
+<text x="82" y="562" class="body">Farm: minimal workspace and records</text>
+<rect x="540" y="405" width="420" height="190" rx="16" fill="#fff3dd" stroke="#cbd7e1"/>
+<text x="562" y="441" class="heading">AI planning + Policy Gate</text>
+<text x="562" y="475" class="body">Qwen; existing Mistral fallback</text>
+<text x="562" y="504" class="body">Existing free-only configuration</text>
+<text x="562" y="533" class="body">Plans are data, not permission</text>
+<text x="562" y="562" class="body">High-impact steps await your approval</text>
+<rect x="1020" y="405" width="420" height="190" rx="16" fill="#ffffff" stroke="#cbd7e1"/>
+<text x="1042" y="441" class="heading">Website readers / executors</text>
+<text x="1042" y="475" class="body">Read-only job research</text>
+<text x="1042" y="504" class="body">Saved access checked before reading</text>
+<text x="1042" y="533" class="body">Form values checked against evidence</text>
+<text x="1042" y="562" class="body">Submission requires site confirmation</text>
+<path d="M750,315 L750,355 L270,355 L270,405" class="arrow"/>
+<path d="M480,500 L540,500" class="arrow"/>
+<path d="M960,500 L1020,500" class="arrow"/>
+<path d="M1230,315 L1230,405" class="arrow"/>
+<rect x="60" y="690" width="420" height="190" rx="16" fill="#ffffff" stroke="#cbd7e1"/>
+<text x="82" y="726" class="heading">Separate domain data</text>
+<text x="82" y="760" class="body">Jobs and confirmed candidate facts</text>
+<text x="82" y="789" class="body">Farm: user-recorded soil measurements</text>
+<text x="82" y="818" class="body">Domain-scoped records and reminders</text>
+<text x="82" y="847" class="body">Shared queue, audit and dashboard inbox</text>
+<rect x="540" y="690" width="420" height="190" rx="16" fill="#f1eaff" stroke="#cbd7e1"/>
+<text x="562" y="726" class="heading">Private deployment state</text>
+<text x="562" y="760" class="body">Provider / email credentials</text>
+<text x="562" y="789" class="body">SQLite, facts and site session data</text>
+<text x="562" y="818" class="body">OS-specific private storage required</text>
+<text x="562" y="847" class="body">Private state excluded from release ZIP</text>
+<rect x="1020" y="690" width="420" height="190" rx="16" fill="#ffffff" stroke="#cbd7e1"/>
+<text x="1042" y="726" class="heading">Notifications + reports</text>
+<text x="1042" y="760" class="body">Global inbox and read-state tracking</text>
+<text x="1042" y="789" class="body">Daily / weekly / monthly summaries</text>
+<text x="1042" y="818" class="body">TXT / PDF / JSON report downloads</text>
+<text x="1042" y="847" class="body">Desktop + configured email delivery</text>
+<path d="M270,595 L270,690" class="arrow"/>
+<path d="M750,595 L750,690" class="arrow"/>
+<path d="M1230,595 L1230,690" class="arrow"/>
+<rect x="60" y="965" width="1380" height="110" rx="16" fill="#fff3dd" stroke="#cbd7e1"/>
+<text x="82" y="1001" class="heading">Limits of this proof</text>
+<text x="82" y="1035" class="body">Trusted Python modules; capabilities are not an OS sandbox. Farm has no external actions. Folio is not deployed.</text>
+</svg>

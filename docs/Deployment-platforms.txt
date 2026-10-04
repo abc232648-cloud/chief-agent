@@ -1,0 +1,34 @@
+CHIEF AGENT — LOCAL/PRIVATE DEPLOYMENT
+
+This replaces the former direct-worker, plaintext .env and two-service setup instructions. Read Service-Lifecycle.md, HTTP-Transport.md and Maintained-Runtimes.md. A verified software baseline is not certification of an installed Folio or operational database.
+
+FOLIO
+The intended target is Xubuntu 26.04 LTS, installed by the user. Xubuntu lists 26.04 and 24.04 as supported and 25.x as end-of-life: https://xubuntu.org/releases/
+VM results apply to the recorded VM configuration. Folio hardware, graphical login, reboot, installed permissions, certificate lifecycle and real backup/restore require on-device acceptance. No real/Folio migration or restored-state promotion is authorized by this package.
+
+SOFTWARE AND PRIVATE STATE
+Verify the source archive and manifest before extraction. Keep immutable source, its matching interpreter/environment and writable private state separate. Never copy a virtual environment between platforms. Install from release/*-hashed.txt with hash verification and binary wheels. The platform inventories record actual versions; the Playwright catalogue is not the selected browser.
+Run Chief as a normal dedicated OS user. Use private Unix permissions or restrictive verified Windows ACLs. Keep keys, browser profiles, private configuration, databases, backups and TLS material outside source and evidence archives. Provision model keys through private model setup, not service definitions or command arguments.
+
+INSTANCE PREPARATION
+The deployment prepare-preview command creates a NEW isolated preview directory and exercises a verified B.5 backup/restore prerequisite before every schema step. It prompts privately for the preview Owner password. It cannot prepare production or unlock quarantined restores.
+Production preflight requires an explicitly reviewed, already prepared instance and matching schema fingerprint. It never migrates production. Do not remove quarantine markers, fabricate production markers or point an isolated configuration at operational data to bypass these safeguards.
+
+SERVICES
+Use deployment.launch with an absolute reviewed instance configuration for dashboard, worker and scheduler. Generate all THREE startup definitions through deployment.service_files; generation does not install or validate them. Stop manual copies first. Verify ownership, readiness, cooperative stop and restart for each component.
+Linux definitions target the user's systemd manager. Windows definitions use least-privilege interactive-token logon tasks: no stored password or unattended pre-login promise. macOS remains generated-only and unqualified. A forced stop leaves ambiguous work for review, not automatic replay.
+
+BROWSER
+Set browser_runtime in the service configuration to the non-secret JSON containing the absolute executable, version and SHA-256. Production browsing requires explicit qualification; changed executables fail closed. Keep native sandboxing enabled. Use Ubuntu's standard system-owned browser and OS integration; do not disable AppArmor or add --no-sandbox. OS package installation may require sudo; Chief runtime does not.
+
+NETWORK AND HTTPS
+Keep the default loopback listener. Authentication does not authorize public exposure. The optional same-host TLS proxy requires correct Host/Origin handling and protected backend access; read HTTP-Transport.md. A test proxy does not qualify operational certificate renewal or OS isolation. Do not infer full filesystem/network containment from normal-user service execution.
+
+APP EXPERIENCE
+The web manifest supports an app-style browser window where browser installation is available. It is not a signed native installer, does not start services and does not cache private data offline. Real website login requires a private graphical session and separate provider/site acceptance.
+
+ROLLBACK AND RESTORE
+Stop all three components before selecting the verified rollback source and compatible interpreter; retain the private state target. Review interrupted scheduler cycles and ambiguous actions before restart. Software rollback does not restore data or unlock quarantine. Operational restoration requires the B.5 integrity and isolated-restore path followed by separate deployment acceptance. Source archives are not operational backups.
+
+ACCEPTANCE
+Report exact source, runtime, tests/skips, OS user, service lifecycle, permissions, containment limits, HTTPS trust and backup/restore results. Distinguish Windows, Ubuntu VM and physical Folio evidence. See Users-and-access.md for human permissions.
