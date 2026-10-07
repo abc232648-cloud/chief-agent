@@ -97,15 +97,31 @@ def append(store, principal, payload):
 def overview(store, principal):
     with store._connect() as con:
         principal = setup.authorize(store, con, principal, 'read')
-        manager = setup.role(con, principal) in {'OWNER', 'GENERAL_MANAGER', 'SUPERVISOR'}
-        items = [item for item in projection(rows(con)).values()
-                 if manager or principal.id in {item['reporter'], item['assignee']}]
-        roster = []
-        if manager:
-            roster = [{'id': r['id'], 'username': r['username']} for r in con.execute('SELECT id,username,domains FROM human_identities WHERE enabled=1')
-                      if {'farming', '*'} & set(json.loads(r['domains']))]
-        from .brief import schedule_status
-        return {'items': items, 'can_manage': manager, 'assignees': roster,
-                'timezone': 'Africa/Lagos', 'daily_report_schedule': schedule_status(con), 'external_notifications': 'PENDING',
-                'open_count': sum(item['state'] != 'RESOLVED' for item in items),
-                'overdue_count': sum(item['overdue'] for item in items)}
+        farm_role = setup.role(con, principal)
+        full_manager = farm_role in {'OWNER', 'GENERAL_MANAGER'}
+        legacy_items = list(projection(rows(con)).values())
+        # Legacy staff-work records predate explicit supervisor/team relationships. A
+        # Supervisor therefore sees only legacy records where they are themselves the
+        # reporter/assignee; we do not broaden that history to the entire farm.
+        items = [item for item in legacy_items
+                 if full_manager or principal.id in {item['reporter'], item['assignee']}]
+
+    from .team import overview as team_overview
+    team = team_overview(store, principal)
+    from .brief import schedule_status
+    with store._connect() as con:
+        schedule = schedule_status(con)
+    return {
+        'items': items,
+        'can_manage': full_manager,
+        'assignees': [
+            {'id': member['user_id'], 'username': member['username'], 'farm_role': member['farm_role']}
+            for member in team['members']
+        ] if full_manager else [],
+        'team': team,
+        'timezone': 'Africa/Lagos',
+        'daily_report_schedule': schedule,
+        'external_notifications': 'PENDING',
+        'open_count': sum(item['state'] != 'RESOLVED' for item in items),
+        'overdue_count': sum(item['overdue'] for item in items),
+    }
