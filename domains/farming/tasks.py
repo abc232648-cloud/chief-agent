@@ -60,7 +60,7 @@ def _validate_create(con, p):
         identifier(p['entity_id'])
         if p['entity_id'] not in setup.entities(con):
             raise ValueError('Task location entity does not exist. Refresh Farm setup.')
-    assignee, _ = _target(con, p['assigned_to'])
+    _target(con, p['assigned_to'])
     if p['supervisor_id'] is not None:
         identifier(p['supervisor_id'])
         _, supervisor_role = _target(con, p['supervisor_id'])
@@ -84,7 +84,6 @@ def _validate_create(con, p):
         raise ValueError('Duplicate evidence requirements are not accepted.')
     if p['sop_ref'] is not None:
         p['sop_ref'] = bounded_text(p['sop_ref'], 160)
-    return assignee
 
 
 def _snapshots(history):
@@ -193,7 +192,7 @@ def append(store, principal, payload):
             if p['supervisor_id'] is not None: identifier(p['supervisor_id'])
     with store._connect() as con:
         con.execute('BEGIN IMMEDIATE')
-        principal = setup.authorize(store, con, principal, 'manage' if operation != 'CREATE' else 'setup')
+        principal = setup.authorize(store, con, principal, 'setup' if operation == 'CREATE' else 'task')
         setup.available(store, con)
         history = rows(con)
         prior = next((r for r in history if r['payload']['event_id'] == p['event_id']), None)
