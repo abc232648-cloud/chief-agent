@@ -87,15 +87,19 @@ def _reserve(store, principal):
 
 
 class Transport:
-    def __init__(self, config):
+    def __init__(self, config, *, store=None):
         self.config = config
+        self.store = store
 
     def generate(self, request):
+        from gateway.availability import record_observation
+        stage = 'credentials'
         try:
             path, saved = ModelSetup(Path(os.environ['CHIEF_STATE_ROOT']))._record(self.config['registration'])
             if saved['provider'] != 'groq' or saved['provider_model'] != self.config['model'] or saved['cost'] != 'FREE':
                 raise ValueError()
             key = imported.resolve(path, saved['backend'])
+            stage = 'request'
             body = json.dumps({'model': self.config['model'], 'messages': [
                 {'role': 'system', 'content': request.system}, {'role': 'user', 'content': request.user}],
                 'temperature': 0, 'max_completion_tokens': 600, 'reasoning_format': 'hidden'}).encode()
@@ -114,8 +118,12 @@ class Transport:
                 raise ValueError()
             if value['choices'][0]['message'].get('tool_calls'):
                 raise ValueError()
+            record_observation(self.store, 'Farm Groq', 'READY', domain='farming')
             return AIResponse('groq', self.config['model'], text)
-        except Exception:
+        except Exception as exc:
+            status = getattr(exc, 'code', None)
+            code = 'KEY_UNAVAILABLE' if stage == 'credentials' else {401:'AUTH_REJECTED',403:'ACCESS_DENIED',404:'MODEL_UNAVAILABLE',429:'RATE_LIMITED'}.get(status,'UNAVAILABLE')
+            record_observation(self.store, 'Farm Groq', code, domain='farming')
             # Never propagate provider bodies, headers, credentials or prompts.
             raise ProviderUnavailable('Farm AI connection failed; no fallback was used.') from None
 
@@ -138,7 +146,7 @@ def configure(store, principal, body):
         _reserve(store, principal)
         with worker_context(AGENT, component_allowed=lambda *_: bool(guard(store, principal))):
             try:
-                ModelRouter(registry(store, config), ASSIGNMENT, {'farming.qwen': Transport(config)}, capability=CAPABILITY).generate(
+                ModelRouter(registry(store, config), ASSIGNMENT, {'farming.qwen': Transport(config, store=store)}, capability=CAPABILITY).generate(
                     AIRequest('You are Farm Agent. This is a synthetic connection test. No tools or actions.', 'Reply briefly: connection working.', max_tokens=30))
             except GatewayError:
                 raise ValueError('Qwen qualification failed. Check account access, the model identifier and model policy. No fallback was used.') from None
@@ -187,7 +195,7 @@ def answer(store, principal, question, data):
                 'Do not claim to have saved records or performed actions. For animal illness or treatment, advise contacting a qualified veterinarian; do not prescribe drugs or doses. '
                 'Farm reports are user-reported, not verified measurements. Use the authorized context for reporting-schedule status; if deadlines are absent, do not invent them. Use Africa/Lagos time.',
                 json.dumps({'question': question, 'authorized_context': data}), max_tokens=600)
-            response = ModelRouter(registry(store, config), ASSIGNMENT, {'farming.qwen': Transport(config)}, capability=CAPABILITY).generate(request)
+            response = ModelRouter(registry(store, config), ASSIGNMENT, {'farming.qwen': Transport(config, store=store)}, capability=CAPABILITY).generate(request)
         # Never return an answer based on access or configuration revoked in flight.
         from .assistant import context
         _, current = context(store, principal)

@@ -13,7 +13,16 @@ def system_view(store,page):
         from model_registry.contracts import Assignment
         registry=model_registry(store)
         assignment=registry.assignment(Assignment('jobs','jobs-worker',('jobs.qwen','jobs.mistral'),'JOB_LEGACY_COMPATIBILITY'))
-        return {'registrations':ModelSetup(Path(os.environ['CHIEF_STATE_ROOT'])).list(),
+        from gateway.availability import MESSAGES
+        observations=[]
+        with store._connect() as con:
+            for provider in ('Groq','Mistral','Farm Groq'):
+                row=con.execute('SELECT body,created_at FROM notifications WHERE title=? ORDER BY id DESC LIMIT 1',(provider+' model connection',)).fetchone()
+                code=row['body'].split(':',1)[0] if row else None
+                observations.append({'provider':provider,'status':code if code in MESSAGES else 'NOT_OBSERVED',
+                                     'message':MESSAGES.get(code,'No worker observation recorded.'),
+                                     'observed_at':row['created_at'] if row and code in MESSAGES else None})
+        return {'provider_observations':observations,'registrations':ModelSetup(Path(os.environ['CHIEF_STATE_ROOT'])).list(),
                 'models':[dict(asdict(m),state=registry.state(m.id).value) for m in registry.models.values()],
                 'job_assignment':asdict(assignment),'eligible_route_models':[m for m in assignment.models if registry.eligible(m,assignment)],
                 'policy':asdict(registry.policy()),'routing':'Qwen/Groq primary → Mistral fallback; existing Job compatibility route.',
@@ -30,7 +39,10 @@ def system_view(store,page):
         return {'decision':'NO_QUALIFIED_CANDIDATE_YET','selected':None,'installed_by_chief':False,
                 'candidates':[{'id':c.id,'product':c.product,'version':c.version,'qualification':asdict(evaluate_candidate(c,()))} for c in candidates],
                 'limitation':'Pinned research candidates only. No executed qualification evidence is loaded here; documentation does not prove a hard gate.'}
-    if page=='updates':return {'status':'STAGING_ONLY','activation_available':False,'limitation':'This application supports compatibility and regression planning. No installer, automatic activation or saved staging plan UI is implemented.'}
+    if page=='updates':
+        from update_center.history import read
+        return {'status':'MANUAL_HISTORY_ONLY','activation_available':False,'history':read(store),
+                'limitation':'Operator-recorded activity, not an independent live release or compatibility check. Automatic installation and activation remain unavailable.'}
     if page=='devices':return {'status':'UNAVAILABLE','limitation':'Device management and Farm hardware workflows are not implemented. No device discovery or control is performed.'}
     if page=='integrations':
         from integrations.n8n import describe

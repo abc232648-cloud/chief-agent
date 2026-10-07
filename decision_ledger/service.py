@@ -1,4 +1,5 @@
 import json
+from contextlib import nullcontext
 from evidence.contracts import token, probability
 from evidence.service import EvidenceService, canonical
 from policy.contracts import ActionRisk
@@ -13,7 +14,8 @@ class DecisionLedger:
         self.reference_validator = reference_validator
 
     def append(self, *, event_key, correlation_id, action, phase, outcome, rationale,
-               risk, policy_decision, evidence_ids=(), confidence=None, approval=None, references=(), policy_ref=None):
+               risk, policy_decision, evidence_ids=(), confidence=None, approval=None, references=(), policy_ref=None,
+               connection=None):
         self.evidence.guard()
         for value in (event_key, correlation_id, action, outcome, rationale):
             token(value)
@@ -40,8 +42,10 @@ class DecisionLedger:
                       action=action, phase=phase, outcome=outcome, rationale=rationale,
                       risk=risk, policy_decision=policy_decision, evidence_ids=list(evidence_ids), confidence=confidence,
                       approval=approval, references=list(references), policy_ref=policy_ref, contract_version='1.0.0')
-        with self.store._connect() as con:
-            con.execute('BEGIN IMMEDIATE')
+        if connection is not None and not connection.in_transaction:
+            raise ValueError('A caller-owned ledger transaction must already be active.')
+        with (nullcontext(connection) if connection is not None else self.store._connect()) as con:
+            if connection is None:con.execute('BEGIN IMMEDIATE')
             if not schema_ready(con):
                 raise RuntimeError('Explicit D migration required.')
             old = con.execute('SELECT id,correlation_id,record FROM decision_ledger WHERE domain=? AND event_key=?', (self.domain, event_key)).fetchone()

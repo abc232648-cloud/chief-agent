@@ -22,6 +22,8 @@ class UpdatePlan:
     migration_ids: tuple[str, ...]
     blockers: tuple[str, ...]
     activation: str = 'MANUAL_ONLY_NOT_IMPLEMENTED'
+    required_models: tuple[str, ...] = ()
+    required_benchmarks: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -33,3 +35,5 @@ class UpdateEvidence:
     human_approval_ref: str | None
     health_status: str
     fresh: bool
+    model_outcomes: tuple[tuple[str, str], ...] = ()
+    benchmark_outcomes: tuple[tuple[str, str], ...] = ()

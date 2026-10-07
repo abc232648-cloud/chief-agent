@@ -28,7 +28,8 @@ def test_jobposting_preserves_evidence_and_missing_values():
     assert len(result['receipt']['response_sha256']) == 64
 
 
-@pytest.mark.parametrize('data', [b'<p>No jobs</p>', b'<input type="password">', b'x'*2000001])
+@pytest.mark.parametrize('data', [b'<p>No jobs</p>', b'<input type="password">', b'x'*2000001],
+                         ids=['no-job-posting','password-field','oversized-body'])
 def test_unsupported_or_large_html_is_explicit_failure(data):
     with pytest.raises(ValueError):extract('scrapy_jobposting', URL, data, WHEN)
 

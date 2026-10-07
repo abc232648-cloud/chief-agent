@@ -48,12 +48,13 @@ def default_catalogs():
     from .execution_capabilities import components as execution_components, capabilities as execution_capabilities
     from .checkpoint_g_capabilities import components as g_components, capabilities as g_capabilities
     from .farm_assistant_capabilities import components as assistant_components, capabilities as assistant_capabilities
+    from .report_capabilities import components as report_components, capabilities as report_capabilities
     providers = ((*jobs(), job_capabilities(), job_components()),
                  (*farming(), farm_capabilities(), ()))
     return compose_catalogs(
         providers,
-        shared_components=shared_components()+evidence_components()+execution_components()+g_components()+assistant_components(),
-        shared_capabilities=shared_capabilities()+evidence_capabilities()+execution_capabilities()+g_capabilities()+assistant_capabilities(),
+        shared_components=shared_components()+evidence_components()+execution_components()+g_components()+assistant_components()+report_components(),
+        shared_capabilities=shared_capabilities()+evidence_capabilities()+execution_capabilities()+g_capabilities()+assistant_capabilities()+report_capabilities(),
     )
 
 

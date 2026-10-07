@@ -37,7 +37,8 @@ def test_two_catalogs_have_separate_types_and_domain_payload_is_unchanged():
 def test_shared_changes_select_both_domains_and_keep_blocked_browser_tests_required():
     registry = default_catalogs().capabilities
     plan = regression_plan(registry, [Node('capability', 'chief.domain_storage')], candidate='fixture')
-    assert plan.required_consumers == ('chief.dashboard', 'chief.scheduler', 'farming-recorder', 'jobs-worker')
+    assert plan.required_consumers == ('chief.dashboard', 'chief.internal_reporting', 'chief.scheduler', 'farming-recorder', 'jobs-worker')
+    assert 'tests/test_internal_reporting.py' in plan.required_tests
     assert 'tests/test_access_browser.py' in plan.required_tests
     assert 'tests/test_domains_browser.py' in plan.required_tests
     assert 'tests/test_v20_fact_governance.py' in plan.required_tests
@@ -73,13 +74,13 @@ def test_missing_extra_or_wrong_owner_domain_declaration_is_rejected():
 def test_read_only_catalog_and_regression_cli(capsys):
     assert main([]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert len(payload['capabilities']) == 16
+    assert len(payload['capabilities']) == 17
     assert 'farming.assistant.ask' in {c['id'] for c in payload['capabilities']}
     assert {'chief.model_registry','chief.runbooks','chief.update_planning','chief.runtime_qualification'} <= {c['id'] for c in payload['capabilities']}
     assert {'chief.evidence','chief.data_quality','chief.decision_ledger'} <= {c['id'] for c in payload['capabilities']}
     assert main(['--changed', 'capability:chief.domain_dispatch', '--candidate', 'fixture']) == 0
     result = json.loads(capsys.readouterr().out)
-    assert result['required_consumers'] == ['chief.dashboard', 'farming-recorder', 'jobs-worker']
+    assert result['required_consumers'] == ['chief.dashboard', 'chief.internal_reporting', 'farming-recorder', 'jobs-worker']
     with pytest.raises(SystemExit) as exc:
         main(['--changed', 'capability:missing', '--candidate', 'fixture'])
     assert exc.value.code == 2

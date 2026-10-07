@@ -7,6 +7,10 @@ from database.store_extensions import add_audit
 
 
 def get(handler,store,root,path,query,*,registry,services=None):
+    if path == '/api/integrations/n8n/report-previews':
+        from identity.context import current_human
+        if services is None or services.reporting is None:raise PermissionError('Reporting is not configured.')
+        handler.json({'items':services.reporting.history(store,registry,current_human())});return True
     if path == '/api/general-schedules':
         from .schedules import list_schedules
         handler.json({'items':list_schedules(store),'domains':list(registry.domains),'actions':['in_app_reminder']});return True
@@ -53,6 +57,10 @@ def get(handler,store,root,path,query,*,registry,services=None):
 
 
 def post(handler,store,root,path,body,*,registry,services=None):
+    if path == '/api/integrations/n8n/report-preview':
+        from identity.context import current_human
+        if services is None or services.reporting is None:raise PermissionError('Reporting is not configured.')
+        handler.json(services.reporting.run(store,registry,current_human(),body));return True
     if path=='/api/general-schedules' or path.startswith('/api/general-schedules/'):
         from .schedules import create, change
         from identity.context import current_human
