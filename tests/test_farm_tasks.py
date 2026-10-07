@@ -68,7 +68,7 @@ def test_task_visibility_is_assignment_scoped_and_manager_created(dashboard):
 
 def test_task_revision_and_role_gates_fail_closed(dashboard):
     d = dashboard
-    _, worker_id, _, supervisor_id, _, manager, _, worker, _, _, _, supervisor = staff(d)
+    _, worker_id, _, supervisor_id, _, manager, _, worker, _, _, supervisor = staff(d)
     creation = create_task(worker_id, supervisor_id)
     tasks.append(d.store, manager, creation)
     ack = event('ACKNOWLEDGE', creation['task_id'], creation['event_id'])
