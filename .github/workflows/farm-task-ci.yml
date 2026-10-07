@@ -1,0 +1,37 @@
+name: Farm Task CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'domains/farming/tasks.py'
+      - 'application/farm_api.py'
+      - 'tests/test_farm_tasks.py'
+      - '.github/workflows/farm-task-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'domains/farming/tasks.py'
+      - 'application/farm_api.py'
+      - 'tests/test_farm_tasks.py'
+      - '.github/workflows/farm-task-ci.yml'
+
+concurrency:
+  group: farm-task-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  task-ledger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install runtime and test dependencies
+        run: python -m pip install -r requirements.txt -r requirements-test.txt
+      - name: Run Farm task authority tests
+        env:
+          CHIEF_INSTANCE_MODE: test
+        run: python -m pytest -q tests/test_farm_tasks.py
