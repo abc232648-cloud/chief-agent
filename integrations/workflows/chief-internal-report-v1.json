@@ -1,0 +1,84 @@
+{
+  "name": "Chief internal record-count preview v1 - no external actions",
+  "active": false,
+  "nodes": [
+    {
+      "id": "report-webhook",
+      "name": "Authenticated report preview",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chief-internal-report-v1",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "report-validate",
+      "name": "Validate record-count preview",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const b = $json.body;\nconst keys = (o) => o && typeof o === 'object' && !Array.isArray(o) ? Object.keys(o).sort().join(',') : '';\nif (keys(b) !== 'contract,deadline,domain,operation_id,purpose,snapshot,snapshot_sha256' ||\n    b.contract !== 'chief.internal-report.v1' || b.domain !== 'farming' ||\n    b.purpose !== 'internal-report-preview-only' ||\n    typeof b.operation_id !== 'string' || !/^[a-f0-9]{32}$/.test(b.operation_id) ||\n    typeof b.snapshot_sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(b.snapshot_sha256) ||\n    typeof b.deadline !== 'number' || !Number.isFinite(b.deadline) ||\n    b.deadline <= Date.now()/1000 || b.deadline > Date.now()/1000+30 ||\n    keys(b.snapshot) !== 'as_of,counts,meaning,source_contract' ||\n    b.snapshot.source_contract !== 'farm.journal-counts.v1' ||\n    b.snapshot.meaning !== 'record-counts-not-production-or-stock' ||\n    typeof b.snapshot.as_of !== 'string' || !b.snapshot.as_of.endsWith('Z') ||\n    !Number.isFinite(Date.parse(b.snapshot.as_of)) ||\n    Date.parse(b.snapshot.as_of) > Date.now()+5000 || Date.parse(b.snapshot.as_of) < Date.now()-60000 ||\n    keys(b.snapshot.counts) !== 'correction_entries,current_entries,journal_entries' ||\n    !Object.values(b.snapshot.counts).every(n => Number.isInteger(n) && n >= 0 && n <= 1000000000) ||\n    b.snapshot.counts.current_entries > b.snapshot.counts.journal_entries ||\n    b.snapshot.counts.correction_entries > b.snapshot.counts.journal_entries) {\n  throw new Error('Invalid or expired record-count preview');\n}\nreturn [{json:{contract:b.contract,operation_id:b.operation_id,domain:b.domain,\n  snapshot:b.snapshot,snapshot_sha256:b.snapshot_sha256,status:'COMPLETED'}}];"
+      }
+    },
+    {
+      "id": "report-response",
+      "name": "Return report receipt",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Authenticated report preview": {
+      "main": [
+        [
+          {
+            "node": "Validate record-count preview",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate record-count preview": {
+      "main": [
+        [
+          {
+            "node": "Return report receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  },
+  "pinData": {}
+}

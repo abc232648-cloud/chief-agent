@@ -40,12 +40,14 @@ def describe(store):
         configured = False
         problem = str(exc)
     from .n8n_handoff import configured as handshake_configured
+    from .internal_reporting import configured as report_configured
     return {'configured': configured, 'enabled': enabled(store),
             'handshake_configured':handshake_configured(),
+            'report_configured':report_configured(),
             'status': 'READY_TO_CHECK' if configured else 'NOT_CONFIGURED',
             'problem': problem, 'scope': 'METADATA_AND_SYNTHETIC_HANDSHAKE',
             'execution_available': False,
-            'message': 'Connection control, workflow inventory and a synthetic handshake test. General workflow execution and schedule migration are not enabled.'}
+            'message': 'Local workflow connection, readiness testing and a separately configured manual Farm record-count preview. Automatic workflows and schedules are not enabled.'}
 
 
 def inventory():

@@ -5,12 +5,14 @@ from control.agents import AgentControls
 from control.components import ComponentControls
 from control.health import SystemHealth
 from .composition import default_catalogs
+from .report_services import ReportServices
 
 
 @dataclass(frozen=True)
 class ControlServices:
     controls: ComponentControls
     health: SystemHealth
+    reporting: ReportServices | None = None
 
 
 def compose_control_services(store, catalogs=None):
@@ -20,6 +22,10 @@ def compose_control_services(store, catalogs=None):
     supported = {}
     guarded = set()
     modes = (Mode.ENABLED, Mode.DISABLED, Mode.MAINTENANCE)
+    if 'chief.internal_reporting' in catalogs.capabilities.components:
+        supported[Node('component','chief.internal_reporting')] = modes
+        supported[Node('capability','chief.internal_report_preview')] = modes
+        guarded.add(Node('component','chief.internal_reporting'))
     if 'farm-assistant' in catalogs.capabilities.components:
         supported[Node('component', 'farm-assistant')] = modes
         supported[Node('capability', 'farming.assistant.ask')] = modes
@@ -32,4 +38,4 @@ def compose_control_services(store, catalogs=None):
         for capability in agent.capabilities:
             supported[Node('capability', capability)] = modes
     controls = ComponentControls(store, catalogs.capabilities, supported=supported, guarded_consumers=guarded)
-    return ControlServices(controls, SystemHealth(controls))
+    return ControlServices(controls, SystemHealth(controls), ReportServices(catalogs.capabilities))

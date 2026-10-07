@@ -29,18 +29,15 @@ def test_paid_flags_block_before_provider_use():
     with pytest.raises(PaidRouteBlocked, match="MISTRAL_PAID_ALLOWED"):
         FreeOnlyGateway(Fake(None), Fake(None), mistral_paid_allowed=True)
 
-def test_build_gateway_missing_groq_key_stops(monkeypatch):
+def test_build_gateway_without_keys_starts_but_ai_request_stops(monkeypatch):
     import gateway.main as main
-    monkeypatch.setenv("FREE_ONLY", "TRUE")
-    monkeypatch.setenv("MISTRAL_PAID_ALLOWED", "FALSE")
-    monkeypatch.delenv("GROQ_API_KEY", raising=False)
-    monkeypatch.setenv("MISTRAL_API_KEY", "test-mistral")
-    try:
-        main.build_gateway()
-    except Exception as exc:
-        assert str(exc) == "STOP: GROQ_API_KEY is required"
-    else:
-        raise AssertionError("build_gateway() should stop")
+    for name in ('GROQ_API_KEY','MISTRAL_API_KEY','GROQ_API_KEY_REF','MISTRAL_API_KEY_REF'):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv('FREE_ONLY','TRUE')
+    monkeypatch.setenv('MISTRAL_PAID_ALLOWED','FALSE')
+    gateway=main.build_gateway()
+    with pytest.raises(GatewayError,match='STOP'):
+        gateway.generate(req())
 
 def test_build_gateway_guardrails_stop_before_provider(monkeypatch):
     import gateway.main as main

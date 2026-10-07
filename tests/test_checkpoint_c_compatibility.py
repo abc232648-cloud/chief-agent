@@ -41,7 +41,11 @@ def test_default_legacy_farm_dispatch_and_data_remain_usable(migrated,injected):
     assert len(data['records'])==1 and len(data['reminders'])==1
     node=Node('component','farming-recorder')
     controls=migrated.services.controls
-    controls.transition(controls.preview(node,Mode.MAINTENANCE),actor='test',reason='test')
+    preview=controls.preview(node,Mode.MAINTENANCE)
+    assert Node('component','chief.internal_reporting') in preview.affected
+    with pytest.raises(ValueError,match='Confirm the affected consumers'):
+        controls.transition(preview,actor='test',reason='test')
+    controls.transition(preview,actor='test',reason='test',confirmed=True)
     assert not AgentControls(migrated.store,migrated.registry).allowed('farming')
     with pytest.raises(PermissionError):runtime.overview('farming')
 

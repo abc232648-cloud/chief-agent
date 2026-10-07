@@ -14,6 +14,8 @@ def test_h_grouped_navigation_health_and_unqualified_runtime(dashboard):
         assert page.locator('#devicesContent button').count()==0
         page.set_viewport_size({'width':390,'height':844})
         navigate(page,'models');expect(page.locator('#modelsContent')).to_contain_text('OPEN')
+        expect(page.locator('#modelsContent')).to_contain_text('Latest provider observations')
+        expect(page.locator('#modelsContent')).to_contain_text('not a live connection check')
         browser.close()
 
 

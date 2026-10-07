@@ -2,6 +2,7 @@
 from dataclasses import asdict
 import hashlib
 import json
+import re
 
 from capabilities.contracts import Node, version
 from capabilities.regression import regression_plan
@@ -69,7 +70,9 @@ def plan_update(current, candidate, registry):
     return UpdatePlan(plan_id, current.release_id, candidate.release_id, candidate.source_tree_sha256,
                       tuple(sorted(candidate.changed_nodes)), tuple(sorted(required)), tuple(sorted(optional)),
                       regression.required_consumers, backup_required, tuple(sorted(migrations)),
-                      tuple(sorted(set(blockers))))
+                      tuple(sorted(set(blockers))),
+                      required_models=candidate.model_requirements,
+                      required_benchmarks=candidate.benchmark_requirements)
 
 
 def evaluate_evidence(plan, evidence):
@@ -78,14 +81,20 @@ def evaluate_evidence(plan, evidence):
         raise ValueError('Plan and evidence are required.')
     if evidence.plan_id != plan.plan_id or evidence.candidate_source != plan.candidate_source:
         return UpdateReadiness.REJECTED
-    if plan.blockers or not evidence.fresh or evidence.health_status != 'HEALTHY':
+    if plan.blockers or evidence.fresh is not True or evidence.health_status != 'HEALTHY':
         return UpdateReadiness.REJECTED
     outcomes = dict(evidence.test_outcomes)
     if len(outcomes) != len(evidence.test_outcomes):
         return UpdateReadiness.REJECTED
     if any(outcomes.get(name) != 'PASSED' for name in plan.required_tests):
         return UpdateReadiness.REJECTED
-    if plan.backup_required and (not evidence.backup_manifest_sha256 or len(evidence.backup_manifest_sha256) != 64):
+    for required, supplied in ((plan.required_models, evidence.model_outcomes),
+                               (plan.required_benchmarks, evidence.benchmark_outcomes)):
+        results = dict(supplied)
+        if len(results) != len(supplied) or any(results.get(name) != 'PASSED' for name in required):
+            return UpdateReadiness.REJECTED
+    if plan.backup_required and (not isinstance(evidence.backup_manifest_sha256, str) or
+                                not re.fullmatch('[0-9a-f]{64}', evidence.backup_manifest_sha256)):
         return UpdateReadiness.REJECTED
     if not evidence.human_approval_ref:
         return UpdateReadiness.STAGING_REQUIRED

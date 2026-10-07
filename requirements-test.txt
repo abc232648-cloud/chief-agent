@@ -1,3 +1,6 @@
 -r requirements.txt
+# The complete suite exercises the optional collector with fixture transport.
+# This does not enable it in a production installation.
+-r requirements-scrapy.txt
 # Generate ephemeral test TLS certificates; never bundled credentials.
 cryptography==50.0.1

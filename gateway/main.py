@@ -27,21 +27,21 @@ def build_gateway(*, store=None) -> ModelRouter:
     if mistral_paid_allowed:
         raise PaidRouteBlocked("STOP: MISTRAL_PAID_ALLOWED must be FALSE")
 
-    from private_secrets.service import resolve_configured
-    groq_key = resolve_configured(os.environ,'GROQ_API_KEY',consumer='jobs.gateway',domain='jobs').strip()
-    mistral_key = resolve_configured(os.environ,'MISTRAL_API_KEY',consumer='jobs.gateway',domain='jobs').strip()
-    if not groq_key:
-        raise GatewayError("STOP: GROQ_API_KEY is required")
-    if not mistral_key:
-        raise GatewayError("STOP: MISTRAL_API_KEY is required")
-
+    from .availability import AvailableProvider
     qwen_model = os.getenv("QWEN_MODEL", "qwen/qwen3.6-27b")
     mistral_model = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
-    return legacy_job_router(
-        QwenFreeProvider(groq_key, qwen_model),
-        MistralFreeProvider(mistral_key, mistral_model),
+    router = legacy_job_router(
+        AvailableProvider(QwenFreeProvider, qwen_model, "GROQ_API_KEY", "Groq", store=store),
+        AvailableProvider(MistralFreeProvider, mistral_model, "MISTRAL_API_KEY", "Mistral", store=store),
         store=store,
     )
+    assignment = router.registry.assignment(router.default)
+    for identity in assignment.models:
+        if router.registry.eligible(identity, assignment):
+            transport = router.transports.get(identity)
+            if isinstance(transport, AvailableProvider):
+                transport.inspect()
+    return router
 
 
 def smoke_test() -> int:

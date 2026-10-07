@@ -13,7 +13,7 @@ def capability_dependencies(*names):
 def shared_components():
     # Versions identify these adapter contracts, not application/vendor releases.
     return (
-        Component('chief', ComponentKind.CORE),
+        Component('chief', ComponentKind.CORE, permissions=('chief.internal_report_preview',)),
         Component('chief.database', ComponentKind.SERVICE, tests=('tests/test_database.py', 'tests/test_database_connection_lifetime.py')),
         Component('chief.policy', ComponentKind.SERVICE, tests=('tests/test_policy.py', 'tests/test_worker_policy_gate.py', 'tests/test_policy_foundation.py', 'tests/test_policy_equivalence.py')),
         Component('chief.component_controls', ComponentKind.SERVICE,
