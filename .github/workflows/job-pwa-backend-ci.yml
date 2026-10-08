@@ -13,6 +13,7 @@ on:
       - 'application/job_activity_feed.py'
       - 'application/ui_api.py'
       - 'requirements.txt'
+      - 'tests/conftest.py'
       - 'tests/test_web_push.py'
       - 'tests/test_notifications.py'
       - 'tests/test_job_attention.py'
@@ -32,6 +33,7 @@ on:
       - 'application/job_activity_feed.py'
       - 'application/ui_api.py'
       - 'requirements.txt'
+      - 'tests/conftest.py'
       - 'tests/test_web_push.py'
       - 'tests/test_notifications.py'
       - 'tests/test_job_attention.py'
@@ -78,6 +80,10 @@ jobs:
     timeout-minutes: 35
     env:
       CHIEF_INSTANCE_MODE: test
+      # Hosted runners do not expose Chief's host-bound systemd credential key.
+      # Tests use an explicit process-local AES-GCM double; production keeps the
+      # real systemd-creds fail-closed backend and has no plaintext fallback.
+      CHIEF_TEST_SECRET_BACKEND: portable-aead
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
