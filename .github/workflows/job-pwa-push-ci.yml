@@ -1,0 +1,35 @@
+name: Job Agent Web Push CI
+
+on:
+  push:
+    branches: ['feat/job-agent-web-push']
+  pull_request:
+    branches: [main]
+    paths:
+      - 'notifications/web_push.py'
+      - 'control/notifications.py'
+      - 'worker/runner.py'
+      - 'requirements.txt'
+      - 'tests/test_web_push.py'
+      - 'docs/PWA-Routing.md'
+      - '.github/workflows/job-pwa-push-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install focused test dependencies
+        run: python -m pip install pytest 'pywebpush>=2.0.3,<3.0'
+      - name: Compile changed Python surfaces
+        run: python -m compileall -q notifications/web_push.py control/notifications.py worker/runner.py
+      - name: Run notification and Web Push tests
+        run: python -m pytest -q tests/test_web_push.py tests/test_notifications.py
