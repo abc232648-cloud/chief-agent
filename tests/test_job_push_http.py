@@ -1,3 +1,7 @@
+from control.notifications import preferences
+from database.store import Store
+from identity.context import human_context
+from identity.contracts import Principal
 from identity.service import IdentityService
 from tests.checkpoint_f_fixture import PASSWORD
 from tests.test_identity_http import request
@@ -53,19 +57,26 @@ def test_job_push_status_and_private_material_are_scope_safe(dashboard,monkeypat
     d=dashboard;raw=d.credentials['raw']
     assert request(d,'/api/notifications/push-subscription','POST',SUBSCRIPTION,raw)[0]==200
 
-    status,_,preferences=request(d,'/api/notification-preferences',raw=raw)
+    status,_,public=request(d,'/api/notification-preferences',raw=raw)
     assert status==200
-    assert preferences['job_push']['configured'] is True
-    assert preferences['job_push']['subscribed'] is True
-    serialized=str(preferences)
+    assert public['job_push']['configured'] is True
+    assert public['job_push']['subscribed'] is True
+    serialized=str(public)
     assert SUBSCRIPTION['endpoint'] not in serialized
     assert SUBSCRIPTION['keys']['p256dh'] not in serialized
     assert SUBSCRIPTION['keys']['auth'] not in serialized
 
+    # A restricted Owner cannot pass Chief's global preferences authority at all.
     farm_owner=login_as(d,'push-status-farm-owner','Owner',('farming',))
-    status,_,preferences=request(d,'/api/notification-preferences',raw=farm_owner)
-    assert status==200
-    assert 'job_push' not in preferences
+    assert request(d,'/api/notification-preferences',raw=farm_owner)[0]==403
+
+
+def test_notification_layer_withholds_job_push_status_outside_jobs_scope(tmp_path,monkeypatch):
+    configure_push(monkeypatch)
+    state=Store(tmp_path/'worker.db')
+    with human_context(Principal('farm-owner','session','Owner',('farming',),'now')):
+        public=preferences(state)
+    assert 'job_push' not in public
 
 
 def test_job_push_unsubscribe_is_identity_scoped(dashboard,monkeypatch):
