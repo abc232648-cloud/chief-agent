@@ -67,6 +67,14 @@ def recent_job_activity(store, limit=DEFAULT_LIMIT):
                              FROM commands c ORDER BY c.id DESC LIMIT ?"""
         commands = [dict(row) for row in con.execute(command_sql, (take,))]
 
+    actions = store.actions()
+    if has_domain_requests:
+        from .auth_routes import action_domain
+        action_count = sum(action_domain(store, row['id']) == 'jobs' for row in actions)
+    else:
+        # Legacy pre-domain-request stores treated the shared action table as Job-owned.
+        action_count = len(actions)
+
     events = []
     for row in notifications:
         events.append({
@@ -122,6 +130,11 @@ def recent_job_activity(store, limit=DEFAULT_LIMIT):
             'unread': len(unread),
             'action_required': sum(item['severity'] == 'ACTION_REQUIRED' for item in unread),
             'urgent': sum(item['severity'] == 'URGENT' for item in unread),
+        },
+        'job_counts': {
+            'jobs': len(store.jobs()),
+            'applications': len(store.applications()),
+            'actions': action_count,
         },
         'limit': take,
         'privacy': 'Sanitized Job presentation feed; raw command/application payloads are not exposed.',
