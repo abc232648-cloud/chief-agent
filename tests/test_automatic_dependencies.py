@@ -95,3 +95,10 @@ def test_download_uses_fixed_index_pins_binary_and_no_resolution(monkeypatch,tmp
         return Result()
     monkeypatch.setattr(a.subprocess,'run',run)
     a._download(tmp_path/'lock',tmp_path/'wheels',{})
+
+
+def test_linux_python314_profile_does_not_require_python312_zstd_backport():
+    from installation.dependencies import locked_requirements
+    root=Path(__file__).resolve().parents[1]
+    assert 'backports-zstd' not in locked_requirements((root/'release/ubuntu-extended-hashed.txt').read_text())
+    assert 'backports-zstd' in locked_requirements((root/'release/windows-extended-hashed.txt').read_text())

@@ -71,7 +71,7 @@ def prepare_selected(source_data, root, *, components, expected_archive, expecte
                    TEMP=str(folder/'temporary'),TMP=str(folder/'temporary'),TMPDIR=str(folder/'temporary'),
                    PIP_CONFIG_FILE=os.devnull,PYTHONUTF8='1')
         for profile,lock in profiles.items():
-            state={'status':'DOWNLOADING','repair':'Retry into a new isolated attempt after correcting the reported prerequisite.'}
+            state={'status':'DOWNLOADING','phase':'DOWNLOAD','repair':'Retry into a new isolated attempt after correcting the reported prerequisite.'}
             result['components'][profile]=state
             try:
                 write(profile+'.txt',lock.encode())
@@ -87,8 +87,9 @@ def prepare_selected(source_data, root, *, components, expected_archive, expecte
                     for p in files:
                         bundle.write(p,p.name)
                 data=stream.getvalue();digest=hashlib.sha256(data).hexdigest()
+                state['phase']='VERIFY_WHEELS'
                 inspect_wheels(data,expected_archive=digest,lock_text=lock)
-                state['status']='PREPARING'
+                state['status']='PREPARING';state['phase']='INSTALL_AND_VERIFY'
                 receipt=prepare_environment(source_data,data,folder/'environments',expected_archive=expected_archive,
                     expected_source=expected_source,expected_wheels=digest,expected_runtime=expected_runtime,
                     private_storage_confirmed=True,runtime_and_dependencies_reviewed=True,dependency_profile=profile)
@@ -99,7 +100,7 @@ def prepare_selected(source_data, root, *, components, expected_archive, expecte
             except KeyboardInterrupt:
                 state['status']='INTERRUPTED';result['status']='DEPENDENCIES_INTERRUPTED';break
             except (OSError,ValueError,RuntimeError,subprocess.SubprocessError,zipfile.BadZipFile):
-                state['status']='FAILED';result['status']='DEPENDENCIES_FAILED';break
+                state.update(status='FAILED',reason_code=state['phase']+'_FAILED');result['status']='DEPENDENCIES_FAILED';break
         else:
             result['status']='SELECTED_PYTHON_DEPENDENCIES_PREPARED_NOT_ACTIVATED'
         for profile in selected:
