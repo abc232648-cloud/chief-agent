@@ -2,7 +2,7 @@ from domains.contracts import AgentDefinition, DomainDefinition
 
 
 def make_processor(store,gateway):
-    from .ledger_adapter import JobCommandProcessor as CommandProcessor
+    from .push_processor import JobPushCommandProcessor as CommandProcessor
     from .policy_adapter import JobComparisonGate
     return CommandProcessor(store,gateway,gate=JobComparisonGate(store))
 
