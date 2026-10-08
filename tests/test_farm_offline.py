@@ -46,7 +46,7 @@ def test_offline_restart_encrypted_queue_and_explicit_sync(dashboard):
             result=page.evaluate('()=>FarmOutbox.sync()')
             assert result=={'sent':1,'pending':0}
             assert journal.overview(d.store,d.credentials['principal'])['record_count']==1
-            paths=page.evaluate("async()=>{const c=await caches.open('farm-public-v2');return (await c.keys()).map(r=>new URL(r.url).pathname)}")
+            paths=page.evaluate("async()=>{const c=await caches.open('farm-public-v3');return (await c.keys()).map(r=>new URL(r.url).pathname)}")
             assert paths and all(path.startswith('/static/') for path in paths)
             assert page.evaluate("async()=>!(await caches.keys()).includes('farm-public-v1')")
             assert not any('/api/' in path or path=='/work' for path in paths)
