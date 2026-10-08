@@ -58,7 +58,7 @@ def test_dispatch_sends_only_new_job_attention_and_advances_durable_cursor(tmp_p
     register_subscription(state,'owner-1',SUBSCRIPTION,ENV)
     state.add_notification('Quiet telemetry','No push','INFO',domain='jobs')
     state.add_notification('Other domain','No push','URGENT',domain='farming')
-    state.add_notification('Approval required','Review this application','ACTION_REQUIRED',domain='jobs')
+    state.add_notification('Approval required','Review this application','ACTION_REQUIRED',domain='jobs',related_page='actions')
     state.add_notification('STOP','Identity document requested','URGENT',domain='jobs')
 
     delivered=[]
@@ -69,12 +69,29 @@ def test_dispatch_sends_only_new_job_attention_and_advances_durable_cursor(tmp_p
     assert first=={'status':'DELIVERED','sent':2,'failed':0,'expired':0}
     assert [item[1]['severity'] for item in delivered]==['ACTION_REQUIRED','URGENT']
     assert all(item[1]['url']=='/jobs/' for item in delivered)
+    assert delivered[0][1]['related_page']=='actions'
     assert delivered[-1][1]['tag'].startswith('chief-job-')
 
     cursor=push_subscriptions(state,'owner-1')[0]['cursor']
     assert cursor==state.notifications(1)[0]['id']
     assert dispatch_pending(state,sender=sender,env=ENV)=={'status':'IDLE','sent':0,'failed':0,'expired':0}
     assert len(delivered)==2
+
+
+def test_dispatch_attempt_budget_bounds_each_delivery_pass(tmp_path):
+    state=store(tmp_path)
+    register_subscription(state,'owner-1',SUBSCRIPTION,ENV)
+    for index in range(5):
+        state.add_notification(f'Approval {index}',f'Review {index}','ACTION_REQUIRED',domain='jobs')
+
+    delivered=[]
+    first=dispatch_pending(state,sender=lambda subscription,payload,settings:delivered.append(payload),env=ENV,limit_per_subscription=5,max_attempts=2)
+    assert first=={'status':'DELIVERED','sent':2,'failed':0,'expired':0}
+    assert len(delivered)==2
+
+    second=dispatch_pending(state,sender=lambda subscription,payload,settings:delivered.append(payload),env=ENV,limit_per_subscription=5,max_attempts=2)
+    assert second=={'status':'DELIVERED','sent':2,'failed':0,'expired':0}
+    assert len(delivered)==4
 
 
 def test_transient_provider_failure_keeps_cursor_for_retry(tmp_path):
