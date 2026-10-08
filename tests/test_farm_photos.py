@@ -3,10 +3,11 @@ import struct
 import uuid
 import zlib
 import pytest
-from domains.farming import photos,staff
+from domains.farming import photos,staff,tasks
 from identity.service import IdentityService
 from tests.checkpoint_f_fixture import PASSWORD
 from tests.test_farm_staff import event
+from tests.test_farm_tasks import create_task, staff as task_staff
 from tests.test_identity_http import request
 
 
@@ -32,6 +33,20 @@ def test_private_photo_roundtrip_retry_integrity_and_scope(dashboard):
     assert request(d,'/api/farm/photos/'+p['event_id'])[0]==401
     s.disable_user(owner,uid)
     assert request(d,'/api/farm/photos/'+p['event_id'],raw=raw)[0]==401
+
+
+def test_photo_backend_accepts_authoritative_field_task_ids_only_in_scope(dashboard):
+    d=dashboard
+    _,worker_id,_,_,manager_raw,manager,worker_raw,worker,other,_,_=task_staff(d)
+    task=create_task(worker_id);tasks.append(d.store,manager,task)
+    payload={'event_id':str(uuid.uuid4()),'work_id':task['task_id'],'image_base64':base64.b64encode(png()).decode()}
+    code,_,receipt=request(d,'/api/farm/photos','POST',payload,worker_raw)
+    assert code==200 and receipt['status']=='RECORDED'
+    assert receipt['record']['id']==payload['event_id'] and receipt['record']['work_id']==task['task_id']
+    assert receipt['record']['sha256'] and receipt['record']['bytes']==len(png())
+    code,_,listing=request(d,'/api/farm/photos?work_id='+task['task_id'],raw=worker_raw)
+    assert code==200 and listing==[receipt['record']]
+    with pytest.raises(PermissionError):photos.listing(d.store,other,task['task_id'])
 
 
 @pytest.mark.parametrize('raw',[b'<svg onload="alert(1)"></svg>',png()+b'extra',png(1600),b'\x89PNG\r\n\x1a\n',png()[:-1]+b'x'])
