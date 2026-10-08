@@ -28,6 +28,20 @@ def _save(con,data):
     con.execute('INSERT OR REPLACE INTO notification_preferences VALUES(1,?)',(json.dumps(data,separators=(',',':')),))
 
 
+def _job_push_human(*,required=False):
+    """Return the current Job-companion principal or fail closed when required."""
+    from identity.context import current_human
+    human=current_human()
+    allowed=(
+        human is not None
+        and human.role in {'Owner','Administrator'}
+        and bool({'jobs','*'} & set(human.domains))
+    )
+    if required and not allowed:
+        raise PermissionError('Job Web Push requires Owner/Administrator access to the jobs domain.')
+    return human if allowed else None
+
+
 def preferences(store,payload=None):
     initialize(store)
     with store._connect() as con:
@@ -39,14 +53,13 @@ def preferences(store,payload=None):
                 raise ValueError('Invalid notification preference.')
             data.update(payload);_save(con,data)
             public={'delivery':data['delivery'],'sort':data['sort']}
-    # Push capability material remains private. Only readiness and current identity's
-    # registration count are exposed to the authenticated client.
+    # Push capability material remains private. Job readiness/counts are exposed
+    # only to the same Owner/Admin + jobs scope that may open the companion.
     from notifications.web_push import public_configuration,subscription_status
     config=public_configuration()
-    if config['configured']:
-        from identity.context import current_human
-        human=current_human()
-        public['job_push']=subscription_status(store,human.id) if human is not None else {**config,'subscribed':False,'subscription_count':0}
+    human=_job_push_human()
+    if config['configured'] and human is not None:
+        public['job_push']=subscription_status(store,human.id)
     return public
 
 
@@ -127,7 +140,7 @@ def list_notifications(store,query):
     for key,op in [('start','>='),('end','<=')]:
         if query.get(key):
             stamp=datetime.fromisoformat(query[key])
-            if stamp.tzinfo:stamp.astimezone(timezone.utc).replace(tzinfo=None)
+            if stamp.tzinfo:stamp=stamp.astimezone(timezone.utc).replace(tzinfo=None)
             sql+=' AND datetime(created_at)'+op+'datetime(?)';args.append(stamp.isoformat(sep=' '))
     sql+=' ORDER BY id '+('ASC' if query.get('sort')=='oldest' else 'DESC')+' LIMIT 200'
     with store._connect() as con:return [dict(r) for r in con.execute(sql,args)]
@@ -135,9 +148,7 @@ def list_notifications(store,query):
 
 def update(store,target,payload):
     if target in {'push-subscription','push-unsubscribe'}:
-        from identity.context import current_human
-        human=current_human()
-        if human is None:raise PermissionError('Authenticated identity is required for Web Push registration.')
+        human=_job_push_human(required=True)
         from notifications.web_push import register_subscription,unregister_subscription
         if target=='push-subscription':return register_subscription(store,human.id,payload)
         if not isinstance(payload,dict) or set(payload)!={'endpoint'}:raise ValueError('A Web Push endpoint is required.')
