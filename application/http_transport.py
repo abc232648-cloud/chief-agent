@@ -22,6 +22,22 @@ def diagnostic(code, correlation_id):
     LOG.warning('%s correlation=%s', code, correlation_id)
 
 
+def _security_headers(headers, secure_transport):
+    """Apply browser hardening once, with HSTS only on verified production HTTPS."""
+    existing={name.lower() for name,_ in headers}
+    values=(
+        ('X-Content-Type-Options','nosniff'),
+        ('X-Frame-Options','DENY'),
+        ('Referrer-Policy','no-referrer'),
+        ('Permissions-Policy','camera=(self), microphone=(), geolocation=()'),
+    )
+    for name,value in values:
+        if name.lower() not in existing:headers.append((name,value))
+    if (secure_transport and os.environ.get('CHIEF_INSTANCE_MODE','').lower()=='production'
+            and 'strict-transport-security' not in existing):
+        headers.append(('Strict-Transport-Security','max-age=31536000'))
+
+
 class ResponseBuffer(BytesIO):
     def write(self, data):
         if self.tell() + len(data) > RESPONSE_LIMIT:
@@ -119,10 +135,11 @@ def wsgi_application(handler_type, settings):
         environ['chief.request_id'] = correlation_id
         try:
             handler = handler_type(environ)
-            # Waitress alone establishes scheme from the explicitly trusted peer.
-            # A private LAN bind is not permission to serve credentials over HTTP.
+            # Production is HTTPS-only even on loopback. Outside production, a
+            # direct loopback listener remains available to isolated tests/dev.
             local = ipaddress.ip_address(handler.client_address[0]).is_loopback
-            if (settings.trusted_proxy or not local) and not handler.secure_transport:
+            production=os.environ.get('CHIEF_INSTANCE_MODE','').lower()=='production'
+            if (production or settings.trusted_proxy or not local) and not handler.secure_transport:
                 handler.json({'status': 'REJECTED', 'reason': 'A trusted TLS connection is required.'}, 403)
             elif handler.command not in {'GET', 'HEAD', 'POST', 'DELETE'}:
                 handler.send_error(405)
@@ -135,10 +152,12 @@ def wsgi_application(handler_type, settings):
             data = json.dumps({'status':'FAILED','reason':'Server error.','correlation_id':correlation_id}).encode()
             headers = [('Content-Type','application/json'),('Cache-Control','no-store'),
                        ('Content-Length',str(len(data))),('X-Request-ID',correlation_id)]
+            _security_headers(headers,environ.get('wsgi.url_scheme')=='https')
             return deliver(start_response, '500 Internal Server Error', headers,
                            b'' if environ.get('REQUEST_METHOD')=='HEAD' else data, correlation_id)
         headers = handler.response_headers
         headers.append(('X-Request-ID', handler.correlation_id))
+        _security_headers(headers,handler.secure_transport)
         if not any(k.lower() == 'content-length' for k, _ in headers):
             headers.append(('Content-Length', str(handler.wfile.tell())))
         data = b'' if handler.command == 'HEAD' else handler.wfile.getvalue()
