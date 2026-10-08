@@ -2,7 +2,7 @@ name: Job Agent PWA Backend CI
 
 on:
   push:
-    branches: [main, 'feat/**', 'consolidate/**']
+    branches: [main]
     paths:
       - '.env.example'
       - 'notifications/web_push.py'
@@ -46,6 +46,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: job-pwa-backend-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   focused:
