@@ -54,8 +54,26 @@ def test_job_feed_returns_only_sanitized_projection_for_owner(tmp_path):
     handler = Handler();service = Service()
     assert dispatch(handler, state, service, principal('Owner'), '/api/ui/job-feed', 'GET') is True
     assert handler.status == 200
-    serialized = str(handler.payload)
-    assert handler.payload['counts']['action_required'] == 1
+    payload = handler.payload
+    serialized = str(payload)
+
+    # Contract consumed by Job-agent-pwa/src/types.ts. Pin names/types here so
+    # frontend and backend cannot drift while their repositories pass separately.
+    assert set(payload) == {'events', 'counts', 'job_counts', 'limit', 'privacy'}
+    assert set(payload['counts']) == {'unread', 'action_required', 'urgent'}
+    assert set(payload['job_counts']) == {'jobs', 'applications', 'actions'}
+    assert isinstance(payload['events'], list)
+    assert isinstance(payload['limit'], int)
+    assert isinstance(payload['privacy'], str)
+    assert payload['counts']['action_required'] == 1
+    assert payload['events']
+    assert set(payload['events'][0]) == {
+        'id', 'occurred_at', 'source', 'severity', 'title', 'summary',
+        'status', 'related_page', 'unread',
+    }
+    assert payload['events'][0]['source'] in {'notification', 'application', 'command'}
+    assert payload['events'][0]['severity'] in {'INFO', 'ACTION_REQUIRED', 'URGENT'}
+
     assert 'private command text' not in serialized
     assert 'private command result' not in serialized
     assert ('Owner', 'work.read', 'jobs', False) in service.calls
