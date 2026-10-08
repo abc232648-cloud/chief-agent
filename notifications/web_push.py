@@ -20,6 +20,9 @@ from control.notifications import (
 from operations.time_integrity import utc_now, utc_text
 
 ATTENTION_SEVERITIES=('ACTION_REQUIRED','URGENT')
+PUSH_TIMEOUT_SECONDS=3
+MAX_DELIVERY_ATTEMPTS=8
+PER_SUBSCRIPTION_BATCH=4
 _ALLOWED_PUSH_HOSTS={
     'fcm.googleapis.com',
     'push.services.mozilla.com',
@@ -144,41 +147,52 @@ def _default_sender(subscription,payload,settings):
         vapid_private_key=settings['private_key'],
         vapid_claims={'sub':settings['subject']},
         ttl=300,
-        timeout=5,
+        timeout=PUSH_TIMEOUT_SECONDS,
     )
 
 
-def _pending_for(store,cursor,limit=20):
+def _pending_for(store,cursor,limit=PER_SUBSCRIPTION_BATCH):
     from control.notifications import initialize
     initialize(store)
     with store._connect() as con:
         return [dict(row) for row in con.execute(
-            "SELECT id,title,body,severity FROM notifications WHERE id>? AND domain='jobs' AND severity IN ('ACTION_REQUIRED','URGENT') ORDER BY id ASC LIMIT ?",
+            "SELECT id,title,body,severity,related_page FROM notifications WHERE id>? AND domain='jobs' AND severity IN ('ACTION_REQUIRED','URGENT') ORDER BY id ASC LIMIT ?",
             (int(cursor),int(limit)),
         )]
 
 
-def dispatch_pending(store,*,sender=None,env=None,limit_per_subscription=20):
-    """Retry durable Job PWA attention notifications with at-least-once semantics.
+def dispatch_pending(store,*,sender=None,env=None,limit_per_subscription=PER_SUBSCRIPTION_BATCH,max_attempts=MAX_DELIVERY_ATTEMPTS):
+    """Retry durable Job PWA attention notifications with bounded at-least-once delivery.
 
     The subscription cursor advances only after a successful provider send. Stable
     notification tags let browsers collapse the rare duplicate caused by a process
-    crash after provider acceptance but before cursor persistence.
+    crash after provider acceptance but before cursor persistence. A bounded attempt
+    budget keeps a degraded push provider from monopolizing Chief's notification loop.
     """
     settings=_private_settings(env)
     if not settings:return {'status':'NOT_CONFIGURED','sent':0,'failed':0,'expired':0}
     send=sender or _default_sender
-    sent=failed=expired=0
+    try:
+        per_subscription=max(1,min(int(limit_per_subscription),20))
+        budget=max(1,min(int(max_attempts),50))
+    except (TypeError,ValueError):
+        raise ValueError('Invalid Web Push delivery limits.') from None
+    sent=failed=expired=attempted=0
     for subscription in push_subscriptions(store):
+        if attempted>=budget:break
         endpoint=subscription.get('endpoint','');principal=subscription.get('principal_id','')
         if not endpoint or not principal:continue
-        for item in _pending_for(store,subscription.get('cursor',0),limit_per_subscription):
+        remaining=min(per_subscription,budget-attempted)
+        for item in _pending_for(store,subscription.get('cursor',0),remaining):
+            if attempted>=budget:break
+            attempted+=1
             payload={
                 'title':str(item['title'])[:160],
                 'body':str(item['body'])[:500],
                 'severity':item['severity'],
                 'tag':f"chief-job-{item['id']}",
                 'url':'/jobs/',
+                'related_page':str(item.get('related_page') or '')[:120],
             }
             try:
                 send(subscription,payload,settings)
