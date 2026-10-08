@@ -24,7 +24,10 @@ jobs:
             inventory: release/ubuntu-inventory.json
             output: ubuntu-webpush-hashed.txt
           - os: windows-latest
-            python: '3.12.14'
+            # Hosted Actions does not currently provide exact 3.12.14 on Windows.
+            # Resolve on the maintained 3.12 ABI while preserving every exact
+            # package/version recorded in the 3.12.14 Windows inventory.
+            python: '3.12'
             inventory: release/windows-inventory.json
             output: windows-webpush-hashed.txt
     runs-on: ${{ matrix.os }}
