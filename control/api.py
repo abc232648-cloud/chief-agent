@@ -6,7 +6,19 @@ from . import notifications
 from database.store_extensions import add_audit
 
 
+def _require_jobs_principal():
+    from identity.context import current_human
+    principal=current_human()
+    if principal is None or 'jobs' not in principal.domains:
+        raise PermissionError('Signed-in Job Agent access is required.')
+    return principal
+
+
 def get(handler,store,root,path,query,*,registry,services=None):
+    if path == '/api/job-push/config':
+        principal=_require_jobs_principal()
+        from notifications.webpush import client_config
+        handler.json(client_config());return True
     if path == '/api/integrations/n8n/report-previews':
         from identity.context import current_human
         if services is None or services.reporting is None:raise PermissionError('Reporting is not configured.')
@@ -57,6 +69,19 @@ def get(handler,store,root,path,query,*,registry,services=None):
 
 
 def post(handler,store,root,path,body,*,registry,services=None):
+    if path in ('/api/job-push/subscribe','/api/job-push/unsubscribe'):
+        principal=_require_jobs_principal()
+        from notifications.webpush import subscribe,unsubscribe
+        if path.endswith('/subscribe'):
+            if set(body)!={'subscription'} or not isinstance(body['subscription'],dict):
+                raise ValueError('Supply only the browser push subscription.')
+            result=subscribe(store,body['subscription'])
+            add_audit(store,'notifications','Registered Job Agent Web Push subscription',actor=principal.id,data={'subscription_id':result['subscription_id']})
+        else:
+            if set(body)!={'endpoint'}:raise ValueError('Supply only the push endpoint to remove.')
+            result=unsubscribe(store,body['endpoint'])
+            add_audit(store,'notifications','Removed Job Agent Web Push subscription',actor=principal.id)
+        handler.json(result);return True
     if path == '/api/integrations/n8n/report-preview':
         from identity.context import current_human
         if services is None or services.reporting is None:raise PermissionError('Reporting is not configured.')
