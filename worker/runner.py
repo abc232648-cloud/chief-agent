@@ -75,8 +75,18 @@ def _owned_main(store, stopping=None, ready=lambda:None) -> int:
         if not 0.1<=poll<=60:raise ValueError('Worker poll interval must be between 0.1 and 60 seconds.')
         store.set_worker("IDLE", "Worker is running")
         ready()
+        next_push_check=0.0
         while not stopping.is_set():
             try:
+                now=time.monotonic()
+                if now>=next_push_check:
+                    from notifications.web_push import dispatch_pending
+                    result=dispatch_pending(store)
+                    # Delivery failures remain notification-channel failures, not worker failures.
+                    # The durable cursor is left unchanged so transient failures retry later.
+                    if result.get('failed'):
+                        add_audit(store,"notification","Web Push delivery will retry",status="RETRY",data={'failed':result['failed']})
+                    next_push_check=now+5.0
                 did_work = run_approved_once(processor)
                 if not did_work and not stopping.is_set():did_work=run_once(processor)
                 if not did_work:stopping.wait(poll)
