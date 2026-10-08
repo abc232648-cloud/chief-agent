@@ -1,6 +1,5 @@
 from __future__ import annotations
 import os
-import time
 
 from config.runtime import load_environment
 
@@ -65,27 +64,34 @@ def _owned_main(store, stopping=None, ready=lambda:None) -> int:
         for signum in (signal.SIGTERM,signal.SIGINT):
             old_handlers[signum]=signal.getsignal(signum)
             signal.signal(signum,lambda *_:stopping.set())
+
     def heartbeat():
         while not stopping.is_set():
             processor.controls.heartbeat();stopping.wait(5)
-    thread=Thread(target=heartbeat,daemon=True)
+
+    def push_delivery():
+        from notifications.web_push import dispatch_pending
+        while not stopping.is_set():
+            try:
+                # Notification transport is deliberately isolated from Job execution.
+                # Provider/network failures retain durable cursors and retry later.
+                dispatch_pending(store)
+            except Exception:
+                # Do not turn a notification-channel problem into worker failure or
+                # leak provider exception details into the operational audit trail.
+                pass
+            stopping.wait(5)
+
+    heartbeat_thread=Thread(target=heartbeat,daemon=True,name='chief-heartbeat')
+    push_thread=Thread(target=push_delivery,daemon=True,name='chief-job-webpush')
     try:
-        thread.start()
+        heartbeat_thread.start();push_thread.start()
         poll = float(os.environ.get("WORKER_POLL_SECONDS", "2"))
         if not 0.1<=poll<=60:raise ValueError('Worker poll interval must be between 0.1 and 60 seconds.')
         store.set_worker("IDLE", "Worker is running")
         ready()
-        next_push_check=0.0
         while not stopping.is_set():
             try:
-                now=time.monotonic()
-                if now>=next_push_check:
-                    from notifications.web_push import dispatch_pending
-                    # Web Push is a best-effort notification channel. Transient provider
-                    # failures keep the durable cursor unchanged and retry on a later pass;
-                    # they must not turn the worker unhealthy or spam the audit log.
-                    dispatch_pending(store)
-                    next_push_check=now+5.0
                 did_work = run_approved_once(processor)
                 if not did_work and not stopping.is_set():did_work=run_once(processor)
                 if not did_work:stopping.wait(poll)
@@ -97,12 +103,16 @@ def _owned_main(store, stopping=None, ready=lambda:None) -> int:
         return 0
     finally:
         stopping.set()
-        if thread.is_alive():thread.join(timeout=12)
+        if heartbeat_thread.is_alive():heartbeat_thread.join(timeout=12)
+        if push_thread.is_alive():push_thread.join(timeout=30)
         for signum,handler in old_handlers.items():signal.signal(signum,handler)
         store.set_worker("STOPPED", "Worker stopped; unresolved actions remain review-only")
-        if thread.is_alive():
+        if heartbeat_thread.is_alive():
             # Do not hand ownership to a second worker while an old heartbeat can still write.
-            thread.join()
+            heartbeat_thread.join()
+        if push_thread.is_alive():
+            # Push cursor persistence also writes Chief state; finish before releasing ownership.
+            push_thread.join()
 
 
 if __name__ == "__main__":
