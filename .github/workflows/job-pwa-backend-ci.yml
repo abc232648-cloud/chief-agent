@@ -19,6 +19,7 @@ on:
       - 'tests/test_job_attention.py'
       - 'tests/test_job_activity_feed.py'
       - 'tests/test_job_pwa_ui.py'
+      - 'tests/test_job_push_http.py'
       - 'docs/PWA-Routing.md'
       - '.github/workflows/job-pwa-backend-ci.yml'
   pull_request:
@@ -39,6 +40,7 @@ on:
       - 'tests/test_job_attention.py'
       - 'tests/test_job_activity_feed.py'
       - 'tests/test_job_pwa_ui.py'
+      - 'tests/test_job_push_http.py'
       - 'docs/PWA-Routing.md'
       - '.github/workflows/job-pwa-backend-ci.yml'
 
@@ -55,8 +57,8 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-      - name: Install focused test dependencies
-        run: python -m pip install pytest 'pywebpush>=2.0.3,<3.0'
+      - name: Install Chief test dependencies
+        run: python -m pip install -r requirements-test.txt
       - name: Compile changed Python surfaces
         run: >-
           python -m compileall -q
@@ -66,7 +68,7 @@ jobs:
           worker/command_processor.py
           application/job_activity_feed.py
           application/ui_api.py
-      - name: Run Job PWA notification, privacy and delivery tests
+      - name: Run Job PWA notification, privacy, authority and delivery tests
         run: >-
           python -m pytest -q
           tests/test_web_push.py
@@ -74,6 +76,7 @@ jobs:
           tests/test_job_attention.py
           tests/test_job_activity_feed.py
           tests/test_job_pwa_ui.py
+          tests/test_job_push_http.py
 
   full-suite:
     runs-on: ubuntu-latest
