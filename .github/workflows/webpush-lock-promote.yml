@@ -63,7 +63,15 @@ jobs:
       - name: Validate promoted release manifests
         run: python -m pytest -q tests/test_release_package.py
       - name: Show promotion diff
-        run: git diff --check && git diff --stat && git status --short
+        shell: bash
+        run: |
+          set -euxo pipefail
+          # The generated pip lockfiles are byte-pinned above by SHA-256 and
+          # validated as release manifests. Do not apply source whitespace lint
+          # to their continuation syntax; keep it for all human-maintained files.
+          git diff --check -- . ':(exclude)release/ubuntu-hashed.txt' ':(exclude)release/windows-hashed.txt'
+          git diff --stat
+          git status --short
       - name: Commit verified runtime manifests and retire staging tooling
         shell: bash
         run: |
@@ -72,7 +80,7 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add requirements.txt release/ubuntu-hashed.txt release/windows-hashed.txt release/ubuntu-inventory.json release/windows-inventory.json
           git rm .github/workflows/webpush-lock-candidate.yml .github/workflows/webpush-lock-promote.yml tools/resolve_webpush_lock.py tools/promote_webpush_lock.py
-          git diff --cached --check
+          git diff --cached --check -- . ':(exclude)release/ubuntu-hashed.txt' ':(exclude)release/windows-hashed.txt'
           git status --short
           git commit -m 'build(release): pin Web Push runtime dependencies'
           git push origin HEAD:refs/heads/consolidate/job-pwa-backend-current
