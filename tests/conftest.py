@@ -24,10 +24,57 @@ def qualified_acceptance_browser(monkeypatch):
 def explicit_isolated_instance(tmp_path,monkeypatch):
     import json
     (tmp_path/'.chief-isolated-development.json').write_text(json.dumps({'purpose':'ISOLATED_DEVELOPMENT'}))
+    # Every test starts from a development/test baseline. Individual tests may
+    # opt into production/service flags afterwards through their own monkeypatch.
+    # This prevents process-global environment writes in one regression from
+    # contaminating a later, otherwise isolated test.
+    for name in ('CHIEF_SERVICE_CONFIGURED','CHIEF_FARM_PRODUCTION','CHIEF_TRUSTED_PROXY'):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv('CHIEF_INSTANCE_MODE','test')
     monkeypatch.setenv('CHIEF_ISOLATED_ROOT',str(tmp_path))
     monkeypatch.setenv('CHIEF_STATE_ROOT',str(tmp_path))
     monkeypatch.setenv('JOB_WORKER_DB',str(tmp_path/'worker.db'))
+
+@pytest.fixture(autouse=True)
+def portable_ci_secret_backend(monkeypatch):
+    """Provide an authenticated, non-plaintext secret backend on hosted CI only.
+
+    Chief's Linux production backend remains systemd-creds and remains fail-closed.
+    GitHub hosted runners do not provide the host-bound credential key required by
+    that backend, so the full regression suite may explicitly request this
+    process-local AES-GCM test double. The real OS backend remains a host
+    acceptance concern and production code is not given a fallback.
+    """
+    import os
+    if os.environ.get('CHIEF_TEST_SECRET_BACKEND') != 'portable-aead':
+        return
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from private_secrets import imported
+
+    key=AESGCM.generate_key(bit_length=256)
+    cipher=AESGCM(key)
+    magic=b'chief-test-aead-v1\0'
+    aad=b'chief-model-key'
+
+    def protected(operation,value):
+        if operation == 'encrypt':
+            if not isinstance(value,(bytes,bytearray)):
+                raise ValueError('Test credential must be bytes.')
+            nonce=os.urandom(12)
+            return magic+nonce+cipher.encrypt(nonce,bytes(value),aad)
+        if operation == 'decrypt':
+            blob=bytes(value)
+            offset=len(magic)
+            if not blob.startswith(magic) or len(blob) <= offset+12:
+                raise ValueError('Invalid test credential envelope.')
+            nonce=blob[offset:offset+12]
+            try:
+                return cipher.decrypt(nonce,blob[offset+12:],aad)
+            except Exception as exc:
+                raise ValueError('Invalid test credential envelope.') from exc
+        raise ValueError('Unsupported test credential operation.')
+
+    monkeypatch.setattr(imported,'_systemd',protected)
 
 @pytest.fixture
 def dashboard(tmp_path, monkeypatch):

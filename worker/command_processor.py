@@ -281,6 +281,7 @@ class CommandProcessor:
                 results.append({"action": action, "result": execution})
 
             result = {"summary": plan.get("summary", ""), "results": results, "approvals": approvals}
+            blocked_steps = [item for item in results if item.get('status') == 'BLOCKED' or item.get('result', {}).get('status') == 'BLOCKED']
             failed_steps = [item for item in results if item.get('status') == 'BLOCKED' or
                             item.get('result', {}).get('status') in {'FAILED', 'NOT_EXECUTED', 'BLOCKED', 'HTTP_QUARANTINED', 'REVIEW', 'ERROR', 'PAUSED', 'REVOKED', 'DISABLED', 'LOGIN_REQUIRED', 'SIGNING_IN', 'SAVE_REQUESTED'}]
             if failed_steps:
@@ -301,11 +302,33 @@ class CommandProcessor:
             add_audit(self.store, "command", f"Finished dashboard command #{command_id}", status=status, data={"command_id": command_id, "approvals": approvals})
             self.store.set_worker(status, message)
             if approvals:
-                self.store.add_notification("Action required", message, "WARNING")
+                count = len(approvals)
+                self.store.add_notification(
+                    'Job Agent approval required',
+                    f'Command #{command_id} is waiting for {count} user approval' + ('s.' if count != 1 else '.'),
+                    'ACTION_REQUIRED',
+                    domain='jobs',
+                    related_page='actions',
+                )
+            if blocked_steps:
+                count = len(blocked_steps)
+                self.store.add_notification(
+                    'Job Agent STOP',
+                    f'Command #{command_id} hit {count} blocked action' + ('s.' if count != 1 else '.') + ' No blocked action was executed.',
+                    'URGENT',
+                    domain='jobs',
+                    related_page='actions',
+                )
             return result
         except Exception as exc:
             self.store.update_command(command_id, "FAILED", str(exc))
             add_audit(self.store, "error", f"Command #{command_id} failed", status="FAILED", details=str(exc), data={"command_id": command_id})
             self.store.set_worker("ERROR", f"Command #{command_id}: {type(exc).__name__}: {exc}")
-            self.store.add_notification("Worker error", f"Command #{command_id} failed: {exc}", "ERROR")
+            self.store.add_notification(
+                'Job Agent stopped on an error',
+                f'Command #{command_id} failed. Review recorded Job Agent activity before retrying.',
+                'URGENT',
+                domain='jobs',
+                related_page='applicationArchive',
+            )
             raise
