@@ -16,6 +16,7 @@ on:
       - 'tests/test_notifications.py'
       - 'tests/test_job_attention.py'
       - 'tests/test_job_activity_feed.py'
+      - 'tests/test_job_pwa_ui.py'
       - 'docs/PWA-Routing.md'
       - '.github/workflows/job-pwa-backend-ci.yml'
   pull_request:
@@ -33,6 +34,7 @@ on:
       - 'tests/test_notifications.py'
       - 'tests/test_job_attention.py'
       - 'tests/test_job_activity_feed.py'
+      - 'tests/test_job_pwa_ui.py'
       - 'docs/PWA-Routing.md'
       - '.github/workflows/job-pwa-backend-ci.yml'
 
@@ -67,3 +69,4 @@ jobs:
           tests/test_notifications.py
           tests/test_job_attention.py
           tests/test_job_activity_feed.py
+          tests/test_job_pwa_ui.py
