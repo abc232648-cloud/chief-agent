@@ -23,6 +23,8 @@ Chief records Job attention in the shared notification ledger. Only `ACTION_REQU
 
 The delivery channel is observational: push provider latency or failure must not change Job policy decisions, approvals, execution outcomes, or retry semantics. Delivery work is bounded and isolated from the Job execution loop.
 
+The managed Chief runtime pins `pywebpush==2.5.0` in the platform-specific hash-locked release manifests. Production installation must use those managed manifests rather than resolving a current Web Push dependency set at install time.
+
 Production Web Push requires:
 
 - `WEB_PUSH_VAPID_PUBLIC_KEY` — public VAPID application-server key;
