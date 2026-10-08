@@ -43,7 +43,19 @@ CREATE TABLE IF NOT EXISTS monitoring_tasks (
  interval_days INTEGER NOT NULL DEFAULT 1, last_run_at TEXT, next_due_at TEXT, status TEXT NOT NULL DEFAULT 'READY',
  notes TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS web_push_subscriptions (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ human_id TEXT NOT NULL,
+ domain TEXT NOT NULL CHECK(domain='jobs') DEFAULT 'jobs',
+ endpoint TEXT NOT NULL UNIQUE,
+ p256dh TEXT NOT NULL,
+ auth TEXT NOT NULL,
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_web_push_subscriptions_human_domain ON web_push_subscriptions(human_id,domain);
 """
+
 
 def init_extensions(store):
     with store._connect() as con:
@@ -138,6 +150,7 @@ def add_candidate_fact(store, item):
         )
         return int(cur.lastrowid)
 
+
 def candidate_facts(store, status=None, limit=500):
     q='SELECT * FROM candidate_facts'; args=[]
     if status:
@@ -145,6 +158,7 @@ def candidate_facts(store, status=None, limit=500):
     q += ' ORDER BY id DESC LIMIT ?'; args.append(limit)
     with store._connect() as con:
         return [dict(r) for r in con.execute(q,args)]
+
 
 def update_candidate_fact(store, fact_id, status):
     if status not in {'USER_CONFIRMED','REVOKED','PROPOSED'}:
@@ -154,6 +168,7 @@ def update_candidate_fact(store, fact_id, status):
             "UPDATE candidate_facts SET status=?, updated_at=CURRENT_TIMESTAMP, confirmed_at=CASE WHEN ?='USER_CONFIRMED' THEN CURRENT_TIMESTAMP ELSE confirmed_at END, revoked_at=CASE WHEN ?='REVOKED' THEN CURRENT_TIMESTAMP ELSE revoked_at END WHERE id=?",
             (status, status, status, fact_id)
         )
+
 
 def get_action(store, action_id):
     with store._connect() as c:
@@ -170,9 +185,11 @@ def add_application_snapshot(store, item):
              json.dumps(item.get('cv_snapshot',{}),ensure_ascii=False),item.get('cover_letter_text',''),json.dumps(item.get('form_fields',[]),ensure_ascii=False),item.get('source_url','')))
         return int(cur.lastrowid)
 
+
 def application_snapshots(store, application_id, limit=100):
     with store._connect() as con:
         return [dict(r) for r in con.execute('SELECT * FROM application_snapshots WHERE application_id=? ORDER BY id DESC LIMIT ?', (application_id,limit))]
+
 
 def add_application_event(store, application_id, event_type, status='RECORDED', details='', data=None):
     from operations.correlation import references
@@ -182,9 +199,11 @@ def add_application_event(store, application_id, event_type, status='RECORDED', 
                         (application_id,event_type,status,details,json.dumps(redact(data or {}),ensure_ascii=False)))
         return int(cur.lastrowid)
 
+
 def application_events(store, application_id, limit=200):
     with store._connect() as con:
         return [dict(r) for r in con.execute('SELECT * FROM application_events WHERE application_id=? ORDER BY id DESC LIMIT ?', (application_id,limit))]
+
 
 def application_detail(store, application_id):
     with store._connect() as con:
@@ -194,3 +213,31 @@ def application_detail(store, application_id):
         out['snapshots']=[dict(r) for r in con.execute('SELECT * FROM application_snapshots WHERE application_id=? ORDER BY id DESC',(application_id,))]
         out['events']=[dict(r) for r in con.execute('SELECT * FROM application_events WHERE application_id=? ORDER BY id DESC',(application_id,))]
         return out
+
+
+def _install_job_push_hook():
+    # Store already uses this extension module as its versioned extension surface.
+    # Hook notification creation once so future job workflows inherit push without
+    # duplicating network-delivery calls throughout the agent.
+    from database.store import Store
+    original = Store.add_notification
+    if getattr(original, '_job_pwa_push_hook', False):
+        return
+
+    def add_notification_with_job_push(self, title, body, severity='INFO', domain='system', related_page=''):
+        result = original(self, title, body, severity, domain, related_page)
+        if domain == 'jobs' and str(severity).upper() in {'ACTION_REQUIRED', 'URGENT'}:
+            try:
+                from notifications.web_push import send_job_push
+                send_job_push(self, title, body, severity, related_page)
+            except Exception:
+                # A failed external delivery channel must never break the local
+                # notification ledger or Job Agent execution.
+                pass
+        return result
+
+    add_notification_with_job_push._job_pwa_push_hook = True
+    Store.add_notification = add_notification_with_job_push
+
+
+_install_job_push_hook()
