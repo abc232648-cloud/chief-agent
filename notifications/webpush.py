@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,8 @@ MAX_SUBSCRIPTIONS = 8
 MAX_STATE_BYTES = 128 * 1024
 STATE_FILE = 'job-web-push-subscriptions.json'
 ATTENTION_SEVERITIES = frozenset({'ACTION_REQUIRED', 'URGENT'})
+PUSH_TIMEOUT_SECONDS = 3
+MAX_PUSH_WORKERS = 4
 
 
 def _environment(env=None):
@@ -27,12 +30,16 @@ def _private_key(env=None) -> str:
     ).strip()
 
 
+def _valid_subject(subject: str) -> bool:
+    return subject.startswith('mailto:') or subject.startswith('https://')
+
+
 def client_config(env=None) -> dict[str, Any]:
     """Return only browser-safe Web Push configuration.
 
-    The public key is exposed only when the corresponding private key and VAPID
-    subject are also available. Production private keys therefore still have to
-    pass Chief's secret-reference boundary.
+    The public key is exposed only when the corresponding private key and valid
+    VAPID contact subject are also available. Production private keys therefore
+    still have to pass Chief's secret-reference boundary.
     """
     e = _environment(env)
     public_key = str(e.get('CHIEF_WEB_PUSH_PUBLIC_KEY', '')).strip()
@@ -41,7 +48,7 @@ def client_config(env=None) -> dict[str, Any]:
         private_ready = bool(_private_key(e))
     except Exception:
         private_ready = False
-    enabled = bool(public_key and subject and private_ready)
+    enabled = bool(public_key and _valid_subject(subject) and private_ready)
     return {
         'enabled': enabled,
         'public_key': public_key if enabled else '',
@@ -140,8 +147,24 @@ def _wire_subscription(item: dict[str, str]) -> dict[str, Any]:
     return {'endpoint': item['endpoint'], 'keys': {'p256dh': item['p256dh'], 'auth': item['auth']}}
 
 
+def _send_one(webpush, item: dict[str, str], payload: str, private_key: str, subject: str) -> tuple[str, bool, bool]:
+    try:
+        webpush(
+            subscription_info=_wire_subscription(item),
+            data=payload,
+            vapid_private_key=private_key,
+            vapid_claims={'sub': subject},
+            ttl=300,
+            timeout=PUSH_TIMEOUT_SECONDS,
+        )
+        return item['endpoint'], True, False
+    except Exception as exc:
+        response = getattr(exc, 'response', None)
+        return item['endpoint'], False, getattr(response, 'status_code', None) in {404, 410}
+
+
 def deliver_job_attention(store, *, notification_id: int, title: str, body: str, severity: str, related_page: str = '') -> dict[str, int]:
-    """Best-effort Web Push; never raises into the caller's job workflow."""
+    """Best-effort bounded Web Push; never raises into the caller's job workflow."""
     severity = str(severity or '').upper()
     if severity not in ATTENTION_SEVERITIES:
         return {'attempted': 0, 'sent': 0, 'removed': 0}
@@ -155,6 +178,8 @@ def deliver_job_attention(store, *, notification_id: int, title: str, body: str,
         from pywebpush import webpush
     except Exception:
         return {'attempted': 0, 'sent': 0, 'removed': 0}
+    if not subscriptions:
+        return {'attempted': 0, 'sent': 0, 'removed': 0}
 
     payload = json.dumps({
         'id': notification_id,
@@ -165,21 +190,19 @@ def deliver_job_attention(store, *, notification_id: int, title: str, body: str,
     }, separators=(',', ':'))
     sent = 0
     dead = set()
-    for item in subscriptions:
-        try:
-            webpush(
-                subscription_info=_wire_subscription(item),
-                data=payload,
-                vapid_private_key=private_key,
-                vapid_claims={'sub': subject},
-                ttl=300,
-                timeout=5,
-            )
-            sent += 1
-        except Exception as exc:
-            response = getattr(exc, 'response', None)
-            if getattr(response, 'status_code', None) in {404, 410}:
-                dead.add(item['endpoint'])
+    workers = min(MAX_PUSH_WORKERS, len(subscriptions))
+    try:
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='chief-webpush') as pool:
+            futures = [pool.submit(_send_one, webpush, item, payload, private_key, subject) for item in subscriptions]
+            for future in as_completed(futures):
+                endpoint, delivered, expired = future.result()
+                sent += int(delivered)
+                if expired:
+                    dead.add(endpoint)
+    except Exception:
+        # Delivery must remain observational. Command execution and recorded
+        # notification state stay authoritative even if the sender fails.
+        pass
     if dead:
         try:
             _write(store, [item for item in subscriptions if item['endpoint'] not in dead])
