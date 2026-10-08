@@ -1,7 +1,8 @@
-"""Private, bounded PNG attachments to authorized staff work. No file paths.
+"""Private, bounded PNG attachments to authorized Farm work. No file paths.
 
 Bytes live in the existing private database, so its consistent backup includes
 attachments. Only simple RGB/RGBA PNGs are accepted; metadata is not retained.
+Both legacy Staff work and the authoritative field-task ledger are supported.
 """
 import base64
 import binascii
@@ -10,7 +11,7 @@ import json
 import struct
 import time
 import zlib
-from . import setup, staff
+from . import setup, staff, tasks
 from .journal import identifier
 from identity.service import IdentityService
 from operations.time_integrity import utc_now, utc_text
@@ -75,14 +76,21 @@ def normalize_png(encoded):
 
 
 def authorized_item(store, con, principal, work_id):
+    """Return a refreshed principal only when ``work_id`` is in its Farm scope."""
     principal = setup.authorize(store, con, principal, 'read')
-    item = staff.projection(staff.rows(con)).get(work_id)
-    if not item:
-        raise PermissionError('Work item is unavailable.')
-    manager = setup.role(con, principal) in {'OWNER', 'GENERAL_MANAGER', 'SUPERVISOR'}
-    if not manager and principal.id not in {item['reporter'], item['assignee']}:
-        raise PermissionError('Attachment is outside your work scope.')
-    return principal
+    role = setup.role(con, principal)
+
+    legacy = staff.projection(staff.rows(con)).get(work_id)
+    if legacy:
+        manager = role in {'OWNER', 'GENERAL_MANAGER', 'SUPERVISOR'}
+        if not manager and principal.id not in {legacy['reporter'], legacy['assignee']}:
+            raise PermissionError('Attachment is outside your work scope.')
+        return principal
+
+    task = tasks._snapshots(tasks.rows(con)).get(work_id)
+    if task and tasks._can_view(role, principal.id, task):
+        return principal
+    raise PermissionError('Work item is unavailable.')
 
 
 def records(con, *, work_id=None, photo_id=None, metadata_only=False):
