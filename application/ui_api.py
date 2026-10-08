@@ -70,6 +70,10 @@ def dispatch(handler,store,service,principal,path,method):
     if path=='/api/ui/job-state':
         service.authorize(principal,'work.read','jobs',sensitive=False)
         handler.json(job_state(store,include_notifications=permitted(service,principal,'audit.read')));return True
+    if path=='/api/ui/job-feed':
+        service.authorize(principal,'work.read','jobs',sensitive=False)
+        from .job_pwa_feed import recent_job_feed
+        handler.json(recent_job_feed(store));return True
     if path=='/api/ui/approval-access':
         from .auth_routes import action_domain
         service.authorize(principal,'work.read','jobs',sensitive=False)
