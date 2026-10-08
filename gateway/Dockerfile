@@ -10,6 +10,7 @@ COPY application ./application
 COPY capabilities ./capabilities
 COPY compatibility ./compatibility
 COPY update_center ./update_center
+COPY installation ./installation
 COPY runtime_qualification ./runtime_qualification
 COPY domains ./domains
 COPY security ./security

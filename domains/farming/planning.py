@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 """Optional, versioned planning scenarios. Never money/stock events or authority.
 
 All inputs are human-supplied assumptions, not automatically verified observations.
@@ -97,7 +98,7 @@ def calculate(p):
 def _evidence_revision(con):
     # A bounded marker, not a claim of evidence completeness. Corrections/voids
     # append new records and therefore also trigger review of older scenarios.
-    return str(con.execute("SELECT coalesce(max(id),0) FROM domain_records WHERE domain='farming' AND kind IN ('poultry_journal_v1','farm_bookkeeping_v1')").fetchone()[0])
+    return str(con.execute("SELECT coalesce(max(id),0) FROM domain_records WHERE domain='farming' AND (kind IN ('poultry_journal_v1','farm_bookkeeping_v1') OR (kind='farm_clarification_v1' AND json_extract(data_json,'$.payload.operation')='apply' AND json_extract(data_json,'$.source_kind')!='farm_planning_scenario_v1'))").fetchone()[0])
 
 
 def _latest(con):
@@ -114,7 +115,7 @@ def preview(store, principal, p):
     return result
 
 
-def save(store, principal, p):
+def save(store, principal, p, *, connection=None):
     if not isinstance(p, dict) or set(p) != SAVE_FIELDS:
         raise ValueError('Supply a complete reviewed plan and its revision identifiers.')
     identifier(p['event_id'])
@@ -122,8 +123,11 @@ def save(store, principal, p):
         identifier(p['expected_revision'])
     if not isinstance(p['expected_evidence_revision'], str) or not re.fullmatch(r'\d{1,20}', p['expected_evidence_revision']):
         raise ValueError('Preview the plan before saving it.')
-    with store._connect() as con:
-        con.execute('BEGIN IMMEDIATE')
+    with (store._connect() if connection is None else nullcontext(connection)) as con:
+        if connection is None:
+            con.execute('BEGIN IMMEDIATE')
+        elif not con.in_transaction:
+            raise ValueError('A caller-owned transaction is required.')
         principal = setup.authorize(store, con, principal, 'approve')
         setup.available(store, con)
         prior = con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? AND json_extract(data_json,'$.payload.event_id')=?", (KIND, p['event_id'])).fetchone()

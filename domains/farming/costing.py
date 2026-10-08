@@ -42,7 +42,8 @@ def report(store, principal, *, start, end, currency, feed_minor_per_kg=None):
         key = category if category in {'FEED', 'BIRDS'} else ('RECURRING' if category and category != 'OTHER' else 'UNCLASSIFIED')
         categories[key] += p['amount_minor']
     limitations = ['Expense and production coverage has not been certified.',
-                   'Saleable production is unavailable: losses are not linked to production cohorts.']
+                   'Saleable production is unavailable: losses are not linked to production cohorts.',
+                   'Recorded operating expenses may be one-off. Their frequency is not established and no future repeat is assumed.']
     if not any(p['kind'] == 'feed_used' for p in movements):
         limitations.append('No feed consumption records in this period; absence does not establish zero consumption.')
     if not any(p['kind'] == 'eggs_collected' for p in movements):
@@ -50,7 +51,7 @@ def report(store, principal, *, start, end, currency, feed_minor_per_kg=None):
     if feed_minor_per_kg is None:
         limitations.append('Feed valuation is not supplied.')
     if categories['UNCLASSIFIED']:
-        limitations.append('Unclassified expenses are excluded from recurring cost pending classification.')
+        limitations.append('Unclassified expenses are excluded from operating cost pending classification.')
     if any(p['currency'] != currency for p in expenses):
         limitations.append('Other currencies are excluded; no exchange rate is assumed.')
     if any(p['basis'] == 'ESTIMATED' for p in movements):
@@ -67,6 +68,7 @@ def report(store, principal, *, start, end, currency, feed_minor_per_kg=None):
             'saleable_eggs': None, 'saleable_cost_per_egg_minor': None,
             'feed_purchases_minor': str(categories['FEED']), 'bird_acquisition_minor': str(categories['BIRDS']),
             'recurring_expenses_minor': str(categories['RECURRING']), 'unclassified_expenses_minor': str(categories['UNCLASSIFIED']),
+            'operating_expenses_minor': str(categories['RECURRING']), 'expense_recurrence': 'NOT_ESTABLISHED',
             'consumed_feed_cost_minor': str(feed_cost) if feed_cost is not None else None,
             'recorded_recurring_cost_minor': str(total) if total is not None else None,
             'cost_per_collected_egg_minor': str(per_egg) if per_egg is not None else None,

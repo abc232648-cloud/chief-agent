@@ -13,7 +13,7 @@ async function mountCosting(){
   const root=document.createElement('section');root.id='farmCosting';document.getElementById('farmFinanceCard').append(root);
   const add=(tag,text,parent=root)=>{const e=document.createElement(tag);if(text)e.textContent=text;parent.append(e);return e;};
   add('h3','Whole-farm costing');
-  add('p','Compare recorded feed consumed and recurring expenses with eggs collected. This is a provisional estimate, not profit or permission to spend. Missing records remain incomplete.');
+  add('p','Compare recorded feed consumed and other operating expenses with eggs collected. One-off expenses are not assumed to repeat. This is a provisional estimate, not profit or permission to spend. Missing records remain incomplete.');
   const form=add('form'),input=(parent,label,id,type='text')=>{const l=add('label',label,parent),i=add('input',null,l);i.id=id;i.type=type;return i;};
   const start=input(form,'From (Lagos)','farmCostStart','date'),end=input(form,'Through (Lagos)','farmCostEnd','date');start.required=end.required=true;
   const today=new Date(Date.now()+3600000).toISOString().slice(0,10);start.value=end.value=today;
@@ -28,7 +28,7 @@ async function mountCosting(){
     add('p','Feed price: '+({UNKNOWN:'Unknown',RECORDED_PRICE:'Owner-recorded price',PLANNING_ESTIMATE:'Optional planning estimate',UNCLASSIFIED:'Older setting — basis not recorded'}[r.price_basis]||'Unknown'),output);
     if(r.price_source)add('p','Price source: '+r.price_source,output);
     for(const [label,key] of [['Feed consumed (kg)','feed_consumed_kg'],['Eggs collected','collected_eggs']])add('p',label+': '+(r[key]===null?'Unavailable':r[key]),output);
-    for(const [label,key] of [['Feed purchases','feed_purchases_minor'],['Bird acquisition','bird_acquisition_minor'],['Recurring expenses','recurring_expenses_minor'],['Consumed feed valuation','consumed_feed_cost_minor'],['Cost per collected egg','cost_per_collected_egg_minor'],['Cost per saleable egg','saleable_cost_per_egg_minor']])add('p',label+': '+farmCostMoney(r[key],r.currency,key.includes('per_egg')||key.includes('per_collected_egg')?4:2),output);
+    for(const [label,key] of [['Feed purchases','feed_purchases_minor'],['Bird acquisition','bird_acquisition_minor'],['Other recorded operating expenses','operating_expenses_minor'],['Consumed feed valuation','consumed_feed_cost_minor'],['Cost per collected egg','cost_per_collected_egg_minor'],['Cost per saleable egg','saleable_cost_per_egg_minor']])add('p',label+': '+farmCostMoney(r[key],r.currency,key.includes('per_egg')||key.includes('per_collected_egg')?4:2),output);
     add('p','Money is shown in '+r.currency+', rounded for display. Cost estimates remain provisional.',output);
     const list=add('ul',null,output);for(const text of r.limitations)add('li',text,list);
     const refs=add('details',null,output);add('summary','Source references and settings version',refs);add('p','Settings version: '+r.policy_revision,refs);for(const ref of r.source_references)add('p',ref,refs);

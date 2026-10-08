@@ -74,6 +74,45 @@ def test_browser_correction_then_expense_link_preserves_cost(dashboard):
         finally:browser.close()
 
 
+def test_browser_correction_waits_for_record_refresh(dashboard):
+    """A slow refresh must not expose old actionable rows after a save."""
+    from playwright.sync_api import sync_playwright, expect
+    d = dashboard
+    labour.append(d.store, d.credentials['principal'], work())
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.add_init_script("""(() => {
+              const original = window.fetch;
+              window.fetch = async (...args) => {
+                const response = await original(...args);
+                if (window.holdLabourRefresh && String(args[0]).includes('/api/farm/labour?')) {
+                  window.labourRefreshHeld = true;
+                  await new Promise(resolve => { window.releaseLabourRefresh = resolve; });
+                }
+                return response;
+              };
+            })();""")
+            page.goto(d.url + '/work')
+            page.get_by_role('button', name='Expand all sections', exact=True).click()
+            page.get_by_role('button', name='Correct labour record', exact=True).click()
+            page.fill('#farmLabourTask', 'Corrected synthetic task')
+            page.fill('#farmLabourReason', 'Checked work register')
+            page.evaluate('window.holdLabourRefresh = true')
+            page.get_by_role('button', name='Save labour correction', exact=True).click()
+            page.wait_for_function('() => window.labourRefreshHeld === true')
+            assert page.locator('#farmLabourHistory').evaluate('(element) => element.inert')
+            expect(page.locator('#farmLabourStatus')).not_to_contain_text('Correction recorded.')
+            expect(page.locator('#farmLabourHistory')).not_to_contain_text('Corrected synthetic task')
+            page.evaluate('window.holdLabourRefresh = false; window.releaseLabourRefresh()')
+            expect(page.locator('#farmLabourStatus')).to_contain_text('Correction recorded.')
+            expect(page.locator('#farmLabourHistory')).to_contain_text('Corrected synthetic task')
+            assert not page.locator('#farmLabourHistory').evaluate('(element) => element.inert')
+        finally:
+            browser.close()
+
+
 def test_manager_cannot_link_and_mismatched_expense_is_rejected(dashboard):
     d=dashboard;p=d.credentials['principal'];w=work();labour.append(d.store,p,w)
     service=IdentityService(d.store);service.create_user(p,'labour-manager',PASSWORD,'Manager',('farming',));_,manager=service.login('labour-manager',PASSWORD)

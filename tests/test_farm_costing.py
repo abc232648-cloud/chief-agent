@@ -21,6 +21,8 @@ def test_costs_use_consumption_and_incurred_categories_not_cash(dashboard):
     assert r['cost_per_collected_egg_minor']=='52.5000'
     assert r['feed_purchases_minor']=='10000' and r['bird_acquisition_minor']=='20000'
     assert r['unclassified_expenses_minor']=='30'
+    assert r['operating_expenses_minor']==r['recurring_expenses_minor']=='100'
+    assert r['expense_recurrence']=='NOT_ESTABLISHED'
     assert r['saleable_eggs'] is None and r['authority']=='NONE'
     assert r['status']=='PROVISIONAL'
 

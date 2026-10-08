@@ -22,6 +22,8 @@ async function mountLabour(){
   cancel.onclick=()=>{if(pending){status.textContent='A save has an unknown outcome. Retry unchanged or reload before cancelling.';return;}corrects=null;form.reset();currency.value='NGN';save.textContent='Save labour record';cancel.hidden=true;};
   const newer=add('button','Newer labour records'),older=add('button','Older labour records');newer.type=older.type='button';
   async function refresh(){
+    list.inert=true;list.setAttribute('aria-busy','true');
+    try{
     const data=await api('/api/farm/labour?offset='+offset);list.replaceChildren();
     for(const r of data.items){
       const p=r.payload,row=add('article',null,list);row.className='labourItem';
@@ -46,7 +48,7 @@ async function mountLabour(){
           const fields={operation:'UNLINK_EXPENSE',link_id:r.expense_link_id,reason:why.value},signature=JSON.stringify(fields);
           if(unlinkPending&&unlinkPending.signature!==signature)throw Error('Retry unchanged or reload: previous removal outcome is unknown.');
           if(!unlinkPending)unlinkPending={signature,payload:{...fields,event_id:crypto.randomUUID()}};
-          await farmPost('/api/farm/labour',unlinkPending.payload);unlinkPending=null;status.textContent='Link removed. Expense and payment history unchanged. You can now correct the work record.';await refresh();
+          await farmPost('/api/farm/labour',unlinkPending.payload);unlinkPending=null;await refresh();status.textContent='Link removed. Expense and payment history unchanged. You can now correct the work record.';
         }catch(error){if(error.status>=400&&error.status<500)unlinkPending=null;status.textContent=error.message;}finally{unlink.disabled=false;}};
       }
       if(data.can_link&&r.is_current&&!r.expense_id&&p.agreed_total_minor!==null){
@@ -63,19 +65,20 @@ async function mountLabour(){
             const fields={operation:'LINK_EXPENSE',work_id:p.event_id,expense_id:select.value,reason:why.value},signature=JSON.stringify(fields);
             if(linkPending&&linkPending.signature!==signature)throw Error('Retry the previous link unchanged or reload; its outcome is unknown.');
             if(!linkPending)linkPending={signature,payload:{...fields,event_id:crypto.randomUUID()}};
-            await farmPost('/api/farm/labour',linkPending.payload);linkPending=null;status.textContent='Existing expense linked. No additional cost or payment created.';await refresh();
+            await farmPost('/api/farm/labour',linkPending.payload);linkPending=null;await refresh();status.textContent='Existing expense linked. No additional cost or payment created.';
           }catch(error){if(error.status>=400&&error.status<500)linkPending=null;status.textContent=error.message;}finally{link.disabled=false;}};
         }catch(error){status.textContent=error.message;open.disabled=false;}};
       }
     }
     newer.disabled=offset===0;older.disabled=data.next_offset===null;
+    }finally{list.inert=false;list.removeAttribute('aria-busy');}
   }
   newer.onclick=()=>{offset=Math.max(0,offset-100);refresh().catch(e=>status.textContent=e.message);};older.onclick=()=>{offset+=100;refresh().catch(e=>status.textContent=e.message);};
   form.onsubmit=async e=>{e.preventDefault();save.disabled=true;try{
     const fields={operation:'WORK',person:person.value,task:task.value,time_basis:basis.value,work_date:date.value,started_at:basis.value==='TIMED'?new Date(start.value+'+01:00').toISOString():null,ended_at:basis.value==='TIMED'?new Date(end.value+'+01:00').toISOString():null,days:basis.value==='DAYS'?days.value:null,currency:currency.value,agreed_total_minor:amount.value===''?null:farmMinorAmount(amount.value),corrects,reason:reason.value};const signature=JSON.stringify(fields);
     if(pending&&pending.signature!==signature)throw Error('Retry unchanged or reload: previous save outcome unknown.');
     if(!pending)pending={signature,payload:{...fields,event_id:crypto.randomUUID()}};
-    await farmPost('/api/farm/labour',pending.payload);pending=null;const corrected=!!corrects;corrects=null;save.textContent='Save labour record';cancel.hidden=true;status.textContent=corrected?'Correction recorded. Original retained; no expense or payment created.':'Labour recorded. No expense or payment created.';await refresh();
+    await farmPost('/api/farm/labour',pending.payload);pending=null;const corrected=!!corrects;corrects=null;save.textContent='Save labour record';cancel.hidden=true;await refresh();status.textContent=corrected?'Correction recorded. Original retained; no expense or payment created.':'Labour recorded. No expense or payment created.';
   }catch(error){if(error.status>=400&&error.status<500)pending=null;status.textContent=error.message;}finally{save.disabled=false;}};
   await refresh();
 }

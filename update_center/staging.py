@@ -56,10 +56,25 @@ def inspect_package(data, *, expected_archive, expected_source):
         raw=archive.read('SOURCE_MANIFEST.json')
         if len(raw)>2*1024*1024:raise ValueError('Source manifest exceeds limit.')
         manifest=json.loads(raw,object_pairs_hook=_unique_object)
-        if not isinstance(manifest,dict) or set(manifest)!={'source_tree_sha256','files'}:
+        if not isinstance(manifest,dict) or set(manifest) not in ({'source_tree_sha256','files'}, {'source_tree_sha256','files','hash_method'}):
             raise ValueError('Invalid source manifest fields.')
+        modern = 'hash_method' in manifest
+        if modern and manifest['hash_method'] != 'compact sorted JSON files-map SHA256':
+            raise ValueError('Unsupported source identity method.')
+        prefix = 'source/' if modern else 'chief-agent/'
         files=manifest['files']
         if not isinstance(files,dict) or not files:raise ValueError('Empty source manifest.')
+        directories={};file_paths={n.casefold() for n in files if isinstance(n,str)}
+        for name in files:
+            path=_relative(name)
+            for parent in path.parents:
+                if str(parent)=='.':continue
+                text=str(parent);folded_parent=text.casefold()
+                if folded_parent in file_paths:
+                    raise ValueError('Package path is both a file and directory.')
+                if folded_parent in directories and directories[folded_parent]!=text:
+                    raise ValueError('Directory names have platform aliases.')
+                directories[folded_parent]=text
         for name,digest in files.items():
             path=_relative(name);_sha(digest)
             # Reject common operational payloads, even when listed in the manifest.
@@ -69,11 +84,11 @@ def inspect_package(data, *, expected_archive, expected_source):
                     path.name.casefold().endswith(('-wal','-shm')) or
                     parts & {'__pycache__','.git','.venv','node_modules','private','secrets'}):
                 raise ValueError('Operational/private payload is not a source release.')
-            if _digest(archive.read('chief-agent/'+name))!=digest:
+            if _digest(archive.read(prefix+name))!=digest:
                 raise ValueError('Source file checksum differs.')
-        if names!={'SOURCE_MANIFEST.json',*('chief-agent/'+n for n in files)}:
+        if names!={'SOURCE_MANIFEST.json',*(prefix+n for n in files)}:
             raise ValueError('Package contains unlisted payloads.')
-        tree=_digest('\n'.join(n+'\0'+files[n] for n in sorted(files)).encode())
+        tree=_digest(json.dumps(files,sort_keys=True,separators=(',', ':')).encode() if modern else '\n'.join(n+'\0'+files[n] for n in sorted(files)).encode())
         if tree!=manifest['source_tree_sha256'] or tree!=expected_source:
             raise ValueError('Source tree identity differs.')
     return {'archive_sha256':expected_archive,'source_tree_sha256':tree,'file_count':len(files)}

@@ -1,0 +1,3 @@
+-r requirements.txt
+# Detached release signature verification; the accepted OS locks already pin it.
+cryptography==50.0.1

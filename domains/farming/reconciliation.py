@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 """Human physical counts and Owner-approved, append-only stock adjustments."""
 from decimal import Decimal
 import hashlib
@@ -28,7 +29,7 @@ def stock(con, entity_id, unit, observed_at):
     return digest.hexdigest(), format(total,'f') if opening else None
 
 
-def append(store, principal, payload):
+def append(store, principal, payload, *, connection=None):
     if not isinstance(payload,dict):raise ValueError('A physical count or decision is required.')
     p=dict(payload);operation=p.get('operation');journal.identifier(p.get('event_id'))
     if not isinstance(operation,str):raise ValueError('Choose a physical count operation.')
@@ -43,8 +44,11 @@ def append(store, principal, payload):
         if set(p)!={'event_id','operation','reference','reason'}:raise ValueError('Decision requires a count reference and reason.')
         journal.identifier(p['reference']);p['reason']=journal.bounded_text(p['reason'],400)
     else:raise ValueError('Unknown physical count operation.')
-    with store._connect() as con:
-        con.execute('BEGIN IMMEDIATE')
+    with (store._connect() if connection is None else nullcontext(connection)) as con:
+        if connection is None:
+            con.execute('BEGIN IMMEDIATE')
+        elif not con.in_transaction:
+            raise ValueError('A caller-owned transaction is required.')
         principal=setup.authorize(store,con,principal,'count' if operation=='COUNT' else 'approve')
         setup.available(store,con);history=rows(con)
         prior=next((r for r in history if r['payload']['event_id']==p['event_id']),None)
