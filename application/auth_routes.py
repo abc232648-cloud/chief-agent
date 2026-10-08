@@ -33,7 +33,7 @@ def action_domain(store,identity):
             with store._connect() as con:
                 request=con.execute('SELECT domain FROM domain_requests WHERE command_id=?',(payload['command_id'],)).fetchone()
                 if request:return request[0]
-    return 'jobs' # Existing action table is Job-owned; domain requests override legacy routing.
+    return 'jobs'
 
 
 def requirement(method,path,body,store):
@@ -108,7 +108,7 @@ def intercept(handler,store):
         from .farm_api import dispatch as farm_dispatch
         if farm_dispatch(handler,store,principal,path,method,body):return True
         from .ui_api import dispatch as ui_dispatch
-        if ui_dispatch(handler,store,service,principal,path,method):return True
+        if ui_dispatch(handler,store,service,principal,path,method,body):return True
         if path=='/api/auth/reauthenticate' and method=='POST':
             raw,principal=service.reauthenticate(principal,body.get('password'),raw=raw)
             secure='; Secure' if handler.secure_transport else ''
