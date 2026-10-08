@@ -8,7 +8,7 @@ on:
       - 'notifications/web_push.py'
       - 'control/notifications.py'
       - 'worker/runner.py'
-      - 'domains/jobs/attention_processor.py'
+      - 'worker/command_processor.py'
       - 'domains/jobs/__init__.py'
       - 'application/job_activity_feed.py'
       - 'application/ui_api.py'
@@ -27,7 +27,7 @@ on:
       - 'notifications/web_push.py'
       - 'control/notifications.py'
       - 'worker/runner.py'
-      - 'domains/jobs/attention_processor.py'
+      - 'worker/command_processor.py'
       - 'domains/jobs/__init__.py'
       - 'application/job_activity_feed.py'
       - 'application/ui_api.py'
@@ -61,7 +61,7 @@ jobs:
           notifications/web_push.py
           control/notifications.py
           worker/runner.py
-          domains/jobs/attention_processor.py
+          worker/command_processor.py
           application/job_activity_feed.py
           application/ui_api.py
       - name: Run Job PWA notification, privacy and delivery tests
