@@ -64,7 +64,8 @@ def test_incident_visibility_receipt_and_idempotency(dashboard):
     record = incidents.overview(d.store, worker)['incidents'][0]
     assert record['revision'] == payload['event_id']
     assert record['status'] == 'OPEN'
-    assert record['can_escalate'] is True
+    assert record['can_escalate'] is False
+    assert incidents.overview(d.store, supervisor)['incidents'][0]['can_escalate'] is True
     with pytest.raises(ValueError, match='Submission identifier conflict'):
         incidents.append(d.store, worker, {**payload, 'summary': 'Altered after event-id reuse'})
 
@@ -74,6 +75,8 @@ def test_incident_escalation_is_scoped_and_revision_guarded(dashboard):
     _, _, _, _, _, _, _, worker, other, _, supervisor = staff(d)
     incidents.append(d.store, worker, incident())
     current = incidents.overview(d.store, worker)['incidents'][0]
+    with pytest.raises(PermissionError):
+        incidents.append(d.store, worker, escalate(current))
     with pytest.raises(PermissionError):
         incidents.append(d.store, other, escalate(current))
     stale = escalate(current, expected_revision=ident())
@@ -86,8 +89,6 @@ def test_incident_escalation_is_scoped_and_revision_guarded(dashboard):
     assert updated['status'] == 'ESCALATED'
     assert updated['revision'] == command['event_id']
     assert updated['can_escalate'] is False
-    with pytest.raises(PermissionError):
-        incidents.append(d.store, worker, escalate(updated))
 
 
 def test_incident_schema_and_time_fail_closed(dashboard):
