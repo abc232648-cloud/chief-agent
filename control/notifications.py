@@ -39,6 +39,13 @@ def preferences(store,payload=None):
                 raise ValueError('Invalid notification preference.')
             data.update(payload);_save(con,data)
             public={'delivery':data['delivery'],'sort':data['sort']}
+    # Web Push capability material remains private. Only readiness and count are exposed.
+    from notifications.web_push import public_configuration,subscription_status
+    config=public_configuration()
+    if config['configured']:
+        from identity.context import current_human
+        human=current_human()
+        public['job_push']=subscription_status(store,human.id) if human is not None else {**config,'subscribed':False,'subscription_count':0}
     return public
 
 
@@ -126,6 +133,14 @@ def list_notifications(store,query):
 
 
 def update(store,target,payload):
+    if target in {'push-subscription','push-unsubscribe'}:
+        from identity.context import current_human
+        human=current_human()
+        if human is None:raise PermissionError('Authenticated identity is required for Web Push registration.')
+        from notifications.web_push import register_subscription,unregister_subscription
+        if target=='push-subscription':return register_subscription(store,human.id,payload)
+        if not isinstance(payload,dict) or set(payload)!={'endpoint'}:raise ValueError('A Web Push endpoint is required.')
+        return unregister_subscription(store,human.id,payload['endpoint'])
     initialize(store)
     field=payload.get('field','read')
     if field not in ('read','presented') or type(payload.get('value')) is not bool:raise ValueError('Invalid notification state.')
