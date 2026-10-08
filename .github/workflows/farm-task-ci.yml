@@ -6,11 +6,15 @@ on:
     paths:
       - 'domains/farming/tasks.py'
       - 'domains/farming/reports.py'
+      - 'domains/farming/incidents.py'
+      - 'domains/farming/sops.py'
       - 'domains/farming/team.py'
       - 'domains/farming/staff.py'
       - 'application/farm_api.py'
       - 'tests/test_farm_tasks.py'
       - 'tests/test_farm_worker_reports.py'
+      - 'tests/test_farm_incidents.py'
+      - 'tests/test_farm_sops.py'
       - 'tests/test_farm_team.py'
       - '.github/workflows/farm-task-ci.yml'
   pull_request:
@@ -18,11 +22,15 @@ on:
     paths:
       - 'domains/farming/tasks.py'
       - 'domains/farming/reports.py'
+      - 'domains/farming/incidents.py'
+      - 'domains/farming/sops.py'
       - 'domains/farming/team.py'
       - 'domains/farming/staff.py'
       - 'application/farm_api.py'
       - 'tests/test_farm_tasks.py'
       - 'tests/test_farm_worker_reports.py'
+      - 'tests/test_farm_incidents.py'
+      - 'tests/test_farm_sops.py'
       - 'tests/test_farm_team.py'
       - '.github/workflows/farm-task-ci.yml'
 
@@ -44,4 +52,4 @@ jobs:
       - name: Run Farm Staff authority tests
         env:
           CHIEF_INSTANCE_MODE: test
-        run: python -m pytest -q tests/test_farm_tasks.py tests/test_farm_worker_reports.py tests/test_farm_team.py
+        run: python -m pytest -q tests/test_farm_tasks.py tests/test_farm_worker_reports.py tests/test_farm_incidents.py tests/test_farm_sops.py tests/test_farm_team.py
