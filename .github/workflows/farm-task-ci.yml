@@ -23,6 +23,7 @@ on:
       - 'tests/test_farm_team.py'
       - 'tests/test_farm_photos.py'
       - 'tests/test_farm_offline.py'
+      - 'tests/test_farm_operational_chain.py'
       - '.github/workflows/farm-task-ci.yml'
   pull_request:
     branches: [main]
@@ -46,6 +47,7 @@ on:
       - 'tests/test_farm_team.py'
       - 'tests/test_farm_photos.py'
       - 'tests/test_farm_offline.py'
+      - 'tests/test_farm_operational_chain.py'
       - '.github/workflows/farm-task-ci.yml'
 
 concurrency:
@@ -65,7 +67,7 @@ jobs:
         run: python -m pip install -r requirements.txt -r requirements-test.txt
       - name: Install Chromium for Staff browser tests
         run: python -m playwright install --with-deps chromium
-      - name: Run Farm Staff authority tests
+      - name: Run Farm Staff authority and operational-chain tests
         env:
           CHIEF_INSTANCE_MODE: test
-        run: python -m pytest -q tests/test_farm_tasks.py tests/test_farm_worker_reports.py tests/test_farm_incidents.py tests/test_farm_sops.py tests/test_farm_team.py tests/test_farm_photos.py tests/test_farm_offline.py
+        run: python -m pytest -q tests/test_farm_tasks.py tests/test_farm_worker_reports.py tests/test_farm_incidents.py tests/test_farm_sops.py tests/test_farm_team.py tests/test_farm_photos.py tests/test_farm_offline.py tests/test_farm_operational_chain.py
