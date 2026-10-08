@@ -49,6 +49,7 @@ def test_feed_is_job_scoped_and_omits_raw_execution_payloads(tmp_path):
     assert any(item['source'] == 'command' and item['summary'] == f'Command #{job_command} status: COMPLETED.' for item in feed['events'])
     assert all(not (item['source'] == 'command' and item['id'] == f'command:{farm_command}') for item in feed['events'])
     assert feed['counts']['action_required'] == 1
+    assert feed['job_counts'] == {'jobs': 1, 'applications': 1, 'actions': 0}
 
     for forbidden in (
         'private command instruction',
@@ -73,6 +74,7 @@ def test_feed_tolerates_legacy_dev_db_without_domain_requests(tmp_path):
     feed = recent_job_activity(state)
     command = next(item for item in feed['events'] if item['id'] == f'command:{command_id}')
     assert command['summary'] == f'Command #{command_id} status: COMPLETED.'
+    assert feed['job_counts']['actions'] == 0
     assert 'private legacy command' not in str(feed)
     assert 'private legacy result' not in str(feed)
 
@@ -90,6 +92,8 @@ def test_feed_bounds_limit_and_maps_attention_severity(tmp_path):
 
     feed = recent_job_activity(state, limit=999)
     assert feed['limit'] == 50
+    assert feed['job_counts']['jobs'] == 1
+    assert feed['job_counts']['applications'] == 1
     assert any(item['source'] == 'application' and item['severity'] == 'URGENT' for item in feed['events'])
     assert any(item['source'] == 'notification' and item['severity'] == 'URGENT' for item in feed['events'])
     assert 'raw command/application payloads are not exposed' in feed['privacy']
