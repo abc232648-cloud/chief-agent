@@ -14,6 +14,16 @@ INSTANCE PREPARATION
 The deployment prepare-preview command creates a NEW isolated preview directory and exercises a verified B.5 backup/restore prerequisite before every schema step. It prompts privately for the preview Owner password. It cannot prepare production or unlock quarantined restores.
 Production preflight requires an explicitly reviewed, already prepared instance and matching schema fingerprint. It never migrates production. Do not remove quarantine markers, fabricate production markers or point an isolated configuration at operational data to bypass these safeguards.
 
+A production service configuration is non-secret JSON. In addition to the existing absolute state/database/schema fields it must now contain:
+
+  "public_host": "chief.example.com"
+  "trusted_tls_proxy": "127.0.0.1"
+  "farm_operations": "DISABLED"
+
+Replace the example hostname only during real deployment. `public_host` is a DNS certificate hostname without a scheme, path or port. `trusted_tls_proxy` must be one explicit same-host loopback IP. Production startup fails if either HTTPS field is absent or invalid. The dashboard backend is fixed to 127.0.0.1. `farm_operations` defaults to DISABLED when omitted and accepts only DISABLED or ENABLED.
+
+Setting `farm_operations` to ENABLED is an operational approval step, not a software-install step. This repository prepares and tests that gate but does not change any real production configuration to ENABLED.
+
 SERVICES
 Use deployment.launch with an absolute reviewed instance configuration for dashboard, worker and scheduler. Generate all THREE startup definitions through deployment.service_files; generation does not install or validate them. Stop manual copies first. Verify ownership, readiness, cooperative stop and restart for each component.
 Linux definitions target the user's systemd manager. Windows definitions use least-privilege interactive-token logon tasks: no stored password or unattended pre-login promise. macOS remains generated-only and unqualified. A forced stop leaves ambiguous work for review, not automatic replay.
@@ -22,7 +32,11 @@ BROWSER
 Set browser_runtime in the service configuration to the non-secret JSON containing the absolute executable, version and SHA-256. Production browsing requires explicit qualification; changed executables fail closed. Keep native sandboxing enabled. Use Ubuntu's standard system-owned browser and OS integration; do not disable AppArmor or add --no-sandbox. OS package installation may require sudo; Chief runtime does not.
 
 NETWORK AND HTTPS
-Keep the default loopback listener. Authentication does not authorize public exposure. The optional same-host TLS proxy requires correct Host/Origin handling and protected backend access; read HTTP-Transport.md. A test proxy does not qualify operational certificate renewal or OS isolation. Do not infer full filesystem/network containment from normal-user service execution.
+Production application traffic is HTTPS-only. Chief itself remains on 127.0.0.1 and rejects plaintext requests in production even from loopback. The reviewed same-host TLS terminator must present a trusted certificate for public_host, preserve Host, overwrite X-Forwarded-Proto with https and forward only to the loopback Chief listener. Chief does not trust forwarded client identity or forwarded Host as authority.
+
+The runtime emits HSTS only on verified production HTTPS responses and adds nosniff, frame denial, no-referrer and a restrictive Permissions-Policy. Authentication cookies are Secure + HttpOnly + SameSite=Strict under production HTTPS; authenticated mutations also require same-origin CSRF proof.
+
+DNS, certificate issuance/renewal, firewall rules, proxy installation and verification are intentionally deferred to the actual deployment phase because they depend on the selected host/domain. Do not expose the loopback backend directly to a LAN/public interface as a shortcut.
 
 APP EXPERIENCE
 The web manifest supports an app-style browser window where browser installation is available. It is not a signed native installer, does not start services and does not cache private data offline. Real website login requires a private graphical session and separate provider/site acceptance.
