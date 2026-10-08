@@ -1,0 +1,54 @@
+name: Web Push Lock Candidate
+
+on:
+  push:
+    branches: ['consolidate/job-pwa-backend-current']
+    paths:
+      - 'tools/resolve_webpush_lock.py'
+      - '.github/workflows/webpush-lock-candidate.yml'
+      - 'release/ubuntu-inventory.json'
+      - 'release/windows-inventory.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.14.4'
+            inventory: release/ubuntu-inventory.json
+            output: ubuntu-webpush-hashed.txt
+          - os: windows-latest
+            python: '3.12.14'
+            inventory: release/windows-inventory.json
+            output: windows-webpush-hashed.txt
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install lock tooling
+        run: python -m pip install 'pip-tools>=7.5,<8'
+      - name: Resolve exact candidate lock
+        run: python tools/resolve_webpush_lock.py "${{ matrix.inventory }}" "${{ matrix.output }}" --webpush 2.5.0
+      - name: Prove candidate installs with hashes
+        run: python -m pip install --require-hashes -r "${{ matrix.output }}"
+      - name: Prove Web Push imports
+        run: python -c "import pywebpush; print(pywebpush.__version__ if hasattr(pywebpush, '__version__') else 'pywebpush-import-ok')"
+      - name: Upload candidate lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: webpush-lock-${{ runner.os }}
+          path: |
+            ${{ matrix.output }}
+            ${{ matrix.output }}.in
+          if-no-files-found: error
+          retention-days: 1
