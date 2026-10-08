@@ -4,10 +4,10 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shutil
 from pathlib import Path
 
 NAME_RE = re.compile(r"^([A-Za-z0-9_.-]+)==([^ \\]+)")
+RUNTIME_TOOLING = {"pip"}
 
 
 def normalized(name: str) -> str:
@@ -34,6 +34,10 @@ def promote(candidate: Path, destination: Path, inventory_path: Path) -> None:
 
     by_normalized = {normalized(name): name for name in current}
     for key, existing_name in by_normalized.items():
+        # pip is recorded as maintained runtime tooling but is intentionally not
+        # part of the application dependency lock produced by pip-tools.
+        if key in RUNTIME_TOOLING:
+            continue
         candidate_item = packages.get(key)
         if candidate_item is None:
             raise SystemExit(f"{candidate}: existing package disappeared: {existing_name}")
