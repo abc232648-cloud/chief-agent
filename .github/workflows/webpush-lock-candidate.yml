@@ -85,8 +85,8 @@ jobs:
           --windows candidate/windows/windows-webpush-hashed.txt
       - name: Validate promoted release manifests
         run: python -m pytest -q tests/test_release_package.py
-      - name: Remove one-off lock machinery
-        run: git rm tools/resolve_webpush_lock.py tools/promote_webpush_lock.py .github/workflows/webpush-lock-candidate.yml
+      - name: Remove temporary lock helper scripts
+        run: git rm tools/resolve_webpush_lock.py tools/promote_webpush_lock.py
       - name: Commit evidence-backed runtime locks
         shell: bash
         run: |
