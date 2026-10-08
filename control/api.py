@@ -16,9 +16,12 @@ def _require_jobs_principal():
 
 def get(handler,store,root,path,query,*,registry,services=None):
     if path == '/api/job-push/config':
-        principal=_require_jobs_principal()
+        _require_jobs_principal()
         from notifications.webpush import client_config
         handler.json(client_config());return True
+    if path == '/api/job-push/events':
+        _require_jobs_principal()
+        handler.json(notifications.list_notifications(store,{'agent':'jobs','sort':'newest'}));return True
     if path == '/api/integrations/n8n/report-previews':
         from identity.context import current_human
         if services is None or services.reporting is None:raise PermissionError('Reporting is not configured.')
