@@ -4,6 +4,7 @@ on:
   push:
     branches: [main, 'feat/**', 'consolidate/**']
     paths:
+      - '.env.example'
       - 'notifications/web_push.py'
       - 'control/notifications.py'
       - 'worker/runner.py'
@@ -22,6 +23,7 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - '.env.example'
       - 'notifications/web_push.py'
       - 'control/notifications.py'
       - 'worker/runner.py'
