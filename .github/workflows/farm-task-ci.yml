@@ -63,6 +63,8 @@ jobs:
           cache: pip
       - name: Install runtime and test dependencies
         run: python -m pip install -r requirements.txt -r requirements-test.txt
+      - name: Install Chromium for Staff browser tests
+        run: python -m playwright install --with-deps chromium
       - name: Run Farm Staff authority tests
         env:
           CHIEF_INSTANCE_MODE: test
