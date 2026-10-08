@@ -1,8 +1,9 @@
 """Validated, non-secret HTTPS deployment contract.
 
-The actual TLS terminator is installed and qualified during deployment. Chief only
-accepts a same-host loopback proxy and never treats forwarded identity/host data as
-authority.
+The actual TLS terminator/static server is installed and qualified during deployment.
+Chief accepts one same-host loopback proxy and never treats forwarded identity/host
+data as authority. Owner and Staff deliberately share the HTTPS origin but have
+non-overlapping PWA paths/service-worker scopes.
 """
 import ipaddress
 import re
@@ -53,11 +54,19 @@ def contract(public_host, dashboard_port, trusted_proxy):
         'application_protocol': 'HTTPS_ONLY',
         'backend_listener': f'127.0.0.1:{dashboard_port}',
         'trusted_proxy': proxy,
+        'application_routes': [
+            {'path_prefix': '/api/', 'target': 'chief-loopback', 'cache': 'NEVER'},
+            {'path_prefix': '/owner/', 'target': 'owner-static', 'service_worker_scope': '/owner/'},
+            {'path_prefix': '/staff/', 'target': 'staff-static', 'service_worker_scope': '/staff/'},
+        ],
+        'root_policy': 'NO_ROOT_SCOPED_PWA',
         'proxy_requirements': [
             'Terminate certificate-verified TLS before forwarding to Chief.',
-            'Forward only to the loopback backend listener.',
-            'Preserve the original Host header.',
-            'Overwrite X-Forwarded-Proto with https.',
+            'Forward only /api/ and explicitly reviewed Chief backend routes to the loopback listener.',
+            'Serve Owner only below /owner/ and Staff only below /staff/.',
+            'Never publish /sw.js or a PWA manifest with scope / at the shared origin root.',
+            'Preserve the original Host header for Chief-bound requests.',
+            'Overwrite X-Forwarded-Proto with https for Chief-bound requests.',
             'Do not expose the loopback backend to other hosts or containers.',
             'Do not forward client identity headers as authority.',
         ],
