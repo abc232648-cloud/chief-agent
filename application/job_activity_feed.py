@@ -5,6 +5,8 @@ payload JSON, form contents, credentials, job URLs, and cross-domain records.
 """
 from __future__ import annotations
 
+import json
+
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 50
 
@@ -24,6 +26,20 @@ def _severity(*parts):
     if any(marker in text for marker in ('REVIEW', 'APPROVAL', 'ACTION_REQUIRED', 'WAITING_USER')):
         return 'ACTION_REQUIRED'
     return 'INFO'
+
+
+def _job_action_count(actions, command_domains):
+    count = 0
+    for row in actions:
+        try:
+            payload = json.loads(row.get('payload_json') or '{}')
+        except (TypeError, ValueError, json.JSONDecodeError):
+            payload = {}
+        command_id = payload.get('command_id') if isinstance(payload, dict) else None
+        domain = command_domains.get(command_id, 'jobs') if command_id is not None else 'jobs'
+        if domain == 'jobs':
+            count += 1
+    return count
 
 
 def recent_job_activity(store, limit=DEFAULT_LIMIT):
@@ -57,23 +73,19 @@ def recent_job_activity(store, limit=DEFAULT_LIMIT):
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='domain_requests'"
         ).fetchone() is not None
         if has_domain_requests:
+            command_domains = {row['command_id']: row['domain'] for row in con.execute('SELECT command_id,domain FROM domain_requests')}
             command_sql = """SELECT c.id,c.status,c.created_at,c.processed_at
                              FROM commands c
                              LEFT JOIN domain_requests d ON d.command_id=c.id
                              WHERE COALESCE(d.domain,'jobs')='jobs'
                              ORDER BY c.id DESC LIMIT ?"""
         else:
+            command_domains = {}
             command_sql = """SELECT c.id,c.status,c.created_at,c.processed_at
                              FROM commands c ORDER BY c.id DESC LIMIT ?"""
         commands = [dict(row) for row in con.execute(command_sql, (take,))]
 
-    actions = store.actions()
-    if has_domain_requests:
-        from .auth_routes import action_domain
-        action_count = sum(action_domain(store, row['id']) == 'jobs' for row in actions)
-    else:
-        # Legacy pre-domain-request stores treated the shared action table as Job-owned.
-        action_count = len(actions)
+    action_count = _job_action_count(store.actions(), command_domains)
 
     events = []
     for row in notifications:
