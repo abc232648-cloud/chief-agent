@@ -73,3 +73,57 @@ def test_job_push_api_requires_jobs_principal():
     with human_context(Principal('farm','s2','Worker',('farming',),'now')):
         with pytest.raises(PermissionError):
             _require_jobs_principal()
+
+
+def test_job_event_feed_never_returns_other_domains(tmp_path, monkeypatch):
+    from control.api import get
+    store = make_store(tmp_path)
+    monkeypatch.setattr('notifications.job_attention.deliver_job_attention', lambda *args, **kwargs: {'attempted':0,'sent':0,'removed':0})
+    record_job_attention(store, 'Job review', 'Needs approval', 'ACTION_REQUIRED')
+    store.add_notification('System note', 'Not for Job PWA', 'INFO', domain='system')
+
+    class Handler:
+        payload = None
+        def json(self, payload, code=200):
+            self.payload = payload
+
+    handler = Handler()
+    with human_context(Principal('owner','s1','Owner',('jobs',),'now')):
+        assert get(handler, store, tmp_path, '/api/job-push/events', '', registry=None) is True
+    assert handler.payload
+    assert {item['domain'] for item in handler.payload} == {'jobs'}
+    assert all(item['title'] != 'System note' for item in handler.payload)
+
+
+def test_job_processor_maps_ask_and_stop_to_attention(monkeypatch):
+    from domains.jobs.ledger_adapter import JobCommandProcessor
+    from domains.jobs.push_processor import JobPushCommandProcessor
+
+    processor = object.__new__(JobPushCommandProcessor)
+    observed = []
+    processor._attention = lambda title, body, severity, **kwargs: observed.append((title, severity, kwargs.get('related_page')))
+    monkeypatch.setattr(JobCommandProcessor, 'process_command', lambda self, command_id, instruction: {
+        'approvals': [42],
+        'results': [{'action':'submit_application','status':'AWAITING_APPROVAL'}, {'action':'pay_money','status':'BLOCKED'}],
+    })
+
+    result = JobPushCommandProcessor.process_command(processor, 9, 'apply safely')
+    assert result['approvals'] == [42]
+    assert ('Job Agent approval required', 'ACTION_REQUIRED', 'actions') in observed
+    assert ('Job Agent STOP', 'URGENT', 'actions') in observed
+
+
+def test_job_processor_maps_exception_to_urgent(monkeypatch):
+    from domains.jobs.ledger_adapter import JobCommandProcessor
+    from domains.jobs.push_processor import JobPushCommandProcessor
+
+    processor = object.__new__(JobPushCommandProcessor)
+    observed = []
+    processor._attention = lambda title, body, severity, **kwargs: observed.append((title, severity))
+    def fail(self, command_id, instruction):
+        raise RuntimeError('boom')
+    monkeypatch.setattr(JobCommandProcessor, 'process_command', fail)
+
+    with pytest.raises(RuntimeError):
+        JobPushCommandProcessor.process_command(processor, 10, 'broken command')
+    assert observed == [('Job Agent stopped on an error', 'URGENT')]
