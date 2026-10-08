@@ -9,8 +9,8 @@ from database.store_extensions import add_audit
 def _require_jobs_principal():
     from identity.context import current_human
     principal=current_human()
-    if principal is None or 'jobs' not in principal.domains:
-        raise PermissionError('Signed-in Job Agent access is required.')
+    if principal is None or principal.role not in {'Owner','Administrator'} or 'jobs' not in principal.domains:
+        raise PermissionError('Owner Job Agent access is required.')
     return principal
 
 
@@ -181,8 +181,7 @@ def post(handler,store,root,path,body,*,registry,services=None):
                     changes={k:v for k,v in body.items() if k!='remove'}
                     if not changes:raise ValueError('No schedule changes supplied.')
                     con.execute('UPDATE monitoring_tasks SET '+','.join(k+'=?' for k in changes)+',updated_at=CURRENT_TIMESTAMP WHERE id=?',[*changes.values(),identity])
-        add_audit(store,'scheduler','User changed schedule',actor='user',data={'schedule_id':identity})
-        handler.json({'status':'UPDATED','id':identity});return True
+        add_audit(store,'scheduler','User changed schedule',actor='user',data={'schedule_id':identity});handler.json({'status':'UPDATED','id':identity});return True
     if path=='/api/settings/email':
         from .settings import save
         handler.json(save(body));add_audit(store,'settings','Updated email settings',actor='user');return True
