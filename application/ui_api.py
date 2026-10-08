@@ -5,9 +5,11 @@ from control.agents import AgentControls
 SYSTEM_PAGES=('components','capabilities','models','policies','runtime','integrations','devices','updates','settings')
 DOMAIN_PAGES=('evidence','ledger','runbooks')
 
+
 def permitted(service,principal,permission,domain=None):
     try:service.authorize(principal,permission,domain,sensitive=False);return True
     except PermissionError:return False
+
 
 def context(service,principal):
     registry=default_registry()
@@ -37,11 +39,11 @@ def context(service,principal):
     return {'role':principal.role,'domains':domains,'pages':sorted(set(pages)),'global_permissions':global_permissions,'user_management':management,
             'authority_note':'Visibility is advisory. Every API operation checks current server-side authority.'}
 
+
 def overview(store,ctx):
     allowed={d['id'] for d in ctx['domains']}
     data=AgentControls(store,default_registry()).overview()
     agents=[a for a in data['agents'] if a['id'] in allowed]
-    # Aggregate counts, worker messages and notifications are not shared across scopes.
     counts={'actions':0,'notifications':0}
     if 'jobs' in allowed:
         from .auth_routes import action_domain
@@ -49,6 +51,7 @@ def overview(store,ctx):
     if ctx['global_permissions']['audit.read']:counts['notifications']=store.counts()['notifications']
     return {'agents':agents,'counts':counts,'worker_connected':data['worker_connected'],
             'service_started_at':data['service_started_at'] if ctx['global_permissions']['audit.read'] else None}
+
 
 def job_state(store, *, include_notifications=False):
     from .auth_routes import action_domain
@@ -59,6 +62,7 @@ def job_state(store, *, include_notifications=False):
             'notifications':store.counts()['notifications'] if include_notifications else 0}
     return {'counts':counts,'commands':commands,'worker':{'status':'UNKNOWN','message':'Use System Health for shared worker observations; domain activity appears in your workspace.','updated_at':None}}
 
+
 def dispatch(handler,store,service,principal,path,method):
     if not path.startswith('/api/ui/'):return False
     if method not in {'GET','HEAD'}:
@@ -67,6 +71,11 @@ def dispatch(handler,store,service,principal,path,method):
     if path=='/api/ui/overview':
         if principal.role not in {'Owner','Administrator'}:raise PermissionError('Chief overview is restricted to administration roles.')
         handler.json(overview(store,context(service,principal)));return True
+    if path=='/api/ui/job-feed':
+        if principal.role not in {'Owner','Administrator'}:raise PermissionError('Job companion activity is restricted to administration roles.')
+        service.authorize(principal,'work.read','jobs',sensitive=False)
+        from .job_activity_feed import recent_job_activity
+        handler.json(recent_job_activity(store));return True
     if path=='/api/ui/job-state':
         service.authorize(principal,'work.read','jobs',sensitive=False)
         handler.json(job_state(store,include_notifications=permitted(service,principal,'audit.read')));return True
@@ -85,7 +94,6 @@ def dispatch(handler,store,service,principal,path,method):
     if len(parts)==4 and parts[2] in DOMAIN_PAGES:
         if principal.role not in {'Owner','Administrator'}:raise PermissionError('Foundation records are not part of this work interface.')
         domain=parts[3]
-        # Registered scope only; no inferred cross-domain grants from shared mechanics.
         if domain not in {d['id'] for d in default_registry().describe()}:raise PermissionError('Domain unavailable.')
         service.authorize(principal,'work.read',domain,sensitive=False)
         from .ui_views import domain_view
