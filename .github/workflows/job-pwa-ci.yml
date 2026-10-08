@@ -1,0 +1,54 @@
+name: Job PWA CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'application/job_pwa_api.py'
+      - 'application/job_pwa_feed.py'
+      - 'application/ui_api.py'
+      - 'application/auth_routes.py'
+      - 'database/store_extensions.py'
+      - 'notifications/web_push.py'
+      - 'deployment/schema.py'
+      - 'tests/test_job_pwa_feed.py'
+      - 'tests/test_job_pwa_push.py'
+      - '.github/workflows/job-pwa-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'application/job_pwa_api.py'
+      - 'application/job_pwa_feed.py'
+      - 'application/ui_api.py'
+      - 'application/auth_routes.py'
+      - 'database/store_extensions.py'
+      - 'notifications/web_push.py'
+      - 'deployment/schema.py'
+      - 'tests/test_job_pwa_feed.py'
+      - 'tests/test_job_pwa_push.py'
+      - '.github/workflows/job-pwa-ci.yml'
+
+concurrency:
+  group: job-pwa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install runtime and test dependencies
+        run: python -m pip install -r requirements.txt -r requirements-test.txt
+      - name: Run Job PWA authority, privacy and push tests
+        env:
+          CHIEF_INSTANCE_MODE: test
+        run: >-
+          python -m pytest -q
+          tests/test_job_pwa_feed.py
+          tests/test_job_pwa_push.py
+          tests/test_checkpoint_h_api.py
+          tests/test_identity_http.py
