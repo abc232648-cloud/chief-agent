@@ -41,7 +41,6 @@ def overview(store,ctx):
     allowed={d['id'] for d in ctx['domains']}
     data=AgentControls(store,default_registry()).overview()
     agents=[a for a in data['agents'] if a['id'] in allowed]
-    # Aggregate counts, worker messages and notifications are not shared across scopes.
     counts={'actions':0,'notifications':0}
     if 'jobs' in allowed:
         from .auth_routes import action_domain
@@ -59,7 +58,9 @@ def job_state(store, *, include_notifications=False):
             'notifications':store.counts()['notifications'] if include_notifications else 0}
     return {'counts':counts,'commands':commands,'worker':{'status':'UNKNOWN','message':'Use System Health for shared worker observations; domain activity appears in your workspace.','updated_at':None}}
 
-def dispatch(handler,store,service,principal,path,method):
+def dispatch(handler,store,service,principal,path,method,body=None):
+    from .job_pwa_api import dispatch as job_pwa_dispatch
+    if job_pwa_dispatch(handler,store,service,principal,path,method,body or {}):return True
     if not path.startswith('/api/ui/'):return False
     if method not in {'GET','HEAD'}:
         handler.json({'status':'READ_ONLY','reason':'This presentation endpoint does not perform actions.'},405);return True
@@ -89,7 +90,6 @@ def dispatch(handler,store,service,principal,path,method):
     if len(parts)==4 and parts[2] in DOMAIN_PAGES:
         if principal.role not in {'Owner','Administrator'}:raise PermissionError('Foundation records are not part of this work interface.')
         domain=parts[3]
-        # Registered scope only; no inferred cross-domain grants from shared mechanics.
         if domain not in {d['id'] for d in default_registry().describe()}:raise PermissionError('Domain unavailable.')
         service.authorize(principal,'work.read',domain,sensitive=False)
         from .ui_views import domain_view
