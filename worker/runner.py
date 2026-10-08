@@ -81,11 +81,10 @@ def _owned_main(store, stopping=None, ready=lambda:None) -> int:
                 now=time.monotonic()
                 if now>=next_push_check:
                     from notifications.web_push import dispatch_pending
-                    result=dispatch_pending(store)
-                    # Delivery failures remain notification-channel failures, not worker failures.
-                    # The durable cursor is left unchanged so transient failures retry later.
-                    if result.get('failed'):
-                        add_audit(store,"notification","Web Push delivery will retry",status="RETRY",data={'failed':result['failed']})
+                    # Web Push is a best-effort notification channel. Transient provider
+                    # failures keep the durable cursor unchanged and retry on a later pass;
+                    # they must not turn the worker unhealthy or spam the audit log.
+                    dispatch_pending(store)
                     next_push_check=now+5.0
                 did_work = run_approved_once(processor)
                 if not did_work and not stopping.is_set():did_work=run_once(processor)
