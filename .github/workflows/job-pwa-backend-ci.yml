@@ -42,7 +42,7 @@ permissions:
   contents: read
 
 jobs:
-  verify:
+  focused:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -70,3 +70,21 @@ jobs:
           tests/test_job_attention.py
           tests/test_job_activity_feed.py
           tests/test_job_pwa_ui.py
+
+  full-suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CHIEF_INSTANCE_MODE: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install complete Chief test dependencies
+        run: python -m pip install -r requirements-test.txt
+      - name: Install Chromium for browser acceptance tests
+        run: python -m playwright install --with-deps chromium
+      - name: Run complete Chief pytest suite
+        run: python -m pytest -q
