@@ -5,13 +5,14 @@ on:
     branches: ['consolidate/job-pwa-backend-current']
     paths:
       - 'tools/resolve_webpush_lock.py'
+      - 'tools/promote_webpush_lock.py'
       - '.github/workflows/webpush-lock-candidate.yml'
       - 'release/ubuntu-inventory.json'
       - 'release/windows-inventory.json'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   resolve:
@@ -50,8 +51,42 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: webpush-lock-${{ runner.os }}
-          path: |
-            ${{ matrix.output }}
-            ${{ matrix.output }}.in
+          path: ${{ matrix.output }}
           if-no-files-found: error
           retention-days: 1
+
+  promote:
+    if: github.actor != 'github-actions[bot]'
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: consolidate/job-pwa-backend-current
+      - uses: actions/download-artifact@v4
+        with:
+          name: webpush-lock-Linux
+          path: candidate/ubuntu
+      - uses: actions/download-artifact@v4
+        with:
+          name: webpush-lock-Windows
+          path: candidate/windows
+      - name: Promote only drift-free candidates
+        run: >-
+          python tools/promote_webpush_lock.py
+          --ubuntu candidate/ubuntu/ubuntu-webpush-hashed.txt
+          --windows candidate/windows/windows-webpush-hashed.txt
+      - name: Validate promoted release manifests
+        run: python -m pytest -q tests/test_release_package.py
+      - name: Remove one-off lock machinery
+        run: git rm tools/resolve_webpush_lock.py tools/promote_webpush_lock.py .github/workflows/webpush-lock-candidate.yml
+      - name: Commit evidence-backed runtime locks
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add requirements.txt release/ubuntu-hashed.txt release/windows-hashed.txt release/ubuntu-inventory.json release/windows-inventory.json
+          git diff --cached --check
+          git commit -m "build(release): pin Web Push runtime dependencies"
+          git push origin HEAD:consolidate/job-pwa-backend-current
