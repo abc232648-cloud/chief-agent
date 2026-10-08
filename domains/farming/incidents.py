@@ -73,7 +73,7 @@ def _can_view(role, principal_id, incident):
 def _can_escalate(role, principal_id, incident):
     if incident['status'] == 'ESCALATED':
         return False
-    return role in {'OWNER', 'GENERAL_MANAGER', 'SUPERVISOR'} or incident['actor_id'] == principal_id
+    return role in {'OWNER', 'GENERAL_MANAGER', 'SUPERVISOR'}
 
 
 def _validate_create(p):
