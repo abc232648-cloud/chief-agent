@@ -27,7 +27,7 @@ def preflight(database,expected_schema):
         for module in ('migrations','evidence_migrations','execution_migrations','identity_migrations'):
             if not importlib.import_module('database.'+module).schema_ready(con):raise ValueError('Required accepted schema is missing.')
         tables={r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        required={'agent_controls','agent_runs','control_state','fact_history','domain_requests','domain_records','domain_reminders','notification_preferences','site_access'}
+        required={'agent_controls','agent_runs','control_state','fact_history','domain_requests','domain_records','domain_reminders','notification_preferences','site_access','web_push_subscriptions'}
         columns={r[1] for r in con.execute('PRAGMA table_info(notifications)')}
         if not required<=tables or not {'domain','presented','related_page'}<=columns:raise ValueError('Operational initialization is incomplete; startup will not migrate it.')
         if con.execute('PRAGMA quick_check').fetchone()[0]!='ok':raise ValueError('Database integrity preflight failed.')
