@@ -1,5 +1,5 @@
 "use strict";
-const CACHE='farm-public-v2';
+const CACHE='farm-public-v3';
 const ASSETS=['/static/farm-offline.html','/static/farm-outbox.js','/static/farm-offline.js','/static/dashboard.css','/static/work.css'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('farm-public-')&&key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
