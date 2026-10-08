@@ -66,11 +66,16 @@ def test_job_attention_is_domain_scoped(tmp_path, monkeypatch):
     assert row['presented'] == 0
 
 
-def test_job_push_api_requires_jobs_principal():
+def test_job_push_api_requires_owner_or_admin_with_jobs_domain():
     from control.api import _require_jobs_principal
     with human_context(Principal('owner','s1','Owner',('jobs',),'now')):
         assert _require_jobs_principal().id == 'owner'
-    with human_context(Principal('farm','s2','Worker',('farming',),'now')):
+    with human_context(Principal('admin','s2','Administrator',('jobs',),'now')):
+        assert _require_jobs_principal().id == 'admin'
+    with human_context(Principal('worker','s3','Worker',('jobs',),'now')):
+        with pytest.raises(PermissionError):
+            _require_jobs_principal()
+    with human_context(Principal('owner-farm','s4','Owner',('farming',),'now')):
         with pytest.raises(PermissionError):
             _require_jobs_principal()
 
