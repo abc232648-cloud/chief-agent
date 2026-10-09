@@ -126,10 +126,12 @@ class NotificationBus:
 
         Replaying the same immutable event id is idempotent. Reusing an event id with
         different content fails closed. A supplied connection lets an existing Chief
-        transaction include the event without opening a nested write transaction.
+        transaction include the event without opening a nested write transaction;
+        that caller is responsible for having initialized the accepted schema first.
         """
         self._validate_event_contract(event)
-        self._initialize()
+        if connection is None:
+            self._initialize()
         manager = nullcontext(connection) if connection is not None else self.store._connect()
         with manager as con:
             if connection is None:
