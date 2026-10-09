@@ -11,6 +11,7 @@ import re
 from typing import Iterable
 
 from domains.contracts import AgentDefinition, DomainDefinition
+from .staff_roles import validate_staff_roles
 
 MANIFEST_SCHEMA_VERSION = 1
 INTERFACE_KINDS = frozenset({'owner', 'staff', 'companion'})
@@ -50,6 +51,8 @@ class InterfaceDeclaration:
         normalized = tuple(_text(role, 'Interface role', limit=80) for role in self.roles)
         if len(normalized) != len(set(normalized)):
             raise ValueError('Interface roles must be unique.')
+        if self.kind == 'staff':
+            normalized = validate_staff_roles(normalized)
         object.__setattr__(self, 'roles', normalized)
 
     def as_dict(self):
