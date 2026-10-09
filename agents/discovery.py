@@ -3,20 +3,25 @@ from __future__ import annotations
 
 from agents.manifest import AgentManifest, INTERFACE_KINDS, validate_against_runtime
 from agents.registry import AgentRegistry
+from capabilities.registry import CapabilityRegistry
 
 
 class ManifestRegistry:
     """Validated discovery metadata for the runtime domains installed in Chief.
 
     The runtime ``AgentRegistry`` remains authoritative for execution. This registry
-    only exposes manifest metadata after proving that each entry matches a concrete
-    runtime domain/agent pair.
+    exposes manifest metadata only after proving that each entry matches the runtime
+    domain/agent pair. When a ``CapabilityRegistry`` is supplied, manifests must also
+    align exactly with that immutable capability catalog.
     """
 
-    def __init__(self, runtime: AgentRegistry):
+    def __init__(self, runtime: AgentRegistry, capabilities: CapabilityRegistry | None = None):
         if not isinstance(runtime, AgentRegistry):
             raise TypeError('ManifestRegistry requires an AgentRegistry runtime catalog.')
+        if capabilities is not None and not isinstance(capabilities, CapabilityRegistry):
+            raise TypeError('ManifestRegistry capabilities must be a CapabilityRegistry.')
         self.runtime = runtime
+        self.capabilities = capabilities
         self._manifests: dict[str, AgentManifest] = {}
         self._runtime_agent_ids: dict[str, str] = {}
 
@@ -32,6 +37,8 @@ class ManifestRegistry:
             raise ValueError('Discoverable runtime domains require exactly one runtime agent.')
         runtime_agent = runtime_agents[0]
         validate_against_runtime(manifest, self.runtime.domains[manifest.id], runtime_agent)
+        if self.capabilities is not None:
+            self.capabilities.require_domain_capabilities(manifest.id, manifest.capabilities)
         self._manifests[manifest.id] = manifest
         self._runtime_agent_ids[manifest.id] = runtime_agent.id
         return manifest
@@ -40,6 +47,13 @@ class ManifestRegistry:
         missing = [domain_id for domain_id in self.runtime.domains if domain_id not in self._manifests]
         if missing:
             raise ValueError('Installed runtime domains require manifests: ' + ', '.join(missing))
+        return self
+
+    def require_capability_alignment(self) -> 'ManifestRegistry':
+        if self.capabilities is None:
+            raise ValueError('Authoritative manifests require capability-registry alignment.')
+        for manifest in self._manifests.values():
+            self.capabilities.require_domain_capabilities(manifest.id, manifest.capabilities)
         return self
 
     def get(self, manifest_id: str) -> AgentManifest:
