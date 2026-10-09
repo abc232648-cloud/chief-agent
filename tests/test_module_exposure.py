@@ -55,7 +55,7 @@ def test_disable_hides_discovery_and_blocks_direct_routes(dashboard, mode, domai
     assert request(d, paths[0], raw=d.credentials['raw'])[0] == 200
 
 
-@pytest.mark.parametrize('failure', ['missing', 'runtime', 'replacement', 'interface', 'incompatible', 'legacy-disabled'])
+@pytest.mark.parametrize('failure', ['missing', 'runtime', 'replacement', 'interface', 'interface-identity', 'incompatible', 'legacy-disabled'])
 def test_stale_missing_incompatible_and_disabled_fail_closed(dashboard, failure):
     d = dashboard
     gate = exposure(d)
@@ -65,10 +65,17 @@ def test_stale_missing_incompatible_and_disabled_fail_closed(dashboard, failure)
     elif failure == 'runtime':
         del manifests.runtime.agents[manifests.runtime_agent_id('jobs')]
     elif failure == 'replacement':
-        manifests._manifests['jobs'] = replace(manifests.get('jobs'), version='1.0.1')
+        manifests._manifests['jobs'] = replace(manifests.get('jobs'))
     elif failure == 'interface':
         key = ('jobs', 'companion')
         gate.interfaces._entries[key] = replace(gate.interfaces._entries[key], module='forged')
+    elif failure == 'interface-identity':
+        key = ('jobs', 'owner')
+        gate.interfaces._entries[key] = replace(gate.interfaces._entries[key], agent_id='farming')
+        result = gate.describe(*owner(d))
+        assert not any(row['kind'] == 'owner' and row['module'] == 'jobs' for row in result)
+        assert not gate.available('jobs', *owner(d), kind='owner')
+        return
     elif failure == 'incompatible':
         gate.lifecycle.compatibility.profile = replace(gate.lifecycle.compatibility.profile, companion_api='2')
     else:
