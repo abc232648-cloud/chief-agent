@@ -6,7 +6,7 @@ not drift from the runtime definition it represents.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import re
 from typing import Iterable
 
@@ -89,10 +89,10 @@ class AgentManifest:
     name: str
     version: str
     description: str
+    requires: CompatibilityDeclaration
     capabilities: tuple[str, ...] = ()
     interfaces: tuple[InterfaceDeclaration, ...] = ()
     notifications: bool = False
-    requires: CompatibilityDeclaration = field(default_factory=lambda: CompatibilityDeclaration('unspecified'))
     schema_version: int = MANIFEST_SCHEMA_VERSION
 
     def __post_init__(self):
@@ -103,6 +103,8 @@ class AgentManifest:
         object.__setattr__(self, 'description', _text(self.description, 'Agent manifest description', limit=500))
         if not isinstance(self.version, str) or not _SEMVER_RE.fullmatch(self.version):
             raise ValueError('Agent manifest version must use semantic versioning (for example 1.0.0).')
+        if not isinstance(self.requires, CompatibilityDeclaration):
+            raise ValueError('Agent manifest requires must be an explicit CompatibilityDeclaration.')
         capabilities = tuple(self.capabilities)
         if len(capabilities) != len(set(capabilities)):
             raise ValueError('Agent manifest capabilities must be unique.')
@@ -111,14 +113,14 @@ class AgentManifest:
                 raise ValueError('Agent manifest capabilities must belong to the manifest id namespace.')
         object.__setattr__(self, 'capabilities', tuple(sorted(capabilities)))
         interfaces = tuple(self.interfaces)
-        kinds = [interface.kind for interface in interfaces]
+        if any(not isinstance(item, InterfaceDeclaration) for item in interfaces):
+            raise ValueError('Agent manifest interfaces must be InterfaceDeclaration values.')
+        kinds = [item.kind for item in interfaces]
         if len(kinds) != len(set(kinds)):
             raise ValueError('An agent manifest may declare each interface kind only once.')
         object.__setattr__(self, 'interfaces', interfaces)
         if not isinstance(self.notifications, bool):
             raise ValueError('Agent manifest notifications must be boolean.')
-        if not isinstance(self.requires, CompatibilityDeclaration):
-            raise ValueError('Agent manifest requires must be a CompatibilityDeclaration.')
 
     def as_dict(self):
         return {
@@ -128,7 +130,7 @@ class AgentManifest:
             'version': self.version,
             'description': self.description,
             'capabilities': list(self.capabilities),
-            'interfaces': [interface.as_dict() for interface in self.interfaces],
+            'interfaces': [item.as_dict() for item in self.interfaces],
             'notifications': self.notifications,
             'requires': self.requires.as_dict(),
         }
@@ -160,6 +162,8 @@ def interface(manifest: AgentManifest, kind: str) -> InterfaceDeclaration | None
 
 def validate_unique_manifests(manifests: Iterable[AgentManifest]) -> tuple[AgentManifest, ...]:
     manifests = tuple(manifests)
+    if any(not isinstance(manifest, AgentManifest) for manifest in manifests):
+        raise ValueError('Only validated AgentManifest values may be registered.')
     ids = [manifest.id for manifest in manifests]
     if len(ids) != len(set(ids)):
         raise ValueError('Duplicate agent manifest id.')
