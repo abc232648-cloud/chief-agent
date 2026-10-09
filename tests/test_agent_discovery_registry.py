@@ -8,7 +8,6 @@ from agents.registry import AgentRegistry
 from application.composition import compose_catalogs, default_catalogs, default_manifest_registry
 from domains.contracts import AgentDefinition, DomainDefinition
 from domains.jobs import definition as jobs
-from domains.jobs.capabilities import components as job_components, definitions as job_capabilities
 from domains.jobs.manifest import manifest as job_manifest
 from domains.farming.manifest import manifest as farm_manifest
 
@@ -89,23 +88,31 @@ def test_complete_registry_fails_closed_when_an_installed_domain_has_no_manifest
 
 
 def test_runtime_only_custom_composition_remains_supported_but_can_opt_into_coverage_gate():
-    domain, agent = jobs()
-    provider = (domain, agent, job_capabilities(), job_components())
+    domain = DomainDefinition('demo', 'Demo', 'Synthetic demo.')
+    agent = AgentDefinition('demo-worker', 'demo', frozenset())
+    provider = (domain, agent, (), ())
     catalogs = compose_catalogs((provider,))
-    assert catalogs.agents.resolve('jobs') == (domain, agent)
+    assert catalogs.agents.resolve('demo') == (domain, agent)
     assert catalogs.manifests is not None
     assert len(catalogs.manifests) == 0
 
-    with pytest.raises(ValueError, match='Installed runtime domains require manifests: jobs'):
+    with pytest.raises(ValueError, match='Installed runtime domains require manifests: demo'):
         compose_catalogs((provider,), require_manifest_coverage=True)
 
+    demo_manifest = AgentManifest(
+        id='demo',
+        name='Demo',
+        version='1.0.0',
+        description='Synthetic demo.',
+        requires=CompatibilityDeclaration(chief='>=1.0.0 <2.0.0'),
+    )
     complete = compose_catalogs(
         (provider,),
-        manifests=(job_manifest(),),
+        manifests=(demo_manifest,),
         require_manifest_coverage=True,
     )
     assert complete.manifests is not None
-    assert complete.manifests.ids() == ('jobs',)
+    assert complete.manifests.ids() == ('demo',)
 
 
 def test_registry_instances_are_fresh_and_unknown_lookups_fail_closed():
