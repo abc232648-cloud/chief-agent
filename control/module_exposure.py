@@ -32,7 +32,7 @@ class ModuleExposure:
                 raise ValueError('Runtime registration changed.')
             validate_against_runtime(manifest, domain, agent)
             manifests.capabilities.require_domain_capabilities(module_id, manifest.capabilities)
-            snapshot = self.lifecycle.snapshot(module_id)
+            snapshot = self.lifecycle.snapshot(module_id, observe_health=False)
             if snapshot.compatible is not True or snapshot.state not in {
                 ModuleState.ENABLED, ModuleState.DEGRADED, ModuleState.UPDATE_AVAILABLE,
             }:

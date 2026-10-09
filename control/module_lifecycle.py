@@ -209,7 +209,7 @@ class ModuleLifecycle:
             reason=reason,
         )
 
-    def snapshot(self, module_id: str, *, evidence: ModuleLifecycleEvidence | None = None) -> ModuleLifecycleSnapshot:
+    def snapshot(self, module_id: str, *, evidence: ModuleLifecycleEvidence | None = None, observe_health: bool = True) -> ModuleLifecycleSnapshot:
         module_id = _module_id(module_id)
         if module_id not in self.manifests:
             if evidence is not None:
@@ -230,7 +230,11 @@ class ModuleLifecycle:
             evidence = ModuleLifecycleEvidence()
         if not isinstance(evidence, ModuleLifecycleEvidence):
             raise ValueError('Lifecycle evidence must use the trusted ModuleLifecycleEvidence contract.')
-        return self._known_snapshot(module_id, self._health_index(), evidence)
+        # Exposure checks need current lifecycle/compatibility authority, not a
+        # full-system observational health scan on every HTTP request.
+        if type(observe_health) is not bool:
+            raise ValueError('Health observation selection must be boolean.')
+        return self._known_snapshot(module_id, self._health_index() if observe_health else {}, evidence)
 
     def describe(self, *, evidence: Mapping[str, ModuleLifecycleEvidence] | None = None) -> list[dict]:
         evidence = {} if evidence is None else evidence

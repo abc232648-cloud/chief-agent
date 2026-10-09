@@ -92,3 +92,12 @@ def test_browser_fields_cannot_create_exposure(dashboard):
     assert request(d, '/api/ui/job-feed?enabled=true&compatible=true&role=Owner', raw=d.credentials['raw'])[0] == 403
     assert request(d, '/api/command', 'POST', {'command': 'test', 'enabled': True, 'compatible': True}, d.credentials['raw'])[0] == 403
     assert request(d, '/api/domains/missing', raw=d.credentials['raw'])[0] == 403
+
+
+def test_exposure_does_not_run_observational_health_probes(dashboard, monkeypatch):
+    gate = exposure(dashboard)
+    def unexpected_probe():
+        raise AssertionError('Request exposure must not scan whole-system health.')
+    monkeypatch.setattr(gate.lifecycle.health, 'snapshot', unexpected_probe)
+    assert gate.available('jobs', *owner(dashboard), kind='companion')
+    assert request(dashboard, '/api/ui/context', raw=dashboard.credentials['raw'])[0] == 200

@@ -12,6 +12,8 @@ unauthorized or revoked sessions. Installed metadata replacement requires server
 recomposition; old interface registrations cannot acquire the replacement's
 surface. Health degradation alone does not revoke an otherwise enabled module:
 A7 health remains observational and existing operation guards stay authoritative.
+Request-time exposure uses the A7 snapshot with health observation disabled, avoiding
+a whole-system probe scan for each API call; normal lifecycle health views are unchanged.
 
 `GET /api/ui/context` now includes only currently accessible domains/pages and an
 `interfaces` list containing authorized Owner, Staff, and Companion declarations.
