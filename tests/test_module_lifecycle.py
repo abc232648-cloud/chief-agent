@@ -58,6 +58,7 @@ def test_application_composes_read_only_lifecycle_for_installed_modules(migrated
     assert jobs['version'] == lifecycle.manifests.get('jobs').version
     assert jobs['state'] == 'ENABLED'
     assert jobs['health'] == 'UNKNOWN'
+    assert jobs['compatible'] is True
     assert jobs['authority'] == 'CHIEF_DERIVED'
 
 
@@ -120,9 +121,9 @@ def test_validated_update_is_projection_only_and_lower_priority_than_degradation
     assert degraded.update_version == '9.9.9'
 
 
-def test_incompatible_evidence_fails_closed_and_has_highest_precedence(migrated):
-    lifecycle = migrated.services.lifecycle
-    controls = migrated.services.controls
+def test_legacy_incompatible_evidence_fails_closed_without_a8_evaluator(migrated):
+    lifecycle = lifecycle_with_health(migrated, HealthStatus.HEALTHY)
+    controls = lifecycle.controls
     node = Node('component', lifecycle.manifests.runtime_agent_id('jobs'))
     controls.transition(
         controls.preview(node, Mode.DISABLED),
@@ -139,6 +140,15 @@ def test_incompatible_evidence_fails_closed_and_has_highest_precedence(migrated)
     assert snapshot.state is ModuleState.INCOMPATIBLE
     assert snapshot.reason == 'Synthetic compatibility blocker.'
     assert snapshot.desired_mode == 'DISABLED'
+
+
+def test_a8_compatibility_cannot_be_overridden_by_lifecycle_evidence(migrated):
+    lifecycle = migrated.services.lifecycle
+    with pytest.raises(ValueError, match='owned by the A8 evaluator'):
+        lifecycle.snapshot(
+            'jobs',
+            evidence=ModuleLifecycleEvidence(compatible=True),
+        )
 
 
 def test_lifecycle_evidence_is_bounded_and_cannot_target_unknown_describe_entries(migrated):

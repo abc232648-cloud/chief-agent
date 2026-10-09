@@ -7,12 +7,13 @@ phases may provide bounded trusted evidence. This module never mutates those sys
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Mapping
 import re
 
 from agents.discovery import ManifestRegistry
+from agents.module_compatibility import ModuleCompatibilityEvaluator
 from capabilities.contracts import Mode, Node
 from control.components import ComponentControls
 from control.health import SystemHealth
@@ -47,13 +48,13 @@ def _version(value: str, label: str) -> str:
 
 @dataclass(frozen=True)
 class ModuleLifecycleEvidence:
-    """Trusted observations owned by later installer/compatibility/update phases.
+    """Trusted observations owned by installer/update phases and legacy A7 callers.
 
-    A7 does not infer these values from a browser request. ``activated=False`` exists
-    so an eventual installer inventory can represent INSTALLED-before-activation.
-    ``validated_update_version`` must only be supplied after the existing Update
-    Center (or a future module updater using the same gates) validates a candidate.
-    A8 will own compatibility evaluation and may supply ``compatible=False``.
+    ``activated=False`` exists so an eventual installer inventory can represent
+    INSTALLED-before-activation. ``validated_update_version`` must only be supplied
+    after the existing Update Center (or a future module updater using the same gates)
+    validates a candidate. When the A8 compatibility evaluator is attached to the
+    lifecycle, compatibility fields are evaluator-owned and caller values are rejected.
     """
 
     activated: bool = True
@@ -111,16 +112,27 @@ class ModuleLifecycleSnapshot:
 class ModuleLifecycle:
     """Aggregate existing Chief state into one presentation-safe module lifecycle."""
 
-    def __init__(self, manifests: ManifestRegistry, controls: ComponentControls, health: SystemHealth):
+    def __init__(
+        self,
+        manifests: ManifestRegistry,
+        controls: ComponentControls,
+        health: SystemHealth,
+        compatibility: ModuleCompatibilityEvaluator | None = None,
+    ):
         if not isinstance(manifests, ManifestRegistry):
             raise TypeError('ModuleLifecycle requires the authoritative ManifestRegistry.')
         if not isinstance(controls, ComponentControls):
             raise TypeError('ModuleLifecycle requires ComponentControls.')
         if not isinstance(health, SystemHealth):
             raise TypeError('ModuleLifecycle requires SystemHealth.')
+        if compatibility is not None and not isinstance(compatibility, ModuleCompatibilityEvaluator):
+            raise TypeError('ModuleLifecycle compatibility must use ModuleCompatibilityEvaluator.')
+        if compatibility is not None and compatibility.manifests is not manifests:
+            raise ValueError('ModuleLifecycle compatibility must evaluate the same ManifestRegistry.')
         self.manifests = manifests
         self.controls = controls
         self.health = health
+        self.compatibility = compatibility
 
     def _health_index(self) -> dict[Node, HealthResult]:
         result: dict[Node, HealthResult] = {}
@@ -131,6 +143,22 @@ class ModuleLifecycle:
                 raise ValueError('System health returned duplicate lifecycle observations.')
             result[item.node] = item
         return result
+
+    def _compatibility_evidence(
+        self,
+        module_id: str,
+        evidence: ModuleLifecycleEvidence,
+    ) -> ModuleLifecycleEvidence:
+        if self.compatibility is None:
+            return evidence
+        if evidence.compatible is not None or evidence.compatibility_reason.strip():
+            raise ValueError('Compatibility evidence is owned by the A8 evaluator for this lifecycle.')
+        result = self.compatibility.evaluate(module_id)
+        return replace(
+            evidence,
+            compatible=result.compatible,
+            compatibility_reason=result.reason,
+        )
 
     def _known_snapshot(
         self,
@@ -144,6 +172,7 @@ class ModuleLifecycle:
         desired = self.controls.desired(node)
         observed = health_index.get(node)
         health_status = observed.status if observed is not None else HealthStatus.UNKNOWN
+        evidence = self._compatibility_evidence(module_id, evidence)
 
         if evidence.validated_update_version == manifest.version:
             raise ValueError('Validated update version must differ from the installed module version.')
