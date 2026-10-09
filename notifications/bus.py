@@ -247,16 +247,17 @@ class NotificationBus:
         return result
 
 
-def publish_legacy_notification(store, title, body, severity='INFO', domain='system', related_page='', *, connection=None):
-    """Compatibility entry point used by existing Chief notification producers.
+def publish_legacy_notification(store, interfaces: InterfaceRegistry, title, body,
+                                severity='INFO', domain='system', related_page='', *, connection=None):
+    """Compatibility helper for callers that already own composition.
 
-    Existing Job behavior is retained: Job events are projected to Owner + companion
-    and therefore still feed the legacy ``notifications`` table/Web Push cursor. Farm
-    legacy notifications are Owner-only by default; Staff delivery must be explicit
-    about role and identity scope and cannot be inferred here.
+    Core never imports the application composition layer. Callers must inject the
+    authoritative InterfaceRegistry explicitly. Existing Job behavior is retained:
+    Job events project to Owner + companion and still feed the legacy notifications
+    table/Web Push cursor. Staff delivery is never inferred by this helper.
     """
-    from application.composition import default_interface_registry
-    interfaces = default_interface_registry()
+    if not isinstance(interfaces, InterfaceRegistry):
+        raise TypeError('Legacy notification publishing requires an InterfaceRegistry.')
     if domain == 'system':
         surfaces = ('owner',)
         links = (NotificationLink('owner', 'system', related_page),) if related_page else ()
