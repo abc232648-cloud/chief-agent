@@ -29,11 +29,11 @@ def compose_catalogs(
 ):
     """Compose runtime/capability catalogs and optional discovery metadata.
 
-    Runtime authorization still uses ``AgentRegistry`` grants. Manifest and
-    interface metadata are validated against that runtime registry and never
-    substitute for it. Custom runtime-only compositions may omit manifests; the
-    default Chief composition requires complete manifest coverage and therefore
-    receives a typed InterfaceRegistry.
+    Runtime authorization still uses ``AgentRegistry`` grants. Capability declarations
+    are validated independently and then used to prove manifest consistency before
+    any authoritative interface registry can be built. Custom runtime-only
+    compositions may omit manifests; the default Chief composition requires complete
+    manifest coverage and receives a typed InterfaceRegistry.
     """
     agents = AgentRegistry()
     components = list(shared_components)
@@ -51,17 +51,18 @@ def compose_catalogs(
         components.extend(services)
         capabilities.extend(declarations)
 
-    manifest_registry = ManifestRegistry(agents)
+    capability_registry = CapabilityRegistry(components, capabilities)
+    manifest_registry = ManifestRegistry(agents, capability_registry)
     for manifest in manifests:
         manifest_registry.register(manifest)
     interface_registry = None
     if require_manifest_coverage:
-        manifest_registry.require_complete()
+        manifest_registry.require_complete().require_capability_alignment()
         interface_registry = InterfaceRegistry(manifest_registry)
 
     return ApplicationCatalogs(
         agents,
-        CapabilityRegistry(components, capabilities),
+        capability_registry,
         manifest_registry,
         interface_registry,
     )
