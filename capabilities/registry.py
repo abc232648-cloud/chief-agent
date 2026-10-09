@@ -115,10 +115,12 @@ class CapabilityRegistry:
         return self._graph
 
     def require_domain_capabilities(self, domain_id, capability_ids):
-        """Prove a domain's manifest/runtime grants exactly match this catalog.
+        """Prove a domain's manifest/runtime grants are declared by this catalog.
 
-        This is a consistency check only. It never grants authority; runtime agent
-        grants and the validated capability declarations remain authoritative.
+        A domain may own additional capability declarations used by other components.
+        The authoritative set for this check is the domain component's grants, which
+        composition derives from the runtime agent. Every granted capability must also
+        have a declaration owned by the same domain.
         """
         if not isinstance(domain_id, str) or not domain_id.strip():
             raise ValueError('Capability domain id must be non-empty.')
@@ -131,6 +133,9 @@ class CapabilityRegistry:
         if len(requested) != len(set(requested)):
             raise ValueError('Capability ids must be unique.')
         requested = tuple(sorted(requested))
+        granted = tuple(sorted(owner.permissions))
+        if requested != granted:
+            raise ValueError('Domain capability set must exactly match domain component grants.')
         missing = [capability_id for capability_id in requested if capability_id not in self.capabilities]
         if missing:
             raise ValueError('Undeclared capabilities: ' + ', '.join(missing))
@@ -140,12 +145,6 @@ class CapabilityRegistry:
         ]
         if foreign:
             raise ValueError('Capabilities owned by another component: ' + ', '.join(foreign))
-        declared = tuple(sorted(
-            capability.id for capability in self.capabilities.values()
-            if capability.owner == domain_id
-        ))
-        if requested != declared:
-            raise ValueError('Domain capability set must exactly match its capability declarations.')
         return tuple(self.capabilities[capability_id] for capability_id in requested)
 
     def describe(self):
