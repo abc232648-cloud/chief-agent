@@ -49,7 +49,7 @@ def test_capability_registry_rejects_unknown_foreign_and_incomplete_domain_sets(
     with pytest.raises(ValueError, match='Capabilities owned by another component: jobs.execute'):
         capabilities.require_domain_capabilities('farming', ('jobs.execute',))
 
-    with pytest.raises(ValueError, match='exactly match its capability declarations'):
+    with pytest.raises(ValueError, match='exactly match domain component grants'):
         capabilities.require_domain_capabilities('farming', ('farming.records.read',))
 
 
