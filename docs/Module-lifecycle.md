@@ -25,7 +25,7 @@ A7 derives lifecycle state from existing Chief systems:
 | installed runtime module + version | validated `ManifestRegistry` |
 | runtime enable/disable intent | `ComponentControls` / existing audited component-mode state |
 | observed runtime condition | `SystemHealth` |
-| incompatible evidence | future A8 compatibility evaluation |
+| incompatible evidence | A8 `ModuleCompatibilityEvaluator` in default composition |
 | validated update candidate | existing Update Center or a future module updater using equivalent gates |
 
 A7 never writes `component_modes`, never creates a lifecycle table and never activates an update.
@@ -57,11 +57,11 @@ The current `ManifestRegistry` only accepts manifests that match an already-inst
 
 A later installer/discovery phase may provide real installed-before-activation inventory without changing the public lifecycle vocabulary.
 
-## Update boundary
+## Update and compatibility boundaries
 
 A7 intentionally does not perform version comparison, candidate download, staging, migration, backup, approval or activation. `validated_update_version` is a trusted internal observation only after the existing Update Center (or an equivalent future module updater) has validated the candidate.
 
-A7 also does not implement compatibility rules. It can project `INCOMPATIBLE` only when a trusted compatibility layer supplies explicit incompatible evidence with a bounded reason. **Phase A8 owns that evaluation.**
+Phase A8 now owns compatibility evaluation through the read-only `ModuleCompatibilityEvaluator`. Default control-service composition supplies that evaluator to A7, so `compatible` is derived from the validated manifest's Chief/API requirements and cannot be overridden by caller evidence. Standalone A7 construction without the evaluator retains the legacy trusted-evidence seam for isolated composition/testing.
 
 ## Output
 
@@ -73,9 +73,9 @@ Each snapshot includes:
 - lifecycle state
 - underlying desired mode and revision
 - exact observed health status
-- compatibility observation, if supplied
+- compatibility observation, when evaluated
 - validated update version, if supplied
 - bounded reason
 - `authority = CHIEF_DERIVED`
 
-The projection is suitable for later Owner/Staff module discovery APIs, but A7 itself adds no browser endpoint and accepts no client-supplied authority.
+The projection is suitable for later Owner/Staff module discovery APIs, but A7/A8 themselves add no browser endpoint and accept no client-supplied authority.
