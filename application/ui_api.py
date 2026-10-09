@@ -12,11 +12,13 @@ def permitted(service,principal,permission,domain=None):
 
 
 def context(service,principal):
-    registry=default_registry()
+    from .exposure import for_store
+    exposure=for_store(service.store)
+    registry=exposure.lifecycle.manifests.runtime
     domains=[]
     for definition in registry.describe():
         domain=definition['id']
-        if permitted(service,principal,'work.read',domain):
+        if exposure.available(domain,service,principal):
             permissions={p:permitted(service,principal,p,domain) for p in ('work.read','work.request','work.manage','work.approve','work.delete','controls.manage','safety.pause')}
             domains.append({**definition,'permissions':permissions})
     global_permissions={p:permitted(service,principal,p) for p in ('audit.read','installation.manage','identity.manage')}
@@ -36,7 +38,7 @@ def context(service,principal):
             management={**management,'domains':[d for d in management['domains'] if d!='farming']}
             if not management['domains']:management={**management,'roles':[]}
     if management['roles']:pages+=['users']
-    return {'role':principal.role,'domains':domains,'pages':sorted(set(pages)),'global_permissions':global_permissions,'user_management':management,
+    return {'interfaces':exposure.describe(service,principal),'role':principal.role,'domains':domains,'pages':sorted(set(pages)),'global_permissions':global_permissions,'user_management':management,
             'authority_note':'Visibility is advisory. Every API operation checks current server-side authority.'}
 
 

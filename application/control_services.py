@@ -6,6 +6,7 @@ from control.agents import AgentControls
 from control.components import ComponentControls
 from control.health import SystemHealth
 from control.module_lifecycle import ModuleLifecycle
+from control.module_exposure import ModuleExposure
 from .composition import default_catalogs
 from .report_services import ReportServices
 
@@ -16,6 +17,7 @@ class ControlServices:
     health: SystemHealth
     reporting: ReportServices | None = None
     lifecycle: ModuleLifecycle | None = None
+    exposure: ModuleExposure | None = None
 
 
 def compose_control_services(store, catalogs=None):
@@ -46,4 +48,6 @@ def compose_control_services(store, catalogs=None):
     if catalogs.manifests is not None:
         compatibility = ModuleCompatibilityEvaluator(catalogs.manifests)
         lifecycle = ModuleLifecycle(catalogs.manifests, controls, health, compatibility)
-    return ControlServices(controls, health, ReportServices(catalogs.capabilities), lifecycle)
+    exposure = ModuleExposure(lifecycle, catalogs.interfaces) if lifecycle is not None and catalogs.interfaces is not None else None
+    store._module_exposure = exposure
+    return ControlServices(controls, health, ReportServices(catalogs.capabilities), lifecycle, exposure)

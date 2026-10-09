@@ -105,6 +105,8 @@ def intercept(handler,store):
         if path=='/api/auth/activity' and method=='POST':
             if body!={}:raise ValueError('Activity uses server time; no client fields are accepted.')
             service.activity(raw);handler.json({'status':'ACTIVITY_RECORDED'});return True
+        from .exposure import guard
+        guard(store, service, principal, method, path, body)
         from .farm_api import dispatch as farm_dispatch
         if farm_dispatch(handler,store,principal,path,method,body):return True
         from .ui_api import dispatch as ui_dispatch
@@ -161,6 +163,12 @@ def intercept(handler,store):
         except PermissionError:
             service.event(principal,permission,domain,None,'DENIED');raise
         service.event(principal,permission,domain,resource,'AUTHORIZED',authority)
+        if path == '/api/domains' and method in {'GET', 'HEAD'}:
+            from .exposure import for_store
+            exposure = for_store(store)
+            handler.json([item for item in exposure.lifecycle.manifests.runtime.describe()
+                          if exposure.available(item['id'], service, principal)])
+            return True
         if path.startswith('/api/model-setup'):
             from model_registry.setup import ModelSetup
             from pathlib import Path
