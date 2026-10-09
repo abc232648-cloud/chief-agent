@@ -1,5 +1,6 @@
 """Application composition; generic Core never imports concrete domain providers."""
 from dataclasses import dataclass
+from agents.module_compatibility import ModuleCompatibilityEvaluator
 from capabilities.contracts import Mode, Node
 from control.agents import AgentControls
 from control.components import ComponentControls
@@ -41,5 +42,8 @@ def compose_control_services(store, catalogs=None):
             supported[Node('capability', capability)] = modes
     controls = ComponentControls(store, catalogs.capabilities, supported=supported, guarded_consumers=guarded)
     health = SystemHealth(controls)
-    lifecycle = ModuleLifecycle(catalogs.manifests, controls, health) if catalogs.manifests is not None else None
+    lifecycle = None
+    if catalogs.manifests is not None:
+        compatibility = ModuleCompatibilityEvaluator(catalogs.manifests)
+        lifecycle = ModuleLifecycle(catalogs.manifests, controls, health, compatibility)
     return ControlServices(controls, health, ReportServices(catalogs.capabilities), lifecycle)
