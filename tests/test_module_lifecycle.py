@@ -11,7 +11,7 @@ from control.module_lifecycle import (
     ModuleLifecycleEvidence,
     ModuleState,
 )
-from checkpoint_c_fixture import migrated
+from checkpoint_c_fixture import migrated, unmigrated
 
 
 NOW = datetime(2026, 10, 9, 2, 30, tzinfo=timezone.utc)
