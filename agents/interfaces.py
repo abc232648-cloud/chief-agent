@@ -40,15 +40,16 @@ class InterfaceRegistration:
 class InterfaceRegistry:
     """Authoritative catalog of *available* presentation interfaces.
 
-    Availability means the installed, runtime-aligned manifest declares the surface.
-    It does not mean the agent/interface is enabled, healthy, or authorized for the
-    current principal. Lifecycle and authorization remain separate Chief concerns.
+    Availability means the installed, runtime-aligned and capability-aligned manifest
+    declares the surface. It does not mean the agent/interface is enabled, healthy,
+    or authorized for the current principal. Lifecycle and authorization remain
+    separate Chief concerns.
     """
 
     def __init__(self, manifests: ManifestRegistry):
         if not isinstance(manifests, ManifestRegistry):
             raise TypeError('InterfaceRegistry requires a ManifestRegistry.')
-        manifests.require_complete()
+        manifests.require_complete().require_capability_alignment()
         self.manifests = manifests
         self._entries: dict[tuple[str, str], InterfaceRegistration] = {}
         self._modules: dict[tuple[str, str], str] = {}

@@ -1,4 +1,4 @@
-name: Agent Manifest, Registry & Interface CI
+name: Agent Manifest, Registry, Interface & Capability CI
 
 on:
   pull_request:
@@ -8,6 +8,7 @@ on:
       - 'agents/discovery.py'
       - 'agents/interfaces.py'
       - 'agents/registry.py'
+      - 'capabilities/registry.py'
       - 'domains/contracts.py'
       - 'domains/jobs/manifest.py'
       - 'domains/farming/manifest.py'
@@ -15,6 +16,7 @@ on:
       - 'tests/test_agent_manifest.py'
       - 'tests/test_agent_discovery_registry.py'
       - 'tests/test_interface_registry.py'
+      - 'tests/test_agent_capability_integration.py'
       - 'tests/test_application_composition.py'
       - '.github/workflows/agent-manifest-ci.yml'
   push:
@@ -24,6 +26,7 @@ on:
       - 'agents/discovery.py'
       - 'agents/interfaces.py'
       - 'agents/registry.py'
+      - 'capabilities/registry.py'
       - 'domains/contracts.py'
       - 'domains/jobs/manifest.py'
       - 'domains/farming/manifest.py'
@@ -31,6 +34,7 @@ on:
       - 'tests/test_agent_manifest.py'
       - 'tests/test_agent_discovery_registry.py'
       - 'tests/test_interface_registry.py'
+      - 'tests/test_agent_capability_integration.py'
       - 'tests/test_application_composition.py'
       - '.github/workflows/agent-manifest-ci.yml'
 
@@ -38,7 +42,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: agent-manifest-registry-interface-${{ github.event.pull_request.number || github.ref }}
+  group: agent-manifest-registry-interface-capability-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -53,23 +57,25 @@ jobs:
           cache: pip
       - name: Install Chief test dependencies
         run: python -m pip install -r requirements-test.txt
-      - name: Compile manifest, registry and interface surfaces
+      - name: Compile manifest, registry, interface and capability surfaces
         run: >-
           python -m compileall -q
           agents/manifest.py
           agents/discovery.py
           agents/interfaces.py
           agents/registry.py
+          capabilities/registry.py
           application/composition.py
           domains/contracts.py
           domains/jobs/manifest.py
           domains/farming/manifest.py
-      - name: Run manifest, registry, interface and composition tests
+      - name: Run manifest, registry, interface, capability and composition tests
         run: >-
           python -m pytest -q
           tests/test_agent_manifest.py
           tests/test_agent_discovery_registry.py
           tests/test_interface_registry.py
+          tests/test_agent_capability_integration.py
           tests/test_application_composition.py
 
   full-suite:

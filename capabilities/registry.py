@@ -114,6 +114,39 @@ class CapabilityRegistry:
     def graph(self):
         return self._graph
 
+    def require_domain_capabilities(self, domain_id, capability_ids):
+        """Prove a domain's manifest/runtime grants are declared by this catalog.
+
+        A domain may own additional capability declarations used by other components.
+        The authoritative set for this check is the domain component's grants, which
+        composition derives from the runtime agent. Every granted capability must also
+        have a declaration owned by the same domain.
+        """
+        if not isinstance(domain_id, str) or not domain_id.strip():
+            raise ValueError('Capability domain id must be non-empty.')
+        owner = self.components.get(domain_id)
+        if owner is None or owner.kind != ComponentKind.DOMAIN:
+            raise ValueError('Unknown capability domain: ' + domain_id)
+        requested = tuple(capability_ids)
+        if any(not isinstance(capability_id, str) or not capability_id.strip() for capability_id in requested):
+            raise ValueError('Capability ids must be non-empty strings.')
+        if len(requested) != len(set(requested)):
+            raise ValueError('Capability ids must be unique.')
+        requested = tuple(sorted(requested))
+        missing = [capability_id for capability_id in requested if capability_id not in self.capabilities]
+        if missing:
+            raise ValueError('Undeclared capabilities: ' + ', '.join(missing))
+        foreign = [
+            capability_id for capability_id in requested
+            if self.capabilities[capability_id].owner != domain_id
+        ]
+        if foreign:
+            raise ValueError('Capabilities owned by another component: ' + ', '.join(foreign))
+        granted = tuple(sorted(owner.permissions))
+        if requested != granted:
+            raise ValueError('Domain capability set must exactly match domain component grants.')
+        return tuple(self.capabilities[capability_id] for capability_id in requested)
+
     def describe(self):
         # Detached JSON values: callers cannot mutate the validated snapshot.
         return json.loads(json.dumps({
