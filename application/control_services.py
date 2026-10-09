@@ -4,6 +4,7 @@ from capabilities.contracts import Mode, Node
 from control.agents import AgentControls
 from control.components import ComponentControls
 from control.health import SystemHealth
+from control.module_lifecycle import ModuleLifecycle
 from .composition import default_catalogs
 from .report_services import ReportServices
 
@@ -13,6 +14,7 @@ class ControlServices:
     controls: ComponentControls
     health: SystemHealth
     reporting: ReportServices | None = None
+    lifecycle: ModuleLifecycle | None = None
 
 
 def compose_control_services(store, catalogs=None):
@@ -38,4 +40,6 @@ def compose_control_services(store, catalogs=None):
         for capability in agent.capabilities:
             supported[Node('capability', capability)] = modes
     controls = ComponentControls(store, catalogs.capabilities, supported=supported, guarded_consumers=guarded)
-    return ControlServices(controls, SystemHealth(controls), ReportServices(catalogs.capabilities))
+    health = SystemHealth(controls)
+    lifecycle = ModuleLifecycle(catalogs.manifests, controls, health) if catalogs.manifests is not None else None
+    return ControlServices(controls, health, ReportServices(catalogs.capabilities), lifecycle)
