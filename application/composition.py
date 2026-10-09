@@ -1,7 +1,9 @@
 """Compose the installed domains outside Chief Core.
 
-Each caller receives a fresh registry. Domain factories and metadata are unchanged.
+Each caller receives fresh runtime, capability and discovery registries. Runtime
+DomainDefinition/AgentDefinition metadata remains authoritative for execution.
 """
+from agents.discovery import ManifestRegistry
 from agents.registry import AgentRegistry
 from dataclasses import dataclass
 from capabilities.contracts import Component, ComponentKind
@@ -12,13 +14,23 @@ from capabilities.registry import CapabilityRegistry
 class ApplicationCatalogs:
     agents: AgentRegistry
     capabilities: CapabilityRegistry
+    manifests: ManifestRegistry | None = None
 
 
-def compose_catalogs(providers, *, shared_components=(), shared_capabilities=()):
-    """Providers supply domain registration, capability definitions and components.
+def compose_catalogs(
+    providers,
+    *,
+    manifests=(),
+    require_manifest_coverage=False,
+    shared_components=(),
+    shared_capabilities=(),
+):
+    """Compose runtime/capability catalogs and optional discovery metadata.
 
-    Nothing in Core imports providers. No capability metadata is attached to or
-    substituted for AgentRegistry. Runtime authorization still uses its grants.
+    Runtime authorization still uses ``AgentRegistry`` grants. Manifest metadata is
+    validated against that runtime registry and never substitutes for it. Custom
+    runtime-only compositions may omit manifests; the default Chief composition
+    requires complete manifest coverage for every installed domain.
     """
     agents = AgentRegistry()
     components = list(shared_components)
@@ -35,7 +47,14 @@ def compose_catalogs(providers, *, shared_components=(), shared_capabilities=())
                            Component(agent.id, ComponentKind.AGENT, permissions=tuple(sorted(agent.capabilities)))))
         components.extend(services)
         capabilities.extend(declarations)
-    return ApplicationCatalogs(agents, CapabilityRegistry(components, capabilities))
+
+    manifest_registry = ManifestRegistry(agents)
+    for manifest in manifests:
+        manifest_registry.register(manifest)
+    if require_manifest_coverage:
+        manifest_registry.require_complete()
+
+    return ApplicationCatalogs(agents, CapabilityRegistry(components, capabilities), manifest_registry)
 
 
 def default_catalogs():
@@ -43,6 +62,8 @@ def default_catalogs():
     from domains.farming import definition as farming
     from domains.jobs.capabilities import definitions as job_capabilities, components as job_components
     from domains.farming.capabilities import definitions as farm_capabilities
+    from domains.jobs.manifest import manifest as job_manifest
+    from domains.farming.manifest import manifest as farm_manifest
     from .legacy_capabilities import shared_components, shared_capabilities
     from .evidence_capabilities import components as evidence_components, capabilities as evidence_capabilities
     from .execution_capabilities import components as execution_components, capabilities as execution_capabilities
@@ -53,11 +74,21 @@ def default_catalogs():
                  (*farming(), farm_capabilities(), ()))
     return compose_catalogs(
         providers,
+        manifests=(job_manifest(), farm_manifest()),
+        require_manifest_coverage=True,
         shared_components=shared_components()+evidence_components()+execution_components()+g_components()+assistant_components()+report_components(),
         shared_capabilities=shared_capabilities()+evidence_capabilities()+execution_capabilities()+g_capabilities()+assistant_capabilities()+report_capabilities(),
     )
 
 
 def default_registry():
-    """Compatibility entry point: return only the unchanged domain/agent catalog."""
+    """Compatibility entry point: return only the unchanged runtime agent catalog."""
     return default_catalogs().agents
+
+
+def default_manifest_registry():
+    """Return validated discovery metadata for the installed default domains."""
+    manifests = default_catalogs().manifests
+    if manifests is None:  # Defensive: default composition is required to provide it.
+        raise RuntimeError('Default Chief composition has no manifest registry.')
+    return manifests
