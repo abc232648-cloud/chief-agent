@@ -109,8 +109,16 @@ def test_manifest_requires_explicit_nonempty_compatibility():
 def test_runtime_alignment_fails_closed_on_metadata_or_grant_drift():
     manifest, domain, agent = manifest_for(jobs)
     assert validate_against_runtime(manifest, domain, agent) is manifest
+    wrong_domain = AgentManifest(
+        id='other',
+        name=manifest.name,
+        version=manifest.version,
+        description=manifest.description,
+        requires=manifest.requires,
+        capabilities=(),
+    )
     with pytest.raises(ValueError, match='same runtime domain'):
-        validate_against_runtime(replace(manifest, id='other'), domain, agent)
+        validate_against_runtime(wrong_domain, domain, agent)
     with pytest.raises(ValueError, match='name must match'):
         validate_against_runtime(replace(manifest, name='Renamed'), domain, agent)
     with pytest.raises(ValueError, match='description must match'):
