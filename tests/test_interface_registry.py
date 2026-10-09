@@ -11,6 +11,7 @@ from domains.contracts import AgentDefinition, DomainDefinition
 
 
 def _manifest(domain_id: str, label: str, description: str, *, module: str, kind: str = 'owner'):
+    roles = ('Manager',) if kind == 'staff' else ('Owner',)
     return AgentManifest(
         id=domain_id,
         name=label,
@@ -18,7 +19,7 @@ def _manifest(domain_id: str, label: str, description: str, *, module: str, kind
         description=description,
         requires=CompatibilityDeclaration(chief='>=1.0.0 <2.0.0'),
         capabilities=(),
-        interfaces=(InterfaceDeclaration(kind, module, ('Owner',)),),
+        interfaces=(InterfaceDeclaration(kind, module, roles),),
         notifications=False,
     )
 
@@ -100,8 +101,9 @@ def test_surface_and_role_filters_are_presentation_metadata_only():
     assert [item.agent_id for item in registry.for_kind('companion')] == ['jobs']
     assert [item.agent_id for item in registry.for_role('staff', 'Manager')] == ['farming']
     assert [item.agent_id for item in registry.for_role('staff', 'Worker')] == ['farming']
-    assert registry.for_role('staff', 'Owner') == ()
-    with pytest.raises(ValueError, match='Interface role must be non-empty'):
+    with pytest.raises(ValueError, match='Unknown Staff role'):
+        registry.for_role('staff', 'Owner')
+    with pytest.raises(ValueError, match='Unknown Staff role'):
         registry.for_role('staff', '   ')
 
 
