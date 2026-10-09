@@ -37,6 +37,11 @@ _SUPERVISION = (
     'staff.work.verify',
     'staff.work.correct',
 )
+_ROLE_SPECS = MappingProxyType({
+    'Manager': ('DOMAIN', _COMMON + _SUPERVISION + ('staff.work.assign', 'staff.work.manage')),
+    'Supervisor': ('SUPERVISED', _COMMON + _SUPERVISION),
+    'Worker': ('ASSIGNED', _COMMON + ('staff.work.execute', 'staff.work.submit')),
+})
 
 
 @dataclass(frozen=True)
@@ -48,12 +53,13 @@ class StaffRoleContract:
     capabilities: tuple[str, ...]
 
     def __post_init__(self):
-        if self.name not in STAFF_ROLE_ORDER:
+        expected = _ROLE_SPECS.get(self.name)
+        if expected is None:
             raise ValueError('Unknown Staff role.')
-        if self.scope not in STAFF_SCOPES:
-            raise ValueError('Unknown Staff role scope.')
-        if not isinstance(self.capabilities, tuple) or not self.capabilities:
-            raise ValueError('Staff role capabilities must be a non-empty immutable tuple.')
+        if self.scope not in STAFF_SCOPES or self.scope != expected[0]:
+            raise ValueError('Staff role scope does not match the canonical contract.')
+        if not isinstance(self.capabilities, tuple) or self.capabilities != expected[1]:
+            raise ValueError('Staff role capabilities do not match the canonical contract.')
         if len(self.capabilities) != len(set(self.capabilities)):
             raise ValueError('Staff role capabilities must be unique.')
         if any(capability not in STAFF_CAPABILITIES for capability in self.capabilities):
@@ -72,21 +78,8 @@ class StaffRoleContract:
 
 
 STAFF_ROLES = MappingProxyType({
-    'Manager': StaffRoleContract(
-        'Manager',
-        'DOMAIN',
-        _COMMON + _SUPERVISION + ('staff.work.assign', 'staff.work.manage'),
-    ),
-    'Supervisor': StaffRoleContract(
-        'Supervisor',
-        'SUPERVISED',
-        _COMMON + _SUPERVISION,
-    ),
-    'Worker': StaffRoleContract(
-        'Worker',
-        'ASSIGNED',
-        _COMMON + ('staff.work.execute', 'staff.work.submit'),
-    ),
+    name: StaffRoleContract(name, scope, capabilities)
+    for name, (scope, capabilities) in _ROLE_SPECS.items()
 })
 
 
