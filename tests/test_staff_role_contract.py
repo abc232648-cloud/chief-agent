@@ -13,7 +13,10 @@ from agents.staff_roles import (
     validate_staff_roles,
 )
 from application.composition import default_interface_registry
+from domains.farming import setup
 from identity.contracts import MATRIX
+from identity.service import IdentityService
+from tests.test_farm_tasks import staff as farm_staff
 
 
 def test_staff_role_contract_is_exact_deterministic_and_immutable():
@@ -118,3 +121,20 @@ def test_default_interface_registry_exposes_typed_staff_contracts_without_author
         registry.staff_role('farming', 'Owner')
     with pytest.raises(ValueError, match='does not expose a.*staff.*interface'):
         registry.staff_roles('jobs')
+
+
+def test_farm_supervisor_remains_worker_identity_with_domain_scoped_supervision(dashboard):
+    d = dashboard
+    _, _, _, _, _, _, _, _, _, _, supervisor = farm_staff(d)
+    service = IdentityService(d.store)
+
+    assert supervisor.role == 'Worker'
+    assert service.authorize(supervisor, 'work.request', 'farming', sensitive=False) == 'ROLE'
+    with pytest.raises(PermissionError):
+        service.authorize(supervisor, 'identity.workers.manage', 'farming', sensitive=False)
+
+    with d.store._connect() as con:
+        assert setup.role(con, supervisor) == 'SUPERVISOR'
+        assert setup.authorize(d.store, con, supervisor, 'manage').id == supervisor.id
+        with pytest.raises(PermissionError, match='Farm management authority is required'):
+            setup.authorize(d.store, con, supervisor, 'setup')
