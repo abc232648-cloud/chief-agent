@@ -133,9 +133,6 @@ class CapabilityRegistry:
         if len(requested) != len(set(requested)):
             raise ValueError('Capability ids must be unique.')
         requested = tuple(sorted(requested))
-        granted = tuple(sorted(owner.permissions))
-        if requested != granted:
-            raise ValueError('Domain capability set must exactly match domain component grants.')
         missing = [capability_id for capability_id in requested if capability_id not in self.capabilities]
         if missing:
             raise ValueError('Undeclared capabilities: ' + ', '.join(missing))
@@ -145,6 +142,9 @@ class CapabilityRegistry:
         ]
         if foreign:
             raise ValueError('Capabilities owned by another component: ' + ', '.join(foreign))
+        granted = tuple(sorted(owner.permissions))
+        if requested != granted:
+            raise ValueError('Domain capability set must exactly match domain component grants.')
         return tuple(self.capabilities[capability_id] for capability_id in requested)
 
     def describe(self):
