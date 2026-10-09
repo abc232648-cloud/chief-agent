@@ -4,6 +4,7 @@ Each caller receives fresh runtime, capability and discovery registries. Runtime
 DomainDefinition/AgentDefinition metadata remains authoritative for execution.
 """
 from agents.discovery import ManifestRegistry
+from agents.interfaces import InterfaceRegistry
 from agents.registry import AgentRegistry
 from dataclasses import dataclass
 from capabilities.contracts import Component, ComponentKind
@@ -15,6 +16,7 @@ class ApplicationCatalogs:
     agents: AgentRegistry
     capabilities: CapabilityRegistry
     manifests: ManifestRegistry | None = None
+    interfaces: InterfaceRegistry | None = None
 
 
 def compose_catalogs(
@@ -27,10 +29,11 @@ def compose_catalogs(
 ):
     """Compose runtime/capability catalogs and optional discovery metadata.
 
-    Runtime authorization still uses ``AgentRegistry`` grants. Manifest metadata is
-    validated against that runtime registry and never substitutes for it. Custom
-    runtime-only compositions may omit manifests; the default Chief composition
-    requires complete manifest coverage for every installed domain.
+    Runtime authorization still uses ``AgentRegistry`` grants. Manifest and
+    interface metadata are validated against that runtime registry and never
+    substitute for it. Custom runtime-only compositions may omit manifests; the
+    default Chief composition requires complete manifest coverage and therefore
+    receives a typed InterfaceRegistry.
     """
     agents = AgentRegistry()
     components = list(shared_components)
@@ -51,10 +54,17 @@ def compose_catalogs(
     manifest_registry = ManifestRegistry(agents)
     for manifest in manifests:
         manifest_registry.register(manifest)
+    interface_registry = None
     if require_manifest_coverage:
         manifest_registry.require_complete()
+        interface_registry = InterfaceRegistry(manifest_registry)
 
-    return ApplicationCatalogs(agents, CapabilityRegistry(components, capabilities), manifest_registry)
+    return ApplicationCatalogs(
+        agents,
+        CapabilityRegistry(components, capabilities),
+        manifest_registry,
+        interface_registry,
+    )
 
 
 def default_catalogs():
@@ -92,3 +102,11 @@ def default_manifest_registry():
     if manifests is None:  # Defensive: default composition is required to provide it.
         raise RuntimeError('Default Chief composition has no manifest registry.')
     return manifests
+
+
+def default_interface_registry():
+    """Return the typed available-interface catalog for default installed domains."""
+    interfaces = default_catalogs().interfaces
+    if interfaces is None:  # Defensive: default composition requires complete manifests.
+        raise RuntimeError('Default Chief composition has no interface registry.')
+    return interfaces
