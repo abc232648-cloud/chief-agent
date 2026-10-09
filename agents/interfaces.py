@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from agents.discovery import ManifestRegistry
 from agents.manifest import INTERFACE_KINDS, AgentManifest, InterfaceDeclaration
+from agents.staff_roles import StaffRoleContract, staff_role as staff_role_contract
 
 INTERFACE_KIND_ORDER = ('owner', 'staff', 'companion')
 
@@ -103,10 +104,29 @@ class InterfaceRegistry:
         )
 
     def for_role(self, kind: str, role: str) -> tuple[InterfaceRegistration, ...]:
-        if not isinstance(role, str) or not role.strip():
-            raise ValueError('Interface role must be non-empty.')
-        role = role.strip()
+        self._validate_kind(kind)
+        if kind == 'staff':
+            role = staff_role_contract(role).name
+        else:
+            if not isinstance(role, str) or not role.strip():
+                raise ValueError('Interface role must be non-empty.')
+            role = role.strip()
         return tuple(registration for registration in self.for_kind(kind) if role in registration.roles)
+
+    def staff_roles(self, agent_id: str) -> tuple[StaffRoleContract, ...]:
+        """Return declared Staff workflow metadata without granting authority."""
+
+        registration = self.require(agent_id, 'staff')
+        return tuple(staff_role_contract(role) for role in registration.roles)
+
+    def staff_role(self, agent_id: str, role: str) -> StaffRoleContract:
+        """Require one canonical Staff role declared by an agent's Staff surface."""
+
+        contract = staff_role_contract(role)
+        registration = self.require(agent_id, 'staff')
+        if contract.name not in registration.roles:
+            raise ValueError(f'Agent {agent_id!r} does not expose Staff role {contract.name!r}.')
+        return contract
 
     def notifications_declared(self, agent_id: str) -> bool:
         self._validate_agent(agent_id)

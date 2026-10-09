@@ -1,5 +1,6 @@
 """Declarative Farm Agent manifest for Chief discovery surfaces."""
 from agents.manifest import AgentManifest, CompatibilityDeclaration, InterfaceDeclaration
+from agents.staff_roles import STAFF_ROLE_ORDER
 
 
 def manifest() -> AgentManifest:
@@ -20,7 +21,7 @@ def manifest() -> AgentManifest:
         ),
         interfaces=(
             InterfaceDeclaration('owner', 'farming', ('Owner', 'Administrator')),
-            InterfaceDeclaration('staff', 'farming', ('Manager', 'Supervisor', 'Worker')),
+            InterfaceDeclaration('staff', 'farming', STAFF_ROLE_ORDER),
         ),
         notifications=True,
     )

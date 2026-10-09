@@ -1,4 +1,4 @@
-name: Agent Manifest, Registry, Interface & Capability CI
+name: Agent Manifest, Registry, Interface, Capability & Staff CI
 
 on:
   pull_request:
@@ -8,16 +8,24 @@ on:
       - 'agents/discovery.py'
       - 'agents/interfaces.py'
       - 'agents/registry.py'
+      - 'agents/staff_roles.py'
       - 'capabilities/registry.py'
+      - 'identity/contracts.py'
+      - 'identity/service.py'
       - 'domains/contracts.py'
       - 'domains/jobs/manifest.py'
       - 'domains/farming/manifest.py'
+      - 'domains/farming/setup.py'
+      - 'domains/farming/tasks.py'
       - 'application/composition.py'
+      - 'docs/Staff-role-contract.md'
       - 'tests/test_agent_manifest.py'
       - 'tests/test_agent_discovery_registry.py'
       - 'tests/test_interface_registry.py'
       - 'tests/test_agent_capability_integration.py'
+      - 'tests/test_staff_role_contract.py'
       - 'tests/test_application_composition.py'
+      - 'tests/test_farm_tasks.py'
       - '.github/workflows/agent-manifest-ci.yml'
   push:
     branches: [main]
@@ -26,29 +34,40 @@ on:
       - 'agents/discovery.py'
       - 'agents/interfaces.py'
       - 'agents/registry.py'
+      - 'agents/staff_roles.py'
       - 'capabilities/registry.py'
+      - 'identity/contracts.py'
+      - 'identity/service.py'
       - 'domains/contracts.py'
       - 'domains/jobs/manifest.py'
       - 'domains/farming/manifest.py'
+      - 'domains/farming/setup.py'
+      - 'domains/farming/tasks.py'
       - 'application/composition.py'
+      - 'docs/Staff-role-contract.md'
       - 'tests/test_agent_manifest.py'
       - 'tests/test_agent_discovery_registry.py'
       - 'tests/test_interface_registry.py'
       - 'tests/test_agent_capability_integration.py'
+      - 'tests/test_staff_role_contract.py'
       - 'tests/test_application_composition.py'
+      - 'tests/test_farm_tasks.py'
       - '.github/workflows/agent-manifest-ci.yml'
 
 permissions:
   contents: read
 
 concurrency:
-  group: agent-manifest-registry-interface-capability-${{ github.event.pull_request.number || github.ref }}
+  group: agent-manifest-registry-interface-capability-staff-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   focused:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      CHIEF_INSTANCE_MODE: test
+      CHIEF_TEST_SECRET_BACKEND: portable-aead
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -57,26 +76,33 @@ jobs:
           cache: pip
       - name: Install Chief test dependencies
         run: python -m pip install -r requirements-test.txt
-      - name: Compile manifest, registry, interface and capability surfaces
+      - name: Compile manifest, registry, interface, capability and Staff surfaces
         run: >-
           python -m compileall -q
           agents/manifest.py
           agents/discovery.py
           agents/interfaces.py
           agents/registry.py
+          agents/staff_roles.py
           capabilities/registry.py
+          identity/contracts.py
+          identity/service.py
           application/composition.py
           domains/contracts.py
           domains/jobs/manifest.py
           domains/farming/manifest.py
-      - name: Run manifest, registry, interface, capability and composition tests
+          domains/farming/setup.py
+          domains/farming/tasks.py
+      - name: Run manifest, registry, capability, Staff and Farm authority tests
         run: >-
           python -m pytest -q
           tests/test_agent_manifest.py
           tests/test_agent_discovery_registry.py
           tests/test_interface_registry.py
           tests/test_agent_capability_integration.py
+          tests/test_staff_role_contract.py
           tests/test_application_composition.py
+          tests/test_farm_tasks.py
 
   full-suite:
     runs-on: ubuntu-latest
