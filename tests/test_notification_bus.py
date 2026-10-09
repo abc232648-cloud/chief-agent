@@ -108,7 +108,7 @@ def test_staff_assignment_scopes_require_explicit_recipients():
 def test_bus_rejects_surfaces_roles_and_modules_not_declared_by_agent(tmp_path):
     _, shared = bus(tmp_path)
     with pytest.raises(ValueError, match='does not expose'):
-        shared.publish(job_event(audience=NotificationAudience(('staff',), ('Manager',))))
+        shared.publish(job_event(audience=NotificationAudience(('staff',), ('Manager',)), links=()))
 
     farm_companion = NotificationEvent(
         event_id='farm-companion', source_agent='farming', event_type='incident.alert',
