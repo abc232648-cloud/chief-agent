@@ -1,0 +1,98 @@
+name: Module Lifecycle CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'control/module_lifecycle.py'
+      - 'application/control_services.py'
+      - 'agents/discovery.py'
+      - 'control/components.py'
+      - 'control/health.py'
+      - 'control/health_contracts.py'
+      - 'database/component_state.py'
+      - 'update_center/**'
+      - 'tests/test_module_lifecycle.py'
+      - 'tests/test_component_controls.py'
+      - 'tests/test_component_health.py'
+      - 'tests/test_update_center.py'
+      - 'tests/test_architecture_boundaries.py'
+      - 'docs/Module-lifecycle.md'
+      - '.github/workflows/module-lifecycle-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'control/module_lifecycle.py'
+      - 'application/control_services.py'
+      - 'agents/discovery.py'
+      - 'control/components.py'
+      - 'control/health.py'
+      - 'control/health_contracts.py'
+      - 'database/component_state.py'
+      - 'update_center/**'
+      - 'tests/test_module_lifecycle.py'
+      - 'tests/test_component_controls.py'
+      - 'tests/test_component_health.py'
+      - 'tests/test_update_center.py'
+      - 'tests/test_architecture_boundaries.py'
+      - 'docs/Module-lifecycle.md'
+      - '.github/workflows/module-lifecycle-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: module-lifecycle-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  focused:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CHIEF_INSTANCE_MODE: test
+      CHIEF_TEST_SECRET_BACKEND: portable-aead
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install Chief test dependencies
+        run: python -m pip install -r requirements-test.txt
+      - name: Compile lifecycle and control boundaries
+        run: >-
+          python -m compileall -q
+          control/module_lifecycle.py
+          application/control_services.py
+          agents/discovery.py
+          control/components.py
+          control/health.py
+          control/health_contracts.py
+      - name: Run lifecycle, control, health, update and architecture tests
+        run: >-
+          python -m pytest -q
+          tests/test_module_lifecycle.py
+          tests/test_component_controls.py
+          tests/test_component_health.py
+          tests/test_update_center.py
+          tests/test_architecture_boundaries.py
+
+  full-suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CHIEF_INSTANCE_MODE: test
+      CHIEF_TEST_SECRET_BACKEND: portable-aead
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install complete Chief test dependencies
+        run: python -m pip install -r requirements-test.txt
+      - name: Install Chromium for browser acceptance tests
+        run: python -m playwright install --with-deps chromium
+      - name: Run complete Chief pytest suite
+        run: python -m pytest -q
