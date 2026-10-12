@@ -44,6 +44,22 @@ def main() -> int:
             return _owned_main(instance.open_store(),runtime.stopping,runtime.ready)
 
 
+def _dispatch_push_once(store, *, job_dispatch=None, device_dispatch=None):
+    """Run Job and Owner/Staff push behind independent failure boundaries."""
+    if job_dispatch is None:
+        from notifications.web_push import dispatch_pending as job_dispatch
+    if device_dispatch is None:
+        from notifications.device_push import dispatch_pending as device_dispatch
+    try:
+        job_dispatch(store)
+    except Exception:
+        pass
+    try:
+        device_dispatch(store)
+    except Exception:
+        pass
+
+
 def _owned_main(store, stopping=None, ready=lambda:None) -> int:
     from identity.service import IdentityService
     IdentityService(store).require_ready()
@@ -68,18 +84,10 @@ def _owned_main(store, stopping=None, ready=lambda:None) -> int:
             processor.controls.heartbeat();stopping.wait(5)
 
     def push_delivery():
-        from notifications.web_push import dispatch_pending
-        from notifications.device_push import dispatch_pending as dispatch_devices
         while not stopping.is_set():
-            try:
-                # Notification transport is deliberately isolated from Job execution.
-                # Provider/network failures retain durable cursors and retry later.
-                dispatch_pending(store)
-                dispatch_devices(store)
-            except Exception:
-                # Do not turn a notification-channel problem into worker failure or
-                # leak provider exception details into the operational audit trail.
-                pass
+            # A failure in one push transport must not starve the other transport.
+            # Each transport owns its durable retry/cursor semantics.
+            _dispatch_push_once(store)
             stopping.wait(5)
 
     heartbeat_thread=Thread(target=heartbeat,daemon=True,name='chief-heartbeat')
