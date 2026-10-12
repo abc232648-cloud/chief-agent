@@ -376,14 +376,16 @@ function openFarmSection(id) {
 }
 function prepareFarmSections() {
   const root = document.getElementById('farmRecords');
-  if (!root || root.dataset.sectionsReady) return;
+  if (!root) return;
   root.dataset.sectionsReady = 'true';
   const balances = document.getElementById('farmBalances');
-  const balanceCard = document.createElement('div'); balanceCard.className = 'card'; balanceCard.id = 'farmBalancesSection';
-  const heading = document.createElement('h2'); heading.textContent = 'Birds, eggs and feed balances';
-  balances.before(balanceCard); balanceCard.append(heading, balances);
+  if (balances && !document.getElementById('farmBalancesSection')) {
+    const balanceCard = document.createElement('div'); balanceCard.className = 'card'; balanceCard.id = 'farmBalancesSection';
+    const heading = document.createElement('h2'); heading.textContent = 'Birds, eggs and feed balances';
+    balances.before(balanceCard); balanceCard.append(heading, balances);
+  }
   for (const card of [...root.children].filter(node => node.classList.contains('card') && !node.classList.contains('farmSection'))) {
-    const title = card.querySelector('h2'); if (!title) continue;
+    const title = card.querySelector(':scope > h2'); if (!title) continue;
     const section = document.createElement('details');
     for (const attribute of [...card.attributes]) section.setAttribute(attribute.name, attribute.value);
     section.classList.add('farmSection');
@@ -393,19 +395,24 @@ function prepareFarmSections() {
     const summary = document.createElement('summary'); summary.textContent = title.textContent;
     section.append(summary, ...card.childNodes); card.replaceWith(section);
   }
-  const toolbar = document.createElement('div'); toolbar.className = 'farmSectionTools';
-  const help = document.createElement('p'); help.textContent = 'Open only what you need. Closing a section keeps your unfinished entries on this page.';
-  toolbar.append(help);
-  for (const [label, open] of [['Expand all sections', true], ['Collapse all sections', false]]) {
-    const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
-    button.addEventListener('click', () => {
-      for (const section of root.querySelectorAll(':scope > details.farmSection')) if (!section.hidden) section.open = open;
-    }); toolbar.append(button);
+  let toolbar = root.querySelector(':scope > .farmSectionTools');
+  if (!toolbar) {
+    toolbar = document.createElement('div'); toolbar.className = 'farmSectionTools';
+    const help = document.createElement('p'); help.textContent = 'Open only what you need. Closing a section keeps your unfinished entries on this page.';
+    toolbar.append(help);
+    for (const [label, open] of [['Expand all sections', true], ['Collapse all sections', false]]) {
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
+      button.addEventListener('click', () => {
+        for (const section of root.querySelectorAll(':scope > details.farmSection')) if (!section.hidden) section.open = open;
+      }); toolbar.append(button);
+    }
+    const intro = root.querySelector(':scope > p'); if (intro) intro.after(toolbar); else root.prepend(toolbar);
   }
-  const intro = root.querySelector(':scope > p'); intro.after(toolbar);
   let previous = toolbar;
-  for (const id of ['farmEntrySection', 'farmBriefCard', 'farmBalancesSection', 'farmStaffSection', 'farmFinanceCard', 'farmAssistantCard', 'farmHistorySection', 'farmSetupCard', 'farmRoleCard']) {
-    const section = document.getElementById(id); previous.after(section); previous = section;
+  for (const id of ['farmEntrySection', 'farmBriefCard', 'farmBalancesSection', 'farmStaffSection', 'farmFinanceCard', 'farmPhysicalCounts', 'farmHealthRecords', 'farmAssistantCard', 'farmHistorySection', 'farmSetupCard', 'farmRoleCard']) {
+    const section = document.getElementById(id);
+    if (!section || section.parentElement !== root || section === previous) continue;
+    previous.after(section); previous = section;
   }
 }
 
