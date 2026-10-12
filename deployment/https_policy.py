@@ -2,7 +2,7 @@
 
 The actual TLS terminator/static server is installed and qualified during deployment.
 Chief accepts one same-host loopback proxy and never treats forwarded identity/host
-data as authority. Owner and Staff deliberately share the HTTPS origin but have
+data as authority. Owner, Staff and Job deliberately share the HTTPS origin but have
 non-overlapping PWA paths/service-worker scopes.
 """
 import ipaddress
@@ -58,12 +58,13 @@ def contract(public_host, dashboard_port, trusted_proxy):
             {'path_prefix': '/api/', 'target': 'chief-loopback', 'cache': 'NEVER'},
             {'path_prefix': '/owner/', 'target': 'owner-static', 'service_worker_scope': '/owner/'},
             {'path_prefix': '/staff/', 'target': 'staff-static', 'service_worker_scope': '/staff/'},
+            {'path_prefix': '/jobs/', 'target': 'job-static', 'service_worker_scope': '/jobs/'},
         ],
         'root_policy': 'NO_ROOT_SCOPED_PWA',
         'proxy_requirements': [
             'Terminate certificate-verified TLS before forwarding to Chief.',
             'Forward only /api/ and explicitly reviewed Chief backend routes to the loopback listener.',
-            'Serve Owner only below /owner/ and Staff only below /staff/.',
+            'Serve Owner only below /owner/, Staff only below /staff/, and Job only below /jobs/.',
             'Never publish /sw.js or a PWA manifest with scope / at the shared origin root.',
             'Preserve the original Host header for Chief-bound requests.',
             'Overwrite X-Forwarded-Proto with https for Chief-bound requests.',
