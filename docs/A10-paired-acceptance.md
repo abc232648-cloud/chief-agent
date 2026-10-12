@@ -7,6 +7,11 @@ checkouts. Missing bundles fail an opted-in run; the default suite reports a ski
 when no client builds were supplied. `CHIEF_A10_BROWSER` selects chromium,
 firefox or webkit. This fixture is not a production reverse proxy.
 
+The production route contract reserves exactly three non-overlapping static PWA
+prefixes on that shared origin: `/owner/`, `/staff/` and `/jobs/`. Their service
+workers are scoped only to those prefixes. `/api/` remains a non-cacheable Chief
+backend route and no root-scoped PWA is permitted.
+
 Run `python -m pytest tests/test_a10_paired_clients.py tests/test_a10_operational_chain.py` after each client's
 `npm ci` and production build. Notification transport tests use an explicit
 no-network spy; browser/API tests do not substitute mock backend responses.
@@ -43,14 +48,28 @@ receipt, throttled to once per minute. Chief still enforces ten-minute idle and
 maximum session lifetime. Cross-tab Job account switching clears previous data;
 cached client role metadata never grants access.
 
-Push subscriptions bind to the registering session in existing JSON persistence;
-there is no table/schema migration. Each delivery rechecks Chief identity and A9
-companion exposure. Unbound legacy subscriptions remain inert until explicitly
-registered again. Logout, expiry, removed scope/role, disabled accounts or disabled
-modules prevent delivery. This deliberately means background alerts pause when
-the session becomes invalid. Durable offline notification authority independent
-of interactive sessions is NOT introduced here and needs a separately reviewed
-device-consent/revocation contract. Pending notification rows are preserved.
+Push subscriptions bind to the registering Chief identity and session in existing
+JSON persistence; there is no table/schema migration. Two delivery modes remain
+separate:
+
+- ordinary session-bound registration rechecks the current Chief session and
+  therefore stops when that session expires;
+- explicit `after_timeout` device consent may continue only generic Job ASK/STOP
+  wake-up notifications after idle timeout. It is a device-delivery consent, not
+  an authenticated application session. Delivery does not update `last_seen`,
+  restore API access or include private notification title/body text. The payload
+  tells the user to sign in to view the update.
+
+Both modes still fail closed on sign-out/session revocation, disabled identity,
+role or domain-scope changes, loss of Job companion exposure, or invalid device
+consent. Each attempted delivery rechecks the relevant Chief authority before the
+external send. Unbound legacy subscriptions remain inert until explicitly
+registered again. Pending notification rows are preserved when delivery is no
+longer authorized.
+
+The Job PWA must present the same distinction: continuing a generic wake-up under
+explicit device consent never means the user remains signed in. Private Job data
+continues to require a current authenticated Chief session.
 
 ## CI and release boundary
 
