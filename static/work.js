@@ -1,10 +1,23 @@
 "use strict";
 let chiefContext=null;
+let farmSectionOpenPreference=null;
 async function api(path){const r=await fetch(path,{cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.reason||'Access unavailable.');return d;}
 async function postJson(path,body){return farmPost(path,body);}
 function canDomain(permission,domain){return !!chiefContext?.domains.find(d=>d.id===domain)?.permissions[permission];}
 function prepareFarmWorkShell(){if(typeof prepareFarmSections==='function')prepareFarmSections();}
+function applyFarmSectionOpenPreference(){
+  if(farmSectionOpenPreference===null)return;
+  const root=document.getElementById('farmRecords');if(!root)return;
+  for(const section of root.querySelectorAll(':scope > details.farmSection'))if(!section.hidden)section.open=farmSectionOpenPreference;
+}
 prepareFarmWorkShell();
+document.addEventListener('click',event=>{
+  const button=event.target.closest?.('.farmSectionTools button');if(!button)return;
+  if(button.textContent==='Expand all sections')farmSectionOpenPreference=true;
+  else if(button.textContent==='Collapse all sections')farmSectionOpenPreference=false;
+  else return;
+  applyFarmSectionOpenPreference();
+});
 async function showWork(id){
   const allowed=new Set(['workHome']);
   if(canDomain('work.read','farming'))allowed.add('farmRecords');
@@ -20,6 +33,7 @@ async function showWork(id){
     document.getElementById('farmBalances').hidden=!setup.can_manage;
     document.getElementById('farmBalancesSection').hidden=!setup.can_manage;
     document.getElementById('farmHistory').parentElement.hidden=!setup.can_manage;
+    applyFarmSectionOpenPreference();
   }
   if(id==='users')await loadUsers();
   if(id==='jobWork'){
