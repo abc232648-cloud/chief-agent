@@ -88,3 +88,43 @@ def test_restart_source_seed_preserves_user_verification(dashboard):
         source['verification_status']='APPROVED';source['notes']='User reviewed'
         dashboard.store.add_source(source)
     dashboard.app.seed_sources()
+    assert all(s['verification_status']=='APPROVED' and s['notes']=='User reviewed' for s in dashboard.store.sources())
+
+def test_dashboard_approval_worker_claim_and_gate(dashboard):
+    from worker.command_processor import CommandProcessor
+    from worker.runner import run_approved_once
+    calls=[]
+    class Executor:
+        def prepare(self,*args,**kwargs): calls.append((args,kwargs));return {'status':'FILLED'}
+    processor=CommandProcessor(dashboard.store,None,application_executor=Executor())
+    aid=dashboard.store.add_action('Fill test form','fill_application_form',payload={'url':'https://example.test','fields':[]})
+    assert processor.process_approved_action(aid,claimed=True)['status']=='FAILED' and calls==[]
+    code,_,data=request(dashboard,f'/api/actions/{aid}','POST',{'status':'APPROVED'})
+    assert code==200 and data['status']=='APPROVED' and calls==[]
+    assert request(dashboard,f'/api/actions/{aid}','POST',{'status':'APPROVED'})[0]==409
+    assert run_approved_once(processor) is True
+    assert len(calls)==1 and calls[0][1]['approved'] is True
+    assert dashboard.store.get_action(aid)['status']=='DONE'
+    assert run_approved_once(processor) is False
+    forbidden=dashboard.store.add_action('Forbidden','pay_money')
+    request(dashboard,f'/api/actions/{forbidden}','POST',{'status':'APPROVED'})
+    assert run_approved_once(processor) is True and len(calls)==1
+    assert dashboard.store.audit()[0]['status']=='BLOCKED'
+
+def test_dashboard_command_reaches_actual_worker_processor(dashboard):
+    from worker.command_processor import CommandProcessor
+    from worker.runner import run_once
+    class Gateway:
+        def generate(self,req):
+            return SimpleNamespace(text=json.dumps({'summary':'Controlled test','actions':[{'action':'pay_money','payload':{}},{'action':'fill_application_form','payload':{'url':'https://example.test','fields':[]}}]}))
+    request(dashboard,'/api/command','POST',{'instruction':'Controlled integration test'})
+    assert run_once(CommandProcessor(dashboard.store,Gateway())) is True
+    command=dashboard.store.commands()[0]
+    assert command['status']=='FAILED'  # The forbidden step must not be reported as completed.
+    results=json.loads(command['result'])['results']
+    assert results[0]['status']=='BLOCKED' and results[1]['status']=='AWAITING_APPROVAL'
+    assert request(dashboard,'/api/actions')[2][0]['status']=='PENDING'
+
+def test_container_packages_separated_assets():
+    text=(Path(__file__).resolve().parents[1]/'gateway/Dockerfile').read_text(encoding='utf-8')
+    assert 'COPY dashboard.html ./dashboard.html' in text and 'COPY static ./static' in text
