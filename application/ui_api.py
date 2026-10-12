@@ -65,6 +65,22 @@ def job_state(store, *, include_notifications=False):
     return {'counts':counts,'commands':commands,'worker':{'status':'UNKNOWN','message':'Use System Health for shared worker observations; domain activity appears in your workspace.','updated_at':None}}
 
 
+def owner_activity(store):
+    """Sanitized read-only audit projection for the Owner presentation layer."""
+    from database.store_extensions import audit
+    rows=audit(store,limit=200)
+    return {'items':[{
+        'id':str(row['id']),
+        'event_time':row['event_time'],
+        'category':row['category'],
+        'actor':row['actor'],
+        'action':row['action'],
+        'status':row['status'],
+    } for row in rows],
+    'availability':'LIVE',
+    'notice':'Read-only sanitized Chief audit projection; omitted fields remain unavailable.'}
+
+
 def dispatch(handler,store,service,principal,path,method):
     if not path.startswith('/api/ui/'):return False
     if method not in {'GET','HEAD'}:
@@ -73,6 +89,10 @@ def dispatch(handler,store,service,principal,path,method):
     if path=='/api/ui/overview':
         if principal.role not in {'Owner','Administrator'}:raise PermissionError('Chief overview is restricted to administration roles.')
         handler.json(overview(store,context(service,principal)));return True
+    if path=='/api/ui/activity':
+        if principal.role not in {'Owner','Administrator'}:raise PermissionError('Chief activity is restricted to administration roles.')
+        service.authorize(principal,'audit.read',sensitive=False)
+        handler.json(owner_activity(store));return True
     if path=='/api/ui/job-feed':
         if principal.role not in {'Owner','Administrator'}:raise PermissionError('Job companion activity is restricted to administration roles.')
         service.authorize(principal,'work.read','jobs',sensitive=False)
