@@ -4,7 +4,7 @@
   "external_research_route": "RESEARCH_RUNTIME",
   "initial_search_provider": "ddgs",
   "enabled_search_providers": ["ddgs"],
-  "reserved_search_providers": ["brave", "searxng"],
+  "reserved_search_providers": ["brave", "searxng", "tavily"],
   "automatic_provider_fallback": false,
   "action_authority": "NONE"
 }
