@@ -35,7 +35,7 @@ def test_clarifications_follow_the_record_entry_shell_when_it_exists():
     assert "(entry||document.getElementById('farmRecords').querySelector(':scope > p')).after(host);" in source
 
 
-def test_disclosure_preparation_is_repeatable_for_late_farm_cards():
+def test_disclosure_preparation_is_repeatable_for_late_farm_cards_without_reinserting_stable_nodes():
     source = (ROOT / 'static' / 'farm-records.js').read_text(encoding='utf-8')
     start = source.index('function prepareFarmSections()')
     end = source.index('\nfunction farmConvertedQuantity', start)
@@ -49,19 +49,47 @@ def test_disclosure_preparation_is_repeatable_for_late_farm_cards():
     assert "'farmPhysicalCounts'" in function
     assert "'farmHealthRecords'" in function
     assert "if (!section || section.parentElement !== root || section === previous) continue;" in function
+    assert "if (previous.nextElementSibling !== section) previous.after(section);" in function
 
 
-def test_farm_ai_setup_is_primed_then_focuses_the_disclosure_after_refresh():
-    source = (ROOT / 'static' / 'chief-navigation.js').read_text(encoding='utf-8')
-    start = source.index("button[data-action=\"farm-ai-setup\"]")
-    handler = source[start:]
-    assert "await renderFarmAI();" in handler
-    assert "openFarmSection('farmAssistantCard');" in handler
-    assert "await show('farmRecords');" in handler
-    assert handler.index("await renderFarmAI();") < handler.index("openFarmSection('farmAssistantCard');") < handler.index("await show('farmRecords');")
-    assert "try{await show('farmRecords');}catch(error){reportError(error);}" in handler
-    assert "const focusTarget=card.querySelector(':scope > summary')||card;" in handler
-    assert handler.index("await show('farmRecords');") < handler.index("const focusTarget=card.querySelector(':scope > summary')||card;")
-    assert "focusTarget.focus({preventScroll:true});" in handler
-    assert "uiActionAllowed(button.dataset)" in handler
-    assert "event.stopImmediatePropagation()" in handler
+def test_farm_ai_setup_has_one_action_path_and_primes_controls_before_broad_refresh():
+    navigation = (ROOT / 'static' / 'chief-navigation.js').read_text(encoding='utf-8')
+    chief = (ROOT / 'static' / 'chief.js').read_text(encoding='utf-8')
+    farm = (ROOT / 'static' / 'farm-records.js').read_text(encoding='utf-8')
+
+    # The generic Chief action dispatcher is the only Farm-AI click executor.
+    assert chief.count("'farm-ai-setup':") == 1
+    assert "button[data-action=\"farm-ai-setup\"]" not in navigation
+    assert "event.stopImmediatePropagation()" not in navigation
+
+    action_start = chief.index("'farm-ai-setup':")
+    action_end = chief.index("'toggle-sidebar':", action_start)
+    action = chief[action_start:action_end]
+    assert "await show('farmRecords');" in action
+    assert "openFarmSection('farmAssistantCard');" in action
+    assert action.index("await show('farmRecords');") < action.index("openFarmSection('farmAssistantCard');")
+    assert "card.focus({preventScroll:true});" in action
+
+    # The assistant controls are built while their disclosure is hidden, before
+    # the failure-prone journal refresh. Visibility is restored in finally, so a
+    # journal failure cannot strand setup controls or expose a half-ready view.
+    load_start = farm.index('async function loadFarmRecords()')
+    load_end = farm.index("document.addEventListener('DOMContentLoaded', () =>", load_start)
+    load = farm[load_start:load_end]
+    assert "assistantCard.hidden=true;" in load
+    assert "await renderFarmAI();" in load
+    assert "await api('/api/farm/journal?offset='+farmHistoryOffset);" in load
+    assert load.index("assistantCard.hidden=true;") < load.index("await renderFarmAI();") < load.index("await api('/api/farm/journal?offset='+farmHistoryOffset);")
+    assert "finally" in load
+    assert "assistantCard.hidden=assistantWasHidden;" in load
+
+
+def test_farm_setup_saved_status_is_not_exposed_until_refresh_finishes():
+    source = (ROOT / 'static' / 'farm-records.js').read_text(encoding='utf-8')
+    start = source.index("const bind=(formId,resultId,build)=>")
+    end = source.index("const v=id=>", start)
+    block = source[start:end]
+    assert "Refreshing saved Farm setup" in block
+    assert "await loadFarmRecords();" in block
+    assert "result.textContent='Saved.';" in block
+    assert block.index("await loadFarmRecords();") < block.index("result.textContent='Saved.';")

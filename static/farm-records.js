@@ -37,72 +37,82 @@ function resetFarmForm() {
   farmUnit();
 }
 async function loadFarmRecords() {
-  const data = await api('/api/farm/journal?offset='+farmHistoryOffset);
-  const setup = await api('/api/farm/setup');
-  farmCatalog = setup.entities;
-  farmUnitSettings=await api('/api/farm/units');
-  await renderFarmClarifications();
-  await renderFarmSetup(setup);
-  await renderFarmFinance(setup);
-  await renderFarmStaff();
-  await renderFarmAI();
-  await renderFarmBrief();
-  await renderPhysicalCounts();
-  await mountHealthRecords();
-  const manager = setup.can_manage;
-  document.getElementById('farmHistoricalLabel').hidden=!manager;
-  const form = document.getElementById('farmRecordForm');
-  form.hidden = !canDomain('work.request', 'farming');
-  const select = document.getElementById('farmKind');
-  const prior = select.value;
-  select.replaceChildren();
-  for (const [value, label] of Object.entries(farmTypes)) {
-    if (value.includes('_adjustment_') || (!manager && value.endsWith('_opening'))) continue;
-    const option = document.createElement('option'); option.value = value; option.textContent = label; select.append(option);
-  }
-  if ([...select.options].some(o => o.value === prior)) select.value = prior;
-  if (!document.getElementById('farmObserved').value) resetFarmForm();
-  farmUnit();
-  const balances = document.getElementById('farmBalances'); balances.replaceChildren();
-  if (!data.balances.length) balances.textContent = 'No reports yet. No opening bird or stock counts have been assumed.';
-  for (const b of data.balances) {
-    const item = document.createElement('div'); item.className = 'card';
-    const title = document.createElement('h2'); title.textContent = b.location + ' — ' + b.unit + (b.entity_id ? ' ('+b.entity_id.slice(0,8)+')' : ' (legacy location)');
-    const value = document.createElement('p'); value.textContent = b.recorded_balance === null ? 'Opening balance needed' : 'Recorded balance: ' + b.recorded_balance + ' ' + b.unit;
-    const detail = document.createElement('p'); detail.textContent = (b.contains_estimates ? 'Includes estimates. ' : 'Based on reported measurements. ') + (b.needs_reconciliation ? 'Reconciliation needed. ' : '') + 'Last observation: ' + farmDateText(b.last_observed_at);
-    item.append(title, value, detail); balances.append(item);
-  }
-  const history = document.getElementById('farmHistory'); history.replaceChildren();
-  document.getElementById('farmOlder').disabled=data.next_offset===null;
-  document.getElementById('farmNewer').disabled=farmHistoryOffset===0;
-  for (const record of data.records) {
-    const p = record.payload; const item = document.createElement('div'); item.className = 'item';
-    const text = document.createElement('p'); text.textContent = [farmTypes[p.kind], p.location, p.quantity, p.basis, farmDateText(p.observed_at), 'Reporter: ' + record.actor_name, p.notes, p.conversion?'Entered as '+p.conversion.quantity+' '+p.conversion.unit:'', p.historical_before_opening ? 'Historical activity before opening count; excluded from current stock' : '', p.corrects ? 'Correction of ' + p.corrects + ': ' + p.reason : ''].filter(Boolean).join(' · ');
-    item.append(text);
-    if (manager && record.is_current && !p.kind.includes('_adjustment_')) {
-      const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Correct record';
-      button.addEventListener('click', () => {
-        if (farmPending && !confirm('Discard the pending submission and start a correction?')) return;
-        farmPending = null; resetFarmForm();
-        for (const [id, value] of [['farmKind',p.kind],['farmLocation',p.location],['farmQuantity',p.quantity],['farmBasis',p.basis],['farmNotes',p.notes],['farmCorrects',p.event_id]]) document.getElementById(id).value = value;
-        const at = new Date(p.observed_at);
-        document.getElementById('farmObserved').value = new Date(at.getTime()+3600000).toISOString().slice(0,16);
-        document.getElementById('farmHistorical').checked=!!p.historical_before_opening;
-        document.getElementById('farmHistorical').disabled=true;
-        farmCorrectionTime = p.observed_at; farmCorrectionEntity = p.entity_id || null;
-        document.getElementById('farmEntity').value = farmCorrectionEntity || '';
-        document.getElementById('farmEntity').disabled = true;
-        for (const id of ['farmKind','farmLocation','farmObserved']) document.getElementById(id).disabled = true;
-        document.getElementById('farmReason').required = true;
-        document.getElementById('farmReasonLabel').hidden = false;
-        document.getElementById('farmCancelCorrection').hidden = false;
-        farmUnit(); openFarmSection('farmEntrySection'); document.getElementById('farmQuantity').focus();
-      });
-      item.append(button);
+  const assistantCard=document.getElementById('farmAssistantCard');
+  const assistantWasHidden=assistantCard.hidden;
+  assistantCard.hidden=true;
+  try {
+    // Prime the owner-facing Farm AI controls before the broad Farm refresh. Keeping
+    // the disclosure hidden prevents partially refreshed controls from becoming a
+    // false readiness signal before navigation and focus have settled.
+    await renderFarmAI();
+    const data = await api('/api/farm/journal?offset='+farmHistoryOffset);
+    const setup = await api('/api/farm/setup');
+    farmCatalog = setup.entities;
+    farmUnitSettings=await api('/api/farm/units');
+    await renderFarmClarifications();
+    await renderFarmSetup(setup);
+    await renderFarmFinance(setup);
+    await renderFarmStaff();
+    await renderFarmBrief();
+    await renderPhysicalCounts();
+    await mountHealthRecords();
+    const manager = setup.can_manage;
+    document.getElementById('farmHistoricalLabel').hidden=!manager;
+    const form = document.getElementById('farmRecordForm');
+    form.hidden = !canDomain('work.request', 'farming');
+    const select = document.getElementById('farmKind');
+    const prior = select.value;
+    select.replaceChildren();
+    for (const [value, label] of Object.entries(farmTypes)) {
+      if (value.includes('_adjustment_') || (!manager && value.endsWith('_opening'))) continue;
+      const option = document.createElement('option'); option.value = value; option.textContent = label; select.append(option);
     }
-    history.append(item);
+    if ([...select.options].some(o => o.value === prior)) select.value = prior;
+    if (!document.getElementById('farmObserved').value) resetFarmForm();
+    farmUnit();
+    const balances = document.getElementById('farmBalances'); balances.replaceChildren();
+    if (!data.balances.length) balances.textContent = 'No reports yet. No opening bird or stock counts have been assumed.';
+    for (const b of data.balances) {
+      const item = document.createElement('div'); item.className = 'card';
+      const title = document.createElement('h2'); title.textContent = b.location + ' — ' + b.unit + (b.entity_id ? ' ('+b.entity_id.slice(0,8)+')' : ' (legacy location)');
+      const value = document.createElement('p'); value.textContent = b.recorded_balance === null ? 'Opening balance needed' : 'Recorded balance: ' + b.recorded_balance + ' ' + b.unit;
+      const detail = document.createElement('p'); detail.textContent = (b.contains_estimates ? 'Includes estimates. ' : 'Based on reported measurements. ') + (b.needs_reconciliation ? 'Reconciliation needed. ' : '') + 'Last observation: ' + farmDateText(b.last_observed_at);
+      item.append(title, value, detail); balances.append(item);
+    }
+    const history = document.getElementById('farmHistory'); history.replaceChildren();
+    document.getElementById('farmOlder').disabled=data.next_offset===null;
+    document.getElementById('farmNewer').disabled=farmHistoryOffset===0;
+    for (const record of data.records) {
+      const p = record.payload; const item = document.createElement('div'); item.className = 'item';
+      const text = document.createElement('p'); text.textContent = [farmTypes[p.kind], p.location, p.quantity, p.basis, farmDateText(p.observed_at), 'Reporter: ' + record.actor_name, p.notes, p.conversion?'Entered as '+p.conversion.quantity+' '+p.conversion.unit:'', p.historical_before_opening ? 'Historical activity before opening count; excluded from current stock' : '', p.corrects ? 'Correction of ' + p.corrects + ': ' + p.reason : ''].filter(Boolean).join(' · ');
+      item.append(text);
+      if (manager && record.is_current && !p.kind.includes('_adjustment_')) {
+        const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Correct record';
+        button.addEventListener('click', () => {
+          if (farmPending && !confirm('Discard the pending submission and start a correction?')) return;
+          farmPending = null; resetFarmForm();
+          for (const [id, value] of [['farmKind',p.kind],['farmLocation',p.location],['farmQuantity',p.quantity],['farmBasis',p.basis],['farmNotes',p.notes],['farmCorrects',p.event_id]]) document.getElementById(id).value = value;
+          const at = new Date(p.observed_at);
+          document.getElementById('farmObserved').value = new Date(at.getTime()+3600000).toISOString().slice(0,16);
+          document.getElementById('farmHistorical').checked=!!p.historical_before_opening;
+          document.getElementById('farmHistorical').disabled=true;
+          farmCorrectionTime = p.observed_at; farmCorrectionEntity = p.entity_id || null;
+          document.getElementById('farmEntity').value = farmCorrectionEntity || '';
+          document.getElementById('farmEntity').disabled = true;
+          for (const id of ['farmKind','farmLocation','farmObserved']) document.getElementById(id).disabled = true;
+          document.getElementById('farmReason').required = true;
+          document.getElementById('farmReasonLabel').hidden = false;
+          document.getElementById('farmCancelCorrection').hidden = false;
+          farmUnit(); openFarmSection('farmEntrySection'); document.getElementById('farmQuantity').focus();
+        });
+        item.append(button);
+      }
+      history.append(item);
+    }
+    prepareFarmSections();
+  } finally {
+    assistantCard.hidden=assistantWasHidden;
   }
-  prepareFarmSections();
 }
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('farmRecordForm');
@@ -179,7 +189,9 @@ document.addEventListener('DOMContentLoaded',()=>{
         await farmPost('/api/farm/setup',pending.payload);pending=null;
         if(formId==='farmEntityForm')entityId=crypto.randomUUID();
         if(formId==='farmEntityUpdateForm'){event.target.reset();editRevision=null;}
-        document.getElementById(resultId).textContent='Saved.';await loadFarmRecords();
+        const result=document.getElementById(resultId);result.textContent='Refreshing saved Farm setup…';
+        await loadFarmRecords();
+        result.textContent='Saved.';
       }catch(error){if(error.status>=400&&error.status<500)pending=null;document.getElementById(resultId).textContent=error.message;}
       finally{button.disabled=false;}
     });
@@ -412,7 +424,8 @@ function prepareFarmSections() {
   for (const id of ['farmEntrySection', 'farmBriefCard', 'farmBalancesSection', 'farmStaffSection', 'farmFinanceCard', 'farmPhysicalCounts', 'farmHealthRecords', 'farmAssistantCard', 'farmHistorySection', 'farmSetupCard', 'farmRoleCard']) {
     const section = document.getElementById(id);
     if (!section || section.parentElement !== root || section === previous) continue;
-    previous.after(section); previous = section;
+    if (previous.nextElementSibling !== section) previous.after(section);
+    previous = section;
   }
 }
 
