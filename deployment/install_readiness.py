@@ -1,9 +1,9 @@
 """Fail-closed production installation readiness without installing or starting Chief.
 
 This validates the already prepared production instance, private storage, pinned
-sandboxed browser selection, a separately pinned operational backup, and the
-reviewable service definitions. It never installs services, starts components,
-promotes a restore, changes Farm approval, or performs network operations.
+source tree, sandboxed browser selection, a separately pinned operational backup,
+and the reviewable service definitions. It never installs services, starts
+components, promotes a restore, changes Farm approval, or performs network operations.
 """
 import os
 from pathlib import Path
@@ -23,12 +23,20 @@ def _restore_environment(before):
         else:os.environ[key]=value
 
 
-def installation_readiness(config, *, backup_directory, manifest_sha256,
-                           expected_source, expected_schema, platform,
+def _absolute(label,value):
+    path=Path(value)
+    if not path.is_absolute():raise ValueError(label+' must be absolute for installation readiness.')
+    return path
+
+
+def installation_readiness(config, *, source_root, source_manifest, backup_directory,
+                           manifest_sha256, expected_source, expected_schema, platform,
                            project, user, python=None):
     """Return metadata-only readiness evidence; no deployment action is performed."""
-    config=Path(config)
-    if not config.is_absolute():raise ValueError('Installation readiness requires an absolute production config.')
+    config=_absolute('Production config',config)
+    source_root=_absolute('Source root',source_root)
+    source_manifest=_absolute('Source manifest',source_manifest)
+    backup_directory=_absolute('Backup directory',backup_directory)
     before={key:os.environ.get(key) for key in _ENV_KEYS}
     try:
         from deployment.launch import configure
@@ -46,7 +54,10 @@ def installation_readiness(config, *, backup_directory, manifest_sha256,
         if browser.get('chromium_sandbox') is not True or not browser.get('executable_path'):
             raise PermissionError('Production browser qualification must require the native sandbox.')
 
-        from operations.backup import verify_backup
+        from operations.backup import source_identity,verify_backup
+        actual_source=source_identity(source_root,source_manifest)
+        if actual_source!=expected_source:
+            raise ValueError('Installed source tree does not match the pinned backup source identity.')
         manifest=verify_backup(backup_directory,manifest_sha256=manifest_sha256,
                                expected_source=expected_source,expected_schema=expected_schema)
 
@@ -67,6 +78,7 @@ def installation_readiness(config, *, backup_directory, manifest_sha256,
             'restore_promoted':False,
             'network_checks_performed':False,
             'mode':instance.mode,
+            'source_tree_sha256':actual_source,
             'schema_sha256':instance.schema_sha256,
             'storage_scope':storage['scope'],
             'browser_sandbox_required':True,
