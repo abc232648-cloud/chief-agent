@@ -116,3 +116,42 @@ def test_dependency_update_module_has_no_activation_or_package_install_path():
     source = (ROOT / 'update_center/dependency_check.py').read_text(encoding='utf-8')
     forbidden = ('subprocess.', 'pip install', 'npm install', 'os.exec', 'service restart')
     assert not any(item in source for item in forbidden)
+
+
+def test_scheduler_surfaces_new_updates_without_granting_update_authority(tmp_path):
+    from application.composition import default_registry
+    from database.store import Store
+    from scheduler import AutonomousScheduler
+
+    store = Store(tmp_path / 'worker.db')
+    def checker(source_root, state_root, *, environ):
+        assert Path(source_root) == ROOT
+        assert Path(state_root) == tmp_path
+        return {
+            'status': 'CHECKED', 'cadence_hours': 24, 'errors': 0,
+            'updates': [{'name': 'runtime-a'}], 'new_updates': [{'name': 'runtime-a'}],
+        }
+    scheduler = AutonomousScheduler(store, registry=default_registry(), dependency_checker=checker)
+    summary = scheduler._dependency_update_check()
+    assert summary == {'status': 'CHECKED', 'cadence_hours': 24, 'updates': 1, 'new_updates': 1, 'errors': 0}
+    with store._connect() as con:
+        rows = con.execute("SELECT title,body,severity FROM notifications WHERE title='Dependency updates available'").fetchall()
+    assert len(rows) == 1
+    assert rows[0]['severity'] == 'INFO'
+    assert 'Review qualification evidence before any change.' in rows[0]['body']
+
+
+def test_scheduler_dependency_metadata_failure_does_not_stop_other_scheduler_work(tmp_path):
+    from application.composition import default_registry
+    from database.store import Store
+    from scheduler import AutonomousScheduler
+
+    store = Store(tmp_path / 'worker.db')
+    def broken(*_args, **_kwargs):
+        raise OSError('private upstream detail')
+    scheduler = AutonomousScheduler(store, registry=default_registry(), dependency_checker=broken)
+    assert scheduler._dependency_update_check() == {'status': 'REVIEW', 'updates': 0, 'new_updates': 0, 'errors': 1}
+    with store._connect() as con:
+        row = con.execute("SELECT details FROM audit_log WHERE action='Dependency update discovery requires review' ORDER BY id DESC LIMIT 1").fetchone()
+    assert row is not None
+    assert 'private upstream detail' not in row['details']
