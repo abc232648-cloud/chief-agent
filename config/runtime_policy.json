@@ -1,0 +1,6 @@
+{
+  "primary_candidate_id": "openclaw-2026.10.1",
+  "supplemental_candidate_id": "hermes-agent-0.21.3",
+  "supplemental_mode": "GAP_ONLY",
+  "supplemental_workloads": []
+}
