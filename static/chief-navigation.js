@@ -1,6 +1,7 @@
 'use strict';
 let chiefContext=null;
 let chiefApprovalAccess={};
+let farmDashboardSectionOpenPreference=null;
 const chiefGroups=[['Main',[['overview','Overview']]],['Work & Control',[['scheduler','Tasks & Automations'],['actions','Approvals'],['notifications','Notifications'],['reports','Reports'],['audit','Audit / Activity'],['evidence','Shared Evidence'],['ledger','Decision Ledger'],['runbooks','Runbooks']]],['System',[['health','System Health'],['components','Component controls'],['capabilities','Capabilities'],['models','Models'],['policies','Policy'],['runtime','Agent Runtime'],['integrations','Integrations'],['devices','Devices'],['updates','Updates'],['settings','Settings'],['users','Users & access'],['domains','Manage Domains'],['ai','AI routing compatibility']]]];
 function canPage(id){return !!chiefContext?.pages.includes(id);}
 function canDomain(permission,domain='jobs'){return !!chiefContext?.domains.find(d=>d.id===domain)?.permissions[permission];}
@@ -40,8 +41,26 @@ function applyChiefVisibility(){
   document.getElementById('notificationDropdown').hidden=!canPage('notifications');
   const summaries=document.getElementById('summaryControls');if(summaries)summaries.hidden=!canGlobal('installation.manage');
 }
-function prepareFarmDashboardShell(){if(typeof prepareFarmSections==='function')prepareFarmSections();}
+function applyFarmDashboardSectionOpenPreference(){
+  if(farmDashboardSectionOpenPreference===null)return;
+  const root=document.getElementById('farmRecords');if(!root)return;
+  for(const section of root.querySelectorAll(':scope > details.farmSection'))if(!section.hidden)section.open=farmDashboardSectionOpenPreference;
+}
+function prepareFarmDashboardShell(){if(typeof prepareFarmSections==='function')prepareFarmSections();applyFarmDashboardSectionOpenPreference();}
+function focusFarmAssistantCard(){
+  const card=document.getElementById('farmAssistantCard');if(!card)return;
+  openFarmSection('farmAssistantCard');
+  const focusTarget=card.querySelector(':scope > summary')||card;
+  focusTarget.setAttribute('tabindex','-1');focusTarget.focus({preventScroll:true});
+}
 prepareFarmDashboardShell();
+document.addEventListener('click',event=>{
+  const sectionButton=event.target.closest?.('.farmSectionTools button');if(!sectionButton)return;
+  if(sectionButton.textContent==='Expand all sections')farmDashboardSectionOpenPreference=true;
+  else if(sectionButton.textContent==='Collapse all sections')farmDashboardSectionOpenPreference=false;
+  else return;
+  queueMicrotask(applyFarmDashboardSectionOpenPreference);
+},true);
 document.addEventListener('click',async event=>{
   const button=event.target.closest('button[data-action="farm-ai-setup"]');
   if(!button||!uiActionAllowed(button.dataset))return;
@@ -49,13 +68,20 @@ document.addEventListener('click',async event=>{
   try{
     clearError();prepareFarmDashboardShell();
     if(typeof renderFarmAI==='function')await renderFarmAI();
-    openFarmSection('farmAssistantCard');
+    focusFarmAssistantCard();
     try{await show('farmRecords');}catch(error){reportError(error);}
-    const card=document.getElementById('farmAssistantCard');openFarmSection('farmAssistantCard');card.scrollIntoView({block:'start'});
-    const focusTarget=card.querySelector(':scope > summary')||card;focusTarget.setAttribute('tabindex','-1');focusTarget.focus({preventScroll:true});
-  }catch(error){reportError(error);}finally{button.disabled=false;}
+    prepareFarmDashboardShell();
+    const card=document.getElementById('farmAssistantCard');if(card)card.scrollIntoView({block:'start'});
+    focusFarmAssistantCard();
+  }catch(error){reportError(error);}finally{button.disabled=false;queueMicrotask(focusFarmAssistantCard);}
 },true);
 document.addEventListener('toggle',event=>{
   const target=event.target;
   if(target.matches?.('.domainNav')&&target.open)document.querySelectorAll('.domainNav').forEach(d=>{if(d!==target)d.open=false;});
 },true);
+document.addEventListener('DOMContentLoaded',()=>{
+  const root=document.getElementById('farmRecords');
+  if(!root)return;
+  const observer=new MutationObserver(()=>applyFarmDashboardSectionOpenPreference());
+  observer.observe(root,{subtree:true,attributes:true,attributeFilter:['hidden']});
+});
