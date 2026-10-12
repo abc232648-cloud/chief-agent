@@ -19,12 +19,30 @@ def test_dynamic_brief_shell_exists_before_disclosure_preparation():
     assert page.index('/static/farm-brief.js') < page.index('/static/farm-records.js') < page.index('/static/work.js')
 
 
-def test_farm_ai_setup_is_primed_before_full_farm_refresh():
+def test_disclosure_preparation_is_repeatable_for_late_farm_cards():
+    source = (ROOT / 'static' / 'farm-records.js').read_text(encoding='utf-8')
+    start = source.index('function prepareFarmSections()')
+    end = source.index('\nfunction farmConvertedQuantity', start)
+    function = source[start:end]
+    assert "if (!root) return;" in function
+    assert "root.dataset.sectionsReady" in function
+    assert "if (!root || root.dataset.sectionsReady) return;" not in function
+    assert "if (balances && !document.getElementById('farmBalancesSection'))" in function
+    assert "let toolbar = root.querySelector(':scope > .farmSectionTools')" in function
+    assert "if (!toolbar)" in function
+    assert "'farmPhysicalCounts'" in function
+    assert "'farmHealthRecords'" in function
+    assert "if (!section || section.parentElement !== root || section === previous) continue;" in function
+
+
+def test_farm_ai_setup_is_primed_and_opened_before_full_farm_refresh():
     source = (ROOT / 'static' / 'chief-navigation.js').read_text(encoding='utf-8')
     start = source.index("button[data-action=\"farm-ai-setup\"]")
     handler = source[start:]
     assert "await renderFarmAI();" in handler
+    assert "openFarmSection('farmAssistantCard');" in handler
     assert "await show('farmRecords');" in handler
-    assert handler.index("await renderFarmAI();") < handler.index("await show('farmRecords');")
+    assert handler.index("await renderFarmAI();") < handler.index("openFarmSection('farmAssistantCard');") < handler.index("await show('farmRecords');")
+    assert "try{await show('farmRecords');}catch(error){reportError(error);}" in handler
     assert "uiActionAllowed(button.dataset)" in handler
     assert "event.stopImmediatePropagation()" in handler
