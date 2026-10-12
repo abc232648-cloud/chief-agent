@@ -1,22 +1,26 @@
 'use strict';
 let farmBriefLoading=false;
 function briefText(parent,tag,text){const node=document.createElement(tag);node.textContent=text;parent.append(node);return node;}
+function ensureFarmBriefShell(){
+  let card=document.getElementById('farmBriefCard');
+  if(card)return card;
+  card=document.createElement('div');card.id='farmBriefCard';card.className='card';
+  briefText(card,'h2','Daily brief and alerts');
+  const label=briefText(card,'label','Reporting day (Lagos)');
+  const date=document.createElement('input');date.type='date';date.id='farmBriefDate';label.append(date);
+  const refresh=briefText(card,'button','Refresh brief');refresh.type='button';refresh.onclick=()=>renderFarmBrief();
+  date.onchange=()=>{date.dataset.selected='true';renderFarmBrief();};
+  const content=document.createElement('div');content.id='farmBriefContent';card.append(content);
+  const settings=document.createElement('div');settings.id='farmBriefSettings';card.append(settings);
+  document.getElementById('farmRecords').append(card);
+  return card;
+}
+ensureFarmBriefShell();
 async function renderFarmBrief(){
   if(farmBriefLoading)return;
   farmBriefLoading=true;
   try{
-    let card=document.getElementById('farmBriefCard');
-    if(!card){
-      card=document.createElement('div');card.id='farmBriefCard';card.className='card';
-      briefText(card,'h2','Daily brief and alerts');
-      const label=briefText(card,'label','Reporting day (Lagos)');
-      const date=document.createElement('input');date.type='date';date.id='farmBriefDate';label.append(date);
-      const refresh=briefText(card,'button','Refresh brief');refresh.type='button';refresh.onclick=()=>renderFarmBrief();
-      date.onchange=()=>{date.dataset.selected='true';renderFarmBrief();};
-      const content=document.createElement('div');content.id='farmBriefContent';card.append(content);
-      const settings=document.createElement('div');settings.id='farmBriefSettings';card.append(settings);
-      document.getElementById('farmRecords').append(card);
-    }
+    const card=ensureFarmBriefShell();
     const date=document.getElementById('farmBriefDate');
     const data=await api('/api/farm/brief'+(date.dataset.selected&&date.value?'?day='+encodeURIComponent(date.value):''));
     date.value=data.date;date.max=new Date(Date.now()+3600000).toISOString().slice(0,10);
