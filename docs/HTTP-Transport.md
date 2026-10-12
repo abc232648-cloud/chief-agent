@@ -12,6 +12,8 @@ The same-host TLS reverse proxy must terminate certificate-verified TLS, forward
 
 Production additionally binds every request to the reviewed `public_host`. A missing Host, localhost/IP alias, alternate hostname, embedded credentials/path, ambiguous authority, or explicit port is rejected before an application route executes, even when the trusted proxy reports HTTPS. This gives the later Origin and CSRF checks one reviewed browser authority rather than allowing the reverse proxy transport alone to select it. Isolated test/development keeps the existing local-host allowance.
 
+Owner, Staff and Job PWAs share that one reviewed HTTPS origin but not service-worker authority. Static content is confined to `/owner/`, `/staff/` and `/jobs/` respectively, with each service worker scoped to its own prefix. `/api/` remains non-cacheable backend traffic. A root-scoped manifest or `/sw.js` is prohibited so one client cannot silently acquire another client's cache/navigation scope.
+
 Production HTTP is rejected before application dispatch, even when the peer is `127.0.0.1`. This prevents a local plaintext fallback from silently becoming the operational path. Isolated test/development loopback HTTP remains available so qualification does not require an operational certificate.
 
 Login, rotated-session and logout cookies include `Secure` in HTTPS mode, plus `HttpOnly` and `SameSite=Strict`. Non-GET/HEAD authenticated mutations also require the Chief CSRF token and a same-origin request. `HttpOnly` is an additional cookie protection; it does not replace HTTPS or the production Host gate.
@@ -47,6 +49,6 @@ These are bounded transport controls, not comprehensive resource-exhaustion prot
 
 Unexpected application errors return a generated correlation ID and fixed error message. Logs contain fixed codes and IDs, not request URLs, headers, body values, raw exceptions or stack locals. Waitress handles client socket aborts without trying to write a second application error response. Request body/response traffic is not access-logged by this adapter.
 
-Tests include socket resets, committed-mutation no-replay assertions, malformed/oversized/incomplete requests, synthetic error redaction, bind failure, repeated shutdown, trusted/untrusted proxy behavior, production plaintext rejection, reviewed-host rejection, production HSTS/browser headers, and real certificate-verified HTTPS login/reauthentication/logout through a disposable loopback proxy. The fixture is test-only and is not an operational proxy template.
+Tests include socket resets, committed-mutation no-replay assertions, malformed/oversized/incomplete requests, synthetic error redaction, bind failure, repeated shutdown, trusted/untrusted proxy behavior, production plaintext rejection, reviewed-host rejection, production HSTS/browser headers, scoped Owner/Staff/Job route authority, and real certificate-verified HTTPS login/reauthentication/logout through a disposable loopback proxy. The fixture is test-only and is not an operational proxy template.
 
 Actual DNS, certificate issuance/renewal, firewall rules, TLS-proxy installation, dedicated OS identity/socket containment and public reachability remain deployment work and are not claimed by this phase.
