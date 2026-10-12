@@ -17,16 +17,6 @@ class RuntimePolicy:
     research_action_authority: str
     auto_route_external_research: bool
 
-    @property
-    def primary_candidate_id(self):
-        """Compatibility alias used by installation-readiness profile reservation."""
-        return self.execution_candidate_id
-
-    @property
-    def supplemental_candidate_id(self):
-        """Compatibility alias; research is not a fallback or general supplement."""
-        return self.research_candidate_id
-
 
 @dataclass(frozen=True)
 class RuntimePlan:
