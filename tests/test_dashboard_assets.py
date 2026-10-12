@@ -3,9 +3,9 @@ from html.parser import HTMLParser
 import re
 
 ROOT = Path(__file__).resolve().parents[1]
-HTML = (ROOT / 'dashboard.html').read_text()
-JS = (ROOT / 'static' / 'dashboard.js').read_text()
-APP = (ROOT / 'dashboard_app.py').read_text()
+HTML = (ROOT / 'dashboard.html').read_text(encoding='utf-8')
+JS = (ROOT / 'static' / 'dashboard.js').read_text(encoding='utf-8')
+APP = (ROOT / 'dashboard_app.py').read_text(encoding='utf-8')
 
 class Parser(HTMLParser):
     pass
