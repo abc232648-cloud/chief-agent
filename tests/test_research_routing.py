@@ -76,7 +76,7 @@ def test_initial_search_policy_enables_only_key_free_path_and_reserves_later_can
     assert configured.interface == 'PROVIDER_NEUTRAL'
     assert configured.initial_search_provider == 'ddgs'
     assert configured.enabled_search_providers == ('ddgs',)
-    assert configured.reserved_search_providers == ('brave', 'searxng')
+    assert configured.reserved_search_providers == ('brave', 'searxng', 'tavily')
     assert configured.automatic_provider_fallback is False
     assert configured.action_authority == 'NONE'
 
