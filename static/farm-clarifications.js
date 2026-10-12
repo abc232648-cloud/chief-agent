@@ -4,7 +4,8 @@ async function renderFarmClarifications() {
   let host = document.getElementById('farmClarifications');
   if (!host) {
     host = document.createElement('details'); host.id = 'farmClarifications'; host.className = 'card farmSection';
-    document.getElementById('farmRecords').querySelector(':scope > p').after(host);
+    const entry=document.getElementById('farmEntrySection');
+    (entry||document.getElementById('farmRecords').querySelector(':scope > p')).after(host);
   }
   const view = await api('/api/farm/clarifications'); host.replaceChildren();
   if (!view.sources.length && !view.items.length && !Object.keys(view.templates).length) {host.hidden = true; return;}
