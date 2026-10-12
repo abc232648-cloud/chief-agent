@@ -254,7 +254,10 @@ def _write_state(path: Path, data):
     path.parent.chmod(0o700)
     fd, temp_name = tempfile.mkstemp(prefix=".dependency-updates-", dir=path.parent)
     try:
-        os.fchmod(fd, 0o600)
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600)
+        else:
+            os.chmod(temp_name, 0o600)
         with os.fdopen(fd, "wb") as stream:
             stream.write(encoded)
             stream.flush()
