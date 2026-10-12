@@ -49,7 +49,8 @@ document.addEventListener('click',async event=>{
   try{
     clearError();prepareFarmDashboardShell();
     if(typeof renderFarmAI==='function')await renderFarmAI();
-    await show('farmRecords');
+    openFarmSection('farmAssistantCard');
+    try{await show('farmRecords');}catch(error){reportError(error);}
     const card=document.getElementById('farmAssistantCard');openFarmSection('farmAssistantCard');card.scrollIntoView({block:'start'});card.setAttribute('tabindex','-1');card.focus({preventScroll:true});
   }catch(error){reportError(error);}finally{button.disabled=false;}
 },true);
