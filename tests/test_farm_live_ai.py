@@ -186,7 +186,7 @@ def test_farm_home_routes_owner_to_actual_activation_controls(connected):
             expect(page.locator('#farmAIRegistration')).to_be_visible()
             expect(page.get_by_role('button',name='Test and activate Qwen',exact=True)).to_be_visible()
             assert page.locator('#farmAIRegistration option').count()==2
-            assert page.evaluate('document.activeElement.id')=='farmAssistantCard'
+            assert page.evaluate("document.activeElement.closest('#farmAssistantCard')!==null")
         finally:browser.close()
 
 

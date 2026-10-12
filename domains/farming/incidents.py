@@ -130,6 +130,8 @@ def append(store, principal, payload):
     else:
         raise ValueError('Unknown incident operation.')
 
+    from control.notifications import initialize as initialize_notifications
+    initialize_notifications(store)  # Existing accepted schema; operational stores never run DDL here.
     with store._connect() as con:
         con.execute('BEGIN IMMEDIATE')
         principal = setup.authorize(store, con, principal, 'task')
@@ -161,4 +163,6 @@ def append(store, principal, payload):
         con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",
                     (KIND, json.dumps(record, sort_keys=True), time.time()))
         IdentityService(store)._event(con, principal, 'FARM_INCIDENT_' + operation, 'farming', p['event_id'], 'RECORDED')
+        from .notification_events import publish
+        publish(store, con, record, 'farm-incident', incident_id)
     return {'status': 'RECORDED', 'incident_id': incident_id, 'received_at': received_at, 'revision': p['event_id']}

@@ -24,9 +24,25 @@ Replace the example hostname only during real deployment. `public_host` is a DNS
 
 Setting `farm_operations` to ENABLED is an operational approval step, not a software-install step. This repository prepares and tests that gate but does not change any real production configuration to ENABLED.
 
+INSTALL READINESS
+Before installing service definitions, run `python -m deployment install-readiness` in a review shell with the absolute production config, absolute source root and source manifest, absolute backup directory, absolute project/interpreter paths, target platform/account, and the independently recorded manifest SHA-256, source-tree SHA-256 and schema SHA-256 pins. Relative config/source/backup evidence paths are rejected rather than resolved from the current working directory.
+
+The install-readiness command does not install, start, stop or enable services. It does not perform DNS/TLS/network checks, promote restores, change Farm approval or migrate the database. It validates the prepared production instance, private-state filesystem readiness, the pinned browser identity with native sandbox required, the actual source tree against its release manifest and expected source pin, isolated-profile reservations for the pinned external runtime candidates, the pinned operational backup, schema agreement between that backup and the production instance, and the complete three-service definition set. It returns metadata only and restores process environment selections before returning.
+
+Runtime profile status is explicit. `CREATE_REQUIRED` means the reviewed installation must create a fresh Chief-owned profile under the private state root before that runtime may be wired. `CHIEF_OWNED` means a matching Chief ownership marker already exists. An existing unmarked, linked, malformed or differently-owned path is a hard conflict; Chief never adopts it automatically.
+
+`SOURCE_READY_FOR_INSTALL_REVIEW` means those source/local gates passed. It is not deployment approval and does not prove DNS, certificate renewal, firewall policy, proxy installation, physical-device behavior or restore promotion.
+
+EXTERNAL RUNTIME ISOLATION
+An executable already installed on the PC does not imply that its normal desktop profile, home directory, keys, memory, sessions, skills, cron state or other application data may be reused. Chief reserves versioned candidate profile paths only below `<state_root>/runtime-profiles/`. The profile preparation helper creates a new private directory and ownership marker; it never searches for, imports, merges or edits a user's existing global profile.
+
+A runtime adapter is not authorized merely because a candidate documents profile support. Operational qualification must prove that the adapter can direct every writable runtime state surface to the reserved Chief profile. Until that is proven, the candidate remains unqualified under Phase 6 even if its executable is present. Existing installations therefore do not cause a duplicate install by themselves, and existing personal profiles are not silently shared.
+
+The automated browser follows the same separation principle: Chief launches its own browser process/context and stores only explicitly saved site-access state in Chief private storage. It does not attach to the user's normal browser profile.
+
 SERVICES
 Use deployment.launch with an absolute reviewed instance configuration for dashboard, worker and scheduler. Generate all THREE startup definitions through deployment.service_files; generation does not install or validate them. Stop manual copies first. Verify ownership, readiness, cooperative stop and restart for each component.
-Linux definitions target the user's systemd manager. Windows definitions use least-privilege interactive-token logon tasks: no stored password or unattended pre-login promise. macOS remains generated-only and unqualified. A forced stop leaves ambiguous work for review, not automatic replay.
+Linux definitions target the user's systemd manager and include `ConditionUser=<reviewed-owner>` so accidental installation under another user/root fails closed. Windows definitions use least-privilege interactive-token logon tasks: no stored password or unattended pre-login promise. macOS remains generated-only and unqualified. A forced stop leaves ambiguous work for review, not automatic replay.
 
 BROWSER
 Set browser_runtime in the service configuration to the non-secret JSON containing the absolute executable, version and SHA-256. Production browsing requires explicit qualification; changed executables fail closed. Keep native sandboxing enabled. Use Ubuntu's standard system-owned browser and OS integration; do not disable AppArmor or add --no-sandbox. OS package installation may require sudo; Chief runtime does not.
@@ -34,7 +50,9 @@ Set browser_runtime in the service configuration to the non-secret JSON containi
 NETWORK AND HTTPS
 Production application traffic is HTTPS-only. Chief itself remains on 127.0.0.1 and rejects plaintext requests in production even from loopback. The reviewed same-host TLS terminator must present a trusted certificate for public_host, preserve Host, overwrite X-Forwarded-Proto with https and forward only to the loopback Chief listener. Chief does not trust forwarded client identity or forwarded Host as authority.
 
-The runtime emits HSTS only on verified production HTTPS responses and adds nosniff, frame denial, no-referrer and a restrictive Permissions-Policy. Authentication cookies are Secure + HttpOnly + SameSite=Strict under production HTTPS; authenticated mutations also require same-origin CSRF proof.
+In production the backend also requires the actual Host authority to match the reviewed `public_host`. Localhost/IP aliases, alternate hostnames, explicit ports and ambiguous authorities are rejected before application dispatch even through the trusted TLS proxy. Authentication cookies are Secure + HttpOnly + SameSite=Strict under production HTTPS; authenticated mutations still require same-origin Origin proof and the Chief CSRF token.
+
+The runtime emits HSTS only on verified production HTTPS responses and adds nosniff, frame denial, no-referrer and a restrictive Permissions-Policy.
 
 DNS, certificate issuance/renewal, firewall rules, proxy installation and verification are intentionally deferred to the actual deployment phase because they depend on the selected host/domain. Do not expose the loopback backend directly to a LAN/public interface as a shortcut.
 
@@ -43,6 +61,8 @@ The web manifest supports an app-style browser window where browser installation
 
 ROLLBACK AND RESTORE
 Stop all three components before selecting the verified rollback source and compatible interpreter; retain the private state target. Review interrupted scheduler cycles and ambiguous actions before restart. Software rollback does not restore data or unlock quarantine. Operational restoration requires the B.5 integrity and isolated-restore path followed by separate deployment acceptance. Source archives are not operational backups.
+
+The install-readiness gate verifies an existing backup against explicit manifest/source/schema pins and separately verifies the source tree being installed against its release manifest; it never creates a backup implicitly and never promotes an isolated restore. Credentials and browser/session secrets remain outside the ordinary operational snapshot and must be recovered or reprovisioned through their separate protected process.
 
 ACCEPTANCE
 Report exact source, runtime, tests/skips, OS user, service lifecycle, permissions, containment limits, HTTPS trust and backup/restore results. Distinguish Windows, Ubuntu VM and physical Folio evidence. See Users-and-access.md for human permissions.

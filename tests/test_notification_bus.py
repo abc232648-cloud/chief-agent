@@ -239,9 +239,13 @@ def test_list_for_returns_only_visible_valid_events(tmp_path):
     assert all(item['authority'] == 'PRESENTATION_ONLY' for item in result)
 
 
-def test_shared_bus_feeds_existing_job_web_push_without_changing_push_contract(tmp_path):
+def test_shared_bus_feeds_job_web_push_with_generic_private_device_message(tmp_path):
     state, shared = bus(tmp_path)
-    register_subscription(state, 'owner-1', SUBSCRIPTION, ENV)
+    from tests.checkpoint_f_fixture import secure_store
+    _, principal = secure_store(state)
+    from application.control_services import compose_control_services
+    compose_control_services(state)
+    register_subscription(state, principal.id, SUBSCRIPTION, ENV, session_id=principal.session_id)
     shared.publish(job_event(event_id='push-compatible-event'))
 
     delivered = []
@@ -252,10 +256,10 @@ def test_shared_bus_feeds_existing_job_web_push_without_changing_push_contract(t
     )
     assert result == {'status': 'DELIVERED', 'sent': 1, 'failed': 0, 'expired': 0}
     assert delivered == [{
-        'title': 'Application review required',
-        'body': 'Review the prepared application before Chief continues.',
+        'title': 'Chief update',
+        'body': 'Sign in to view your update.',
         'severity': 'ACTION_REQUIRED',
         'tag': f"chief-job-{state.notifications(1)[0]['id']}",
         'url': '/jobs/',
-        'related_page': 'actions',
+        'related_page': '',
     }]

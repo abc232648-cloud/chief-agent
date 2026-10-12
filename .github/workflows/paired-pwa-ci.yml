@@ -1,0 +1,86 @@
+name: Paired PWA acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      owner_sha:
+        description: Reviewed full Owner PWA commit SHA
+        required: true
+      staff_sha:
+        description: Reviewed full Staff PWA commit SHA
+        required: true
+      job_sha:
+        description: Reviewed full Job PWA commit SHA
+        required: true
+permissions:
+  contents: read
+jobs:
+  paired:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Require immutable revisions and private-repository read access
+        env:
+          OWNER_SHA: ${{ inputs.owner_sha }}
+          STAFF_SHA: ${{ inputs.staff_sha }}
+          JOB_SHA: ${{ inputs.job_sha }}
+          PWA_TOKEN: ${{ secrets.PWA_READ_TOKEN }}
+        run: |
+          for value in "$OWNER_SHA" "$STAFF_SHA" "$JOB_SHA"; do
+            [[ "$value" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          done
+          test -n "$PWA_TOKEN" || { echo 'Configure read-only PWA_READ_TOKEN for the three client repositories.'; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          path: chief-agent
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: abc232648-cloud/chief-owner-pwa
+          ref: ${{ inputs.owner_sha }}
+          path: chief-owner-pwa
+          token: ${{ secrets.PWA_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: abc232648-cloud/chief-staff-pwa
+          ref: ${{ inputs.staff_sha }}
+          path: chief-staff-pwa
+          token: ${{ secrets.PWA_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: abc232648-cloud/Job-agent-pwa
+          ref: ${{ inputs.job_sha }}
+          path: Job-agent-pwa
+          token: ${{ secrets.PWA_READ_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build actual production clients
+        run: |
+          for repo in chief-owner-pwa chief-staff-pwa Job-agent-pwa; do
+            (cd "$repo" && npm ci --ignore-scripts && npm run typecheck && npm test && npm run build)
+          done
+      - name: Install isolated test dependencies
+        run: |
+          python -m pip install -r chief-agent/requirements-test.txt
+          python -m playwright install --with-deps chromium firefox webkit
+      - name: Real paired browser matrix
+        working-directory: chief-agent
+        env:
+          CHIEF_A10_CLIENT_ROOT: ${{ github.workspace }}
+          CHIEF_TEST_SECRET_BACKEND: portable-aead
+        run: |
+          for browser in chromium firefox webkit; do
+            CHIEF_A10_BROWSER="$browser" python -m pytest tests/test_a10_paired_clients.py tests/test_a10_operational_chain.py -q --junitxml="a10-$browser.xml"
+          done
+          python -m pytest tests/test_production_route_contract.py tests/test_device_notifications.py tests/test_a10_push_authority.py tests/test_a10_after_timeout_consent.py tests/test_web_push.py tests/test_notification_bus.py tests/test_a10_transport_outage.py -q --junitxml=a10-push.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: paired-pwa-results
+          path: chief-agent/a10-*.xml

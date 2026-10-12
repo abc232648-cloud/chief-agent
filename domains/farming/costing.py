@@ -3,7 +3,7 @@ import hashlib
 import json
 from datetime import timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
-from . import bookkeeping as books, finance, setup
+from . import bookkeeping as books, finance, setup, egg_loss_links, journal, expense_allocations
 from .journal_queries import ACTIVE
 from operations.time_integrity import aware_utc
 
@@ -29,6 +29,8 @@ def report(store, principal, *, start, end, currency, feed_minor_per_kg=None):
             payload = json.loads(row[0])['payload']
             if in_period(payload) and payload['kind'] in {'feed_used', 'eggs_collected', 'eggs_lost'}:
                 movements.append(payload)
+        egg_sources, link_history, loss_links = egg_loss_links.projection(con)
+        flocks, allocation_history, allocated_expenses = expense_allocations.projection(con)
         expenses = [r['payload'] for r in books.active(books.rows(con))
                     if r['payload']['kind'] == 'EXPENSE_CLAIM' and in_period(r['payload'])]
     kg = sum((Decimal(p['quantity']) for p in movements if p['kind'] == 'feed_used'), Decimal(0))
@@ -42,7 +44,7 @@ def report(store, principal, *, start, end, currency, feed_minor_per_kg=None):
         key = category if category in {'FEED', 'BIRDS'} else ('RECURRING' if category and category != 'OTHER' else 'UNCLASSIFIED')
         categories[key] += p['amount_minor']
     limitations = ['Expense and production coverage has not been certified.',
-                   'Saleable production is unavailable: losses are not linked to production cohorts.']
+                   'Recorded operating expenses may be one-off. Their frequency is not established and no future repeat is assumed.']
     if not any(p['kind'] == 'feed_used' for p in movements):
         limitations.append('No feed consumption records in this period; absence does not establish zero consumption.')
     if not any(p['kind'] == 'eggs_collected' for p in movements):
@@ -50,7 +52,7 @@ def report(store, principal, *, start, end, currency, feed_minor_per_kg=None):
     if feed_minor_per_kg is None:
         limitations.append('Feed valuation is not supplied.')
     if categories['UNCLASSIFIED']:
-        limitations.append('Unclassified expenses are excluded from recurring cost pending classification.')
+        limitations.append('Unclassified expenses are excluded from operating cost pending classification.')
     if any(p['currency'] != currency for p in expenses):
         limitations.append('Other currencies are excluded; no exchange rate is assumed.')
     if any(p['basis'] == 'ESTIMATED' for p in movements):
@@ -58,15 +60,47 @@ def report(store, principal, *, start, end, currency, feed_minor_per_kg=None):
     feed_cost = kg * feed_minor_per_kg if feed_minor_per_kg is not None and any(p['kind'] == 'feed_used' for p in movements) else None
     total = feed_cost + categories['RECURRING'] if feed_cost is not None else None
     per_egg = (total / eggs).quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP) if total is not None and eggs else None
-    references = [p['event_id'] for p in movements + expenses]
+    collections = {p['event_id']:p for p in movements if p['kind']=='eggs_collected'}
+    relevant = [r for r in loss_links if any(journal.stock_key(r['loss']) == journal.stock_key(c)
+                and aware_utc(r['loss']['observed_at']) >= aware_utc(c['observed_at']) for c in collections.values())]
+    linked = sum(a['eggs'] for r in relevant if r['usable'] for a in r['allocations'] if a['collection_id'] in collections)
+    unallocated = sum(r['unallocated'] for r in relevant)
+    reviewed = bool(relevant) and not unallocated and not any(r['needs_review'] for r in relevant)
+    saleable = eggs-linked if reviewed else None
+    saleable_cost = (total/saleable).quantize(Decimal('0.0001'),rounding=ROUND_HALF_UP) if total is not None and saleable else None
+    limitations.append('Collection-period estimate after explicitly linked losses, including later recorded losses. This does not certify egg grading, complete loss reporting or current saleable stock.')
+    if not reviewed: limitations.append('Saleable cost unavailable: loss attribution is incomplete or has not been established. Unknown losses are not assigned automatically.')
+    flock_totals = {}
+    unallocated_expenses = 0
+    allocation_refs = []
+    for item in allocated_expenses:
+        expense = item['expense']
+        if expense['currency'] != currency or not in_period(expense):
+            continue
+        unallocated_expenses += item['unallocated_minor']
+        if item['revision']:
+            allocation_refs.append(item['revision'])
+        if item['usable']:
+            for share in item['allocations']:
+                flock_id = share['flock_id']
+                flock_totals[flock_id] = flock_totals.get(flock_id, 0) + share['amount_minor']
+    limitations.append('Flock figures attribute recorded expense claims only, including feed purchases where allocated. They are not added to consumed-feed valuation and do not establish total flock cost or profit. No currency conversion or automatic allocation is performed.')
+    references = [p['event_id'] for p in movements + expenses] + allocation_refs
+    references += [r['loss']['event_id'] for r in relevant] + [r['revision'] for r in relevant if r['revision']]
     identity = {'movements': movements, 'expenses': expenses, 'start': start, 'end': end,
-                'currency': currency, 'feed_minor_per_kg': feed_minor_per_kg}
+                'currency': currency, 'feed_minor_per_kg': feed_minor_per_kg, 'loss_links': relevant, 'link_history':link_history,
+                'expense_allocations': allocated_expenses, 'allocation_history': allocation_history, 'flocks': flocks}
     return {'status': 'PROVISIONAL', 'start': start, 'end': end, 'timezone': 'Africa/Lagos',
             'currency': currency, 'feed_minor_per_kg': feed_minor_per_kg,
+            'flock_expenses': [{'flock_id': key, 'name': flocks[key]['name'], 'allocated_minor': amount}
+                              for key, amount in sorted(flock_totals.items())],
+            'unallocated_expenses_minor': unallocated_expenses,
             'feed_consumed_kg': str(kg), 'collected_eggs': eggs, 'inventory_eggs_lost': losses,
-            'saleable_eggs': None, 'saleable_cost_per_egg_minor': None,
+            'saleable_eggs': saleable, 'saleable_cost_per_egg_minor': str(saleable_cost) if saleable_cost is not None else None,
+            'linked_losses_from_collections':linked, 'unallocated_relevant_losses':unallocated, 'loss_attribution':'RECORDED_LINKS' if reviewed else 'INCOMPLETE',
             'feed_purchases_minor': str(categories['FEED']), 'bird_acquisition_minor': str(categories['BIRDS']),
             'recurring_expenses_minor': str(categories['RECURRING']), 'unclassified_expenses_minor': str(categories['UNCLASSIFIED']),
+            'operating_expenses_minor': str(categories['RECURRING']), 'expense_recurrence': 'NOT_ESTABLISHED',
             'consumed_feed_cost_minor': str(feed_cost) if feed_cost is not None else None,
             'recorded_recurring_cost_minor': str(total) if total is not None else None,
             'cost_per_collected_egg_minor': str(per_egg) if per_egg is not None else None,

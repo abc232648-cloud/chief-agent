@@ -28,7 +28,10 @@ def test_macos_boot_definitions_run_as_owner():
 def test_linux_units_and_invalid_paths():
     for data in definitions('linux','/home/fixture/Chief Agent','fixture',instance_config='/home/fixture/private/instance.json').values():
         assert b'Restart=on-failure' in data and b'UMask=0077' in data
+        assert b'ConditionUser=fixture\n' in data
         assert b'WorkingDirectory=/home/fixture/Chief Agent\n' in data
         assert b'--config' in data and b'ExecStop=' in data and b'NoNewPrivileges=yes' in data
     with pytest.raises(ValueError):definitions('linux','relative','fixture',instance_config='/tmp/instance.json')
     with pytest.raises(ValueError):definitions('linux','/home/fixture\nInjected=yes','fixture',instance_config='/tmp/instance.json')
+    with pytest.raises(ValueError,match='local account'):
+        definitions('linux','/home/fixture/Chief Agent','fixture service',instance_config='/tmp/instance.json')

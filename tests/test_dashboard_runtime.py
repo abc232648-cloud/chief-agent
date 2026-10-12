@@ -52,7 +52,7 @@ def test_html_unique_ids_and_navigation_targets():
             if 'id' in attrs: self.ids.append(attrs['id'])
             if tag=='section': self.sections.append(attrs['id'])
             if attrs.get('data-action')=='show': self.targets.append(attrs['data-target'])
-    parser=Parser();parser.feed((Path(__file__).resolve().parents[1]/'dashboard.html').read_text())
+    parser=Parser();parser.feed((Path(__file__).resolve().parents[1]/'dashboard.html').read_text(encoding='utf-8'))
     assert not [key for key,count in Counter(parser.ids).items() if count>1]
     assert set(parser.targets)<=set(parser.sections)
     from application.composition import default_registry
@@ -126,5 +126,5 @@ def test_dashboard_command_reaches_actual_worker_processor(dashboard):
     assert request(dashboard,'/api/actions')[2][0]['status']=='PENDING'
 
 def test_container_packages_separated_assets():
-    text=(Path(__file__).resolve().parents[1]/'gateway/Dockerfile').read_text()
+    text=(Path(__file__).resolve().parents[1]/'gateway/Dockerfile').read_text(encoding='utf-8')
     assert 'COPY dashboard.html ./dashboard.html' in text and 'COPY static ./static' in text

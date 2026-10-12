@@ -1,0 +1,23 @@
+{
+  "format_version": 1,
+  "cadence_env": "DEPENDENCY_UPDATE_CHECK_HOURS",
+  "default_cadence_hours": 24,
+  "minimum_cadence_hours": 1,
+  "maximum_cadence_hours": 720,
+  "runtime_sources": [
+    {
+      "candidate_id": "openclaw-2026.10.1",
+      "url": "https://api.github.com/repos/openclaw/openclaw/releases/latest",
+      "version_field": "tag_name",
+      "version_regex": "^v?([0-9]+(?:\\.[0-9]+)+)$"
+    },
+    {
+      "candidate_id": "hermes-agent-0.21.3",
+      "url": "https://api.github.com/repos/NousResearch/hermes-agent/releases/latest",
+      "version_field": "name",
+      "version_regex": "^Hermes Agent v([0-9]+(?:\\.[0-9]+)+)$"
+    }
+  ],
+  "python_requirement_files": ["requirements.txt", "requirements-scrapy.txt"],
+  "python_index_url": "https://pypi.org/pypi/{name}/json"
+}

@@ -10,7 +10,7 @@ import os
 import socket
 import uuid
 from threading import Event, Lock, get_ident
-from urllib.parse import quote_from_bytes
+from urllib.parse import quote_from_bytes, urlsplit
 
 BODY_LIMIT = 12 * 1024 * 1024
 RESPONSE_LIMIT = 16 * 1024 * 1024
@@ -36,6 +36,23 @@ def _security_headers(headers, secure_transport):
     if (secure_transport and os.environ.get('CHIEF_INSTANCE_MODE','').lower()=='production'
             and 'strict-transport-security' not in existing):
         headers.append(('Strict-Transport-Security','max-age=31536000'))
+
+
+def _production_host_matches(value):
+    """Production authority is the reviewed certificate host, never a forwarded alias."""
+    expected=(os.environ.get('DASHBOARD_TRUSTED_HOST') or '').strip().lower().rstrip('.')
+    if not expected or not isinstance(value,str) or not value or any(c in value for c in '\r\n\t ,/@'):
+        return False
+    try:
+        parsed=urlsplit('//'+value)
+        port=parsed.port
+    except ValueError:
+        return False
+    if parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment or not parsed.hostname:
+        return False
+    host=parsed.hostname.lower().rstrip('.')
+    # public_host is intentionally portless; the reviewed origin is standard HTTPS.
+    return host==expected and port is None
 
 
 class ResponseBuffer(BytesIO):
@@ -135,11 +152,13 @@ def wsgi_application(handler_type, settings):
         environ['chief.request_id'] = correlation_id
         try:
             handler = handler_type(environ)
-            # Production is HTTPS-only even on loopback. Outside production, a
-            # direct loopback listener remains available to isolated tests/dev.
+            # Production is HTTPS-only and host-bound even on loopback. Outside
+            # production, a direct loopback listener remains available to tests/dev.
             local = ipaddress.ip_address(handler.client_address[0]).is_loopback
             production=os.environ.get('CHIEF_INSTANCE_MODE','').lower()=='production'
-            if (production or settings.trusted_proxy or not local) and not handler.secure_transport:
+            if production and not _production_host_matches(handler.headers.get('Host')):
+                handler.json({'status':'REJECTED','reason':'The reviewed production host is required.'},403)
+            elif (production or settings.trusted_proxy or not local) and not handler.secure_transport:
                 handler.json({'status': 'REJECTED', 'reason': 'A trusted TLS connection is required.'}, 403)
             elif handler.command not in {'GET', 'HEAD', 'POST', 'DELETE'}:
                 handler.send_error(405)

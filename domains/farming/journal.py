@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 """Human-reported poultry records. No model calls, equipment effects or schema DDL.
 
 An isolated pilot uses the existing domain_records namespace. BEGIN IMMEDIATE
@@ -98,13 +99,16 @@ def effective(rows):
     return [r for r in rows if r['payload']['event_id'] not in replaced]
 
 
-def append(store, principal, payload):
+def append(store, principal, payload, *, connection=None):
     payload = validate(payload)
     if payload['kind'] in ADJUSTMENTS:
         raise PermissionError('Stock adjustments require the physical-count approval workflow.')
     identity = IdentityService(store)
-    with store._connect() as con:
-        con.execute('BEGIN IMMEDIATE')
+    with (store._connect() if connection is None else nullcontext(connection)) as con:
+        if connection is None:
+            con.execute('BEGIN IMMEDIATE')
+        elif not con.in_transaction:
+            raise ValueError('A caller-owned transaction is required.')
         principal = identity.refresh(principal)
         identity.authorize(principal, 'work.request', 'farming', sensitive=False)
         from . import setup

@@ -50,4 +50,13 @@ def compose_control_services(store, catalogs=None):
         lifecycle = ModuleLifecycle(catalogs.manifests, controls, health, compatibility)
     exposure = ModuleExposure(lifecycle, catalogs.interfaces) if lifecycle is not None and catalogs.interfaces is not None else None
     store._module_exposure = exposure
+    from .notification_access import context, visible
+    store._device_notification_context = lambda human, session, surface, expired=False: context(store, human, session, surface, expired=expired)
+    store._device_notification_visible = lambda event, ctx: visible(store, event, ctx)
+    from notifications.bus import publish_legacy_notification
+    def publish_notice(title, body, severity, domain, related_page):
+        try: publish_legacy_notification(store, catalogs.interfaces, title, body, severity, domain, related_page)
+        except ValueError: return False  # Legacy non-event-compatible records stay local.
+        return True
+    store._notification_publisher = publish_notice if catalogs.interfaces is not None else None
     return ControlServices(controls, health, ReportServices(catalogs.capabilities), lifecycle, exposure)

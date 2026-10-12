@@ -27,7 +27,12 @@ ENV={
 
 
 def store(tmp_path):
-    return Store(tmp_path/'worker.db')
+    from tests.checkpoint_f_fixture import secure_store
+    from application.control_services import compose_control_services
+    state = Store(tmp_path/'worker.db')
+    _, state.push_principal = secure_store(state)
+    compose_control_services(state)
+    return state
 
 
 def test_subscription_validation_rejects_ssrf_and_unknown_push_hosts():
@@ -49,9 +54,9 @@ def test_registration_starts_at_current_attention_cursor_and_preferences_stay_pr
     state.add_notification('Old ASK','Do not replay this','ACTION_REQUIRED',domain='jobs')
     old_id=state.notifications(1)[0]['id']
 
-    result=register_subscription(state,'owner-1',SUBSCRIPTION,ENV)
-    assert result=={'status':'REGISTERED','subscription_count':1}
-    private=push_subscriptions(state,'owner-1')
+    result=register_subscription(state,state.push_principal.id,SUBSCRIPTION,ENV,session_id=state.push_principal.session_id)
+    assert result=={'status':'REGISTERED','subscription_count':1,'after_timeout':False}
+    private=push_subscriptions(state,state.push_principal.id)
     assert private[0]['endpoint']==ENDPOINT
     assert private[0]['cursor']==old_id
 
@@ -64,7 +69,7 @@ def test_registration_starts_at_current_attention_cursor_and_preferences_stay_pr
 
 def test_dispatch_sends_only_new_job_attention_and_advances_durable_cursor(tmp_path):
     state=store(tmp_path)
-    register_subscription(state,'owner-1',SUBSCRIPTION,ENV)
+    register_subscription(state,state.push_principal.id,SUBSCRIPTION,ENV,session_id=state.push_principal.session_id)
     state.add_notification('Quiet telemetry','No push','INFO',domain='jobs')
     state.add_notification('Other domain','No push','URGENT',domain='farming')
     state.add_notification('Approval required','Review this application','ACTION_REQUIRED',domain='jobs',related_page='actions')
@@ -78,10 +83,10 @@ def test_dispatch_sends_only_new_job_attention_and_advances_durable_cursor(tmp_p
     assert first=={'status':'DELIVERED','sent':2,'failed':0,'expired':0}
     assert [item[1]['severity'] for item in delivered]==['ACTION_REQUIRED','URGENT']
     assert all(item[1]['url']=='/jobs/' for item in delivered)
-    assert delivered[0][1]['related_page']=='actions'
+    assert delivered[0][1]['related_page']==''
     assert delivered[-1][1]['tag'].startswith('chief-job-')
 
-    cursor=push_subscriptions(state,'owner-1')[0]['cursor']
+    cursor=push_subscriptions(state,state.push_principal.id)[0]['cursor']
     assert cursor==state.notifications(1)[0]['id']
     assert dispatch_pending(state,sender=sender,env=ENV)=={'status':'IDLE','sent':0,'failed':0,'expired':0}
     assert len(delivered)==2
@@ -89,7 +94,7 @@ def test_dispatch_sends_only_new_job_attention_and_advances_durable_cursor(tmp_p
 
 def test_dispatch_attempt_budget_bounds_each_delivery_pass(tmp_path):
     state=store(tmp_path)
-    register_subscription(state,'owner-1',SUBSCRIPTION,ENV)
+    register_subscription(state,state.push_principal.id,SUBSCRIPTION,ENV,session_id=state.push_principal.session_id)
     for index in range(5):
         state.add_notification(f'Approval {index}',f'Review {index}','ACTION_REQUIRED',domain='jobs')
 
@@ -105,9 +110,9 @@ def test_dispatch_attempt_budget_bounds_each_delivery_pass(tmp_path):
 
 def test_transient_provider_failure_keeps_cursor_for_retry(tmp_path):
     state=store(tmp_path)
-    register_subscription(state,'owner-1',SUBSCRIPTION,ENV)
+    register_subscription(state,state.push_principal.id,SUBSCRIPTION,ENV,session_id=state.push_principal.session_id)
     state.add_notification('Approval required','Retry me','ACTION_REQUIRED',domain='jobs')
-    before=push_subscriptions(state,'owner-1')[0]['cursor']
+    before=push_subscriptions(state,state.push_principal.id)[0]['cursor']
 
     class TemporaryFailure(RuntimeError):
         response=SimpleNamespace(status_code=503)
@@ -115,17 +120,17 @@ def test_transient_provider_failure_keeps_cursor_for_retry(tmp_path):
     def fail(*_):raise TemporaryFailure()
     result=dispatch_pending(state,sender=fail,env=ENV)
     assert result=={'status':'IDLE','sent':0,'failed':1,'expired':0}
-    assert push_subscriptions(state,'owner-1')[0]['cursor']==before
+    assert push_subscriptions(state,state.push_principal.id)[0]['cursor']==before
 
     delivered=[]
     dispatch_pending(state,sender=lambda *args:delivered.append(args),env=ENV)
     assert len(delivered)==1
-    assert push_subscriptions(state,'owner-1')[0]['cursor']>before
+    assert push_subscriptions(state,state.push_principal.id)[0]['cursor']>before
 
 
 def test_expired_provider_subscription_is_removed(tmp_path):
     state=store(tmp_path)
-    register_subscription(state,'owner-1',SUBSCRIPTION,ENV)
+    register_subscription(state,state.push_principal.id,SUBSCRIPTION,ENV,session_id=state.push_principal.session_id)
     state.add_notification('STOP','Expired endpoint test','URGENT',domain='jobs')
 
     class Gone(RuntimeError):
@@ -133,13 +138,13 @@ def test_expired_provider_subscription_is_removed(tmp_path):
 
     result=dispatch_pending(state,sender=lambda *_:(_ for _ in ()).throw(Gone()),env=ENV)
     assert result=={'status':'IDLE','sent':0,'failed':0,'expired':1}
-    assert push_subscriptions(state,'owner-1')==[]
+    assert push_subscriptions(state,state.push_principal.id)==[]
 
 
 def test_unsubscribe_is_identity_scoped(tmp_path):
     state=store(tmp_path)
-    register_subscription(state,'owner-1',SUBSCRIPTION,ENV)
+    register_subscription(state,state.push_principal.id,SUBSCRIPTION,ENV,session_id=state.push_principal.session_id)
     assert unregister_subscription(state,'other-user',ENDPOINT,ENV)=={'status':'NOT_REGISTERED'}
-    assert push_subscriptions(state,'owner-1')
-    assert unregister_subscription(state,'owner-1',ENDPOINT,ENV)=={'status':'REMOVED'}
-    assert push_subscriptions(state,'owner-1')==[]
+    assert push_subscriptions(state,state.push_principal.id)
+    assert unregister_subscription(state,state.push_principal.id,ENDPOINT,ENV)=={'status':'REMOVED'}
+    assert push_subscriptions(state,state.push_principal.id)==[]

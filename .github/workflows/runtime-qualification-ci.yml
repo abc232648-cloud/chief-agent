@@ -1,0 +1,138 @@
+name: Runtime Qualification Smoke CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'runtime_qualification/**'
+      - 'deployment/runtime_profiles.py'
+      - 'application/research_router.py'
+      - 'config/runtime_candidates.json'
+      - 'config/runtime_policy.json'
+      - 'config/research_policy.json'
+      - '.github/workflows/runtime-qualification-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runtime-qualification-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  chief-boundaries:
+    name: Chief runtime boundary tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CHIEF_INSTANCE_MODE: test
+      CHIEF_TEST_SECRET_BACKEND: portable-aead
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.14'
+          cache: pip
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-test.txt
+      - name: Run runtime/profile/research boundaries
+        run: >-
+          python -m pytest -q
+          tests/test_runtime_qualification.py
+          tests/test_runtime_profiles.py
+          tests/test_research_routing.py
+
+  execution-runtime-smoke:
+    name: Execution runtime smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install exact pinned execution runtime
+        shell: pwsh
+        run: |
+          npm install --global openclaw@2026.10.1
+          $version = (openclaw --version | Out-String).Trim()
+          if ($version -notmatch '2026\.10\.1') { throw "Unexpected execution runtime version: $version" }
+      - name: Verify Chief profile override does not adopt personal state
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'chief-runtime-smoke'
+          $personal = Join-Path $root 'personal-home'
+          $personalProfile = Join-Path $personal '.openclaw'
+          $chiefProfile = Join-Path $root 'chief-profile'
+          New-Item -ItemType Directory -Force -Path $personalProfile,$chiefProfile | Out-Null
+          $sentinel = Join-Path $personalProfile 'PERSONAL_PROFILE_SENTINEL.txt'
+          Set-Content -NoNewline -Path $sentinel -Value 'do-not-touch'
+          $before = (Get-FileHash -Algorithm SHA256 $sentinel).Hash
+          $env:HOME = $personal
+          $env:USERPROFILE = $personal
+          $env:OPENCLAW_STATE_DIR = $chiefProfile
+          $env:OPENCLAW_CONFIG_PATH = Join-Path $chiefProfile 'openclaw.json'
+          openclaw --version | Out-Host
+          openclaw --help | Out-Null
+          $after = (Get-FileHash -Algorithm SHA256 $sentinel).Hash
+          if ($before -ne $after) { throw 'Execution runtime modified the personal-profile sentinel.' }
+          $extra = @(Get-ChildItem -Force $personalProfile | Where-Object { $_.Name -ne 'PERSONAL_PROFILE_SENTINEL.txt' })
+          if ($extra.Count -ne 0) { throw 'Execution runtime wrote into the personal runtime profile while Chief overrides were active.' }
+          "SMOKE_ONLY: exact version installed and personal profile remained isolated; this is not full PROVEN qualification." | Out-Host
+
+  research-runtime-smoke:
+    name: Research runtime smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Check out exact pinned research runtime source
+        uses: actions/checkout@v4
+        with:
+          repository: NousResearch/hermes-agent
+          ref: v2026.9.14
+          path: _runtime_candidate
+          persist-credentials: false
+      - name: Install exact pinned research runtime source for smoke only
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          # This source explicitly blocks wheel/sdist distribution outside Nix.
+          # Its supported development smoke path is an editable source install;
+          # this does not qualify the production shell installer.
+          python -m pip install -e ./_runtime_candidate
+          $version = (hermes --version | Out-String).Trim()
+          if ($version -notmatch '0\.21\.3') { throw "Unexpected research runtime version: $version" }
+      - name: Verify HERMES_HOME isolates personal Hermes profile
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'chief-research-runtime-smoke'
+          $personal = Join-Path $root 'personal-home'
+          $personalProfile = Join-Path $personal '.hermes'
+          $chiefProfile = Join-Path $root 'chief-hermes-profile'
+          New-Item -ItemType Directory -Force -Path $personalProfile,$chiefProfile | Out-Null
+          $sentinel = Join-Path $personalProfile 'PERSONAL_PROFILE_SENTINEL.txt'
+          Set-Content -NoNewline -Path $sentinel -Value 'do-not-touch'
+          $before = (Get-FileHash -Algorithm SHA256 $sentinel).Hash
+          $env:HOME = $personal
+          $env:USERPROFILE = $personal
+          $env:HERMES_HOME = $chiefProfile
+          hermes --version | Out-Host
+          hermes --help | Out-Null
+          $after = (Get-FileHash -Algorithm SHA256 $sentinel).Hash
+          if ($before -ne $after) { throw 'Research runtime modified the personal-profile sentinel.' }
+          $extra = @(Get-ChildItem -Force $personalProfile | Where-Object { $_.Name -ne 'PERSONAL_PROFILE_SENTINEL.txt' })
+          if ($extra.Count -ne 0) { throw 'Research runtime wrote into the personal Hermes profile while HERMES_HOME was active.' }
+          "SMOKE_ONLY: exact version installed from pinned source and personal profile remained isolated; production installer is still unqualified." | Out-Host

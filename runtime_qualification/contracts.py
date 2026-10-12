@@ -10,6 +10,7 @@ class Gate(str, Enum):
     LINUX_FOLIO_COMPATIBILITY = 'LINUX_FOLIO_COMPATIBILITY'
     OPERATIONS = 'OPERATIONS'
     PRIVACY = 'PRIVACY'
+    RESEARCH_INTEGRITY = 'RESEARCH_INTEGRITY'
 
 
 class GateStatus(str, Enum):
@@ -44,6 +45,7 @@ class Evidence:
 @dataclass(frozen=True)
 class Qualification:
     candidate_id: str
+    role: str
     gate_status: tuple[tuple[str, str], ...]
     qualified: bool
     blockers: tuple[str, ...]

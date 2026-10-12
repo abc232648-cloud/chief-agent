@@ -18,7 +18,8 @@ class ModuleExposure:
         self._installed = {key: lifecycle.manifests.get(key) for key in lifecycle.manifests.ids()}
         self._runtime = {key: lifecycle.manifests.runtime.resolve(key) for key in self._installed}
 
-    def require(self, module_id, service, principal, *, kind=None):
+    def installed_surface(self, module_id, *, kind=None):
+        """Validate installed capability/interface state; grants no human authority."""
         try:
             manifests = self.lifecycle.manifests
             manifest = manifests.get(module_id)
@@ -42,19 +43,23 @@ class ModuleExposure:
                 raise ValueError('Domain is disabled.')
             if not controls.allowed(agent.id):
                 raise ValueError('Component or dependency is disabled.')
-            principal = service.refresh(principal)
-            service.authorize(principal, 'work.read', module_id, sensitive=False)
             registration = None
             if kind is not None:
                 registration = self.interfaces.require(module_id, kind)
                 declaration = interface(manifest, kind)
                 if declaration is None or registration != InterfaceRegistration.from_manifest(manifest, declaration):
                     raise ValueError('Interface registration is stale.')
-                if principal.role not in registration.roles:
-                    raise PermissionError('Interface is not available to this role.')
             return registration
         except (ValueError, KeyError, AttributeError) as exc:
             raise PermissionError('Module surface is unavailable; refresh installed state.') from exc
+
+    def require(self, module_id, service, principal, *, kind=None):
+        registration = self.installed_surface(module_id, kind=kind)
+        principal = service.refresh(principal)
+        service.authorize(principal, 'work.read', module_id, sensitive=False)
+        if registration is not None and principal.role not in registration.roles:
+            raise PermissionError('Interface is not available to this role.')
+        return registration
 
     def available(self, module_id, service, principal, *, kind=None):
         try:

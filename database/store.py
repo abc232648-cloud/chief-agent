@@ -267,6 +267,8 @@ class Store:
             return rows[0] if rows else None
 
     def add_notification(self,title,body,severity='INFO',domain='system',related_page=''):
+        publisher = getattr(self, '_notification_publisher', None)
+        if publisher is not None and publisher(title,body,severity,domain,related_page):return
         from control.notifications import initialize
         initialize(self)
         with self._connect() as c:c.execute('INSERT INTO notifications(title,body,severity,domain,related_page,presented) VALUES(?,?,?,?,?,0)',(title,body,severity,domain,related_page))

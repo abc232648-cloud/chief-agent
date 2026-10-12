@@ -181,6 +181,17 @@ class IdentityService:
         if not valid:raise AuthenticationRequired('Sign-in failed or temporarily limited.')
         return replacement,current
 
+    def revoke_token(self, raw):
+        """Allow the holder to end their own session even after timeout; no access grant."""
+        if not isinstance(raw,str) or not 32 <= len(raw) <= 128: return
+        with self.store._connect() as con:
+            con.execute('BEGIN IMMEDIATE')
+            row=con.execute('SELECT s.*,u.role,u.domains FROM human_sessions s JOIN human_identities u ON u.id=s.human_id WHERE token_hash=?',(digest(raw),)).fetchone()
+            if row:
+                con.execute('UPDATE human_sessions SET revoked=1 WHERE id=?',(row['id'],))
+                actor=Principal(row['human_id'],row['id'],row['role'],tuple(json.loads(row['domains'])),row['reauth_at'])
+                self._event(con,actor,'SESSION_REVOKED',None,None,'RECORDED')
+
     def revoke(self,principal):
         with self.store._connect() as con:
             self._principal(con,principal.session_id)

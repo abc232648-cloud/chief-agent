@@ -1,0 +1,11 @@
+{
+  "execution_candidate_id": "openclaw-2026.10.1",
+  "execution_role": "GENERAL_EXECUTION",
+  "execution_lifecycle": "SERVICE",
+  "execution_action_authority": "CHIEF_GATED",
+  "research_candidate_id": "hermes-agent-0.21.3",
+  "research_role": "RESEARCH_ONLY",
+  "research_lifecycle": "ON_DEMAND",
+  "research_action_authority": "NONE",
+  "auto_route_external_research": true
+}

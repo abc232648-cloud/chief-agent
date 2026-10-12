@@ -111,20 +111,75 @@ def latest_attention_id(store):
     return int(row[0])
 
 
-def register_subscription(store,principal_id,payload,env=None):
+def _delivery_principal(store, principal_id, session_id):
+    """Use Chief's existing live identity and A9 authority, never cached roles."""
+    from identity.contracts import Principal
+    from identity.service import IdentityService
+    if not isinstance(session_id, str) or not session_id:
+        raise PermissionError('Re-register notifications from a current Chief session.')
+    service = IdentityService(store)
+    # refresh() loads authoritative role/scope and validates session lifetime.
+    principal = service.refresh(Principal(principal_id, session_id, '', (), ''))
+    # Application startup supplies this Core service. Core must never import
+    # application composition to manufacture an authority service on demand.
+    exposure = getattr(store, '_module_exposure', None)
+    if exposure is None:
+        raise PermissionError('Module exposure is unavailable.')
+    exposure.require('jobs', service, principal, kind='companion')
+    return principal
+
+
+def _consent_delivery(store, subscription):
+    """A device delivery permission, never an authenticated application session."""
+    from identity.service import IdentityService
+    service = IdentityService(store); service.require_ready()
+    if not any(r.get('endpoint')==subscription.get('endpoint') and r.get('session_id')==subscription.get('session_id') and r.get('consent_version')==1 for r in push_subscriptions(store,subscription.get('principal_id'))):
+        raise PermissionError('Device consent changed.')
+    with store._connect() as con:
+        row = con.execute('SELECT s.human_id,s.revoked,u.enabled,u.role,u.domains FROM human_sessions s JOIN human_identities u ON u.id=s.human_id WHERE s.id=?', (subscription.get('session_id'),)).fetchone()
+    if not row or row['revoked'] or not row['enabled'] or row['human_id'] != subscription.get('principal_id'):
+        raise PermissionError('Notification consent is revoked.')
+    domains = json.loads(row['domains'])
+    if row['role'] != subscription.get('consent_role') or sorted(domains) != subscription.get('consent_domains'):
+        raise PermissionError('Notification access changed; opt in again.')
+    if 'work.read' not in service.roles.get(row['role'], ()) or not {'jobs','*'} & set(domains):
+        raise PermissionError('Job notification access is unavailable.')
+    exposure = getattr(store, '_module_exposure', None)
+    if exposure is None: raise PermissionError('Module exposure is unavailable.')
+    registration = exposure.installed_surface('jobs', kind='companion')
+    if row['role'] not in registration.roles: raise PermissionError('Notification role is unavailable.')
+
+
+def register_subscription(store,principal_id,payload,env=None,*,session_id=None):
     if not isinstance(principal_id,str) or not principal_id:raise ValueError('Authenticated identity is required.')
+    from identity.context import current_human
+    human = current_human()
+    if session_id is None and human is not None and human.id == principal_id:
+        session_id = human.session_id
+    principal = _delivery_principal(store, principal_id, session_id)
+    if not isinstance(payload, dict): raise ValueError('Invalid subscription.')
+    payload = dict(payload)
+    consent = payload.pop('after_timeout', None)
+    if consent is not None and type(consent) is not bool: raise ValueError('Notification consent must be explicit.')
     if not public_configuration(env)['configured']:raise ValueError('Background Web Push is not configured on Chief.')
     subscription=normalize_subscription(payload,env)
+    previous = next((r for r in push_subscriptions(store,principal_id) if r.get('endpoint') == subscription['endpoint']), {})
+    if consent is None:
+        consent = previous.get('consent_version') == 1 and previous.get('consent_role') == principal.role and previous.get('consent_domains') == sorted(principal.domains)
     now=utc_text(utc_now())
     count=upsert_push_subscription(store,{
+        'consent_version':1 if consent else 0,
+        'consent_role':principal.role,
+        'consent_domains':sorted(principal.domains),
         'principal_id':principal_id,
+        'session_id':session_id,
         'endpoint':subscription['endpoint'],
         'keys':subscription['keys'],
-        'cursor':latest_attention_id(store),
+        'cursor':previous.get('cursor', latest_attention_id(store)),
         'created_at':now,
         'updated_at':now,
     })
-    return {'status':'REGISTERED','subscription_count':count}
+    return {'status':'REGISTERED','subscription_count':count,'after_timeout':bool(consent)}
 
 
 def unregister_subscription(store,principal_id,endpoint,env=None):
@@ -136,7 +191,7 @@ def unregister_subscription(store,principal_id,endpoint,env=None):
 def subscription_status(store,principal_id,env=None):
     config=public_configuration(env)
     rows=push_subscriptions(store,principal_id)
-    return {**config,'subscribed':bool(rows),'subscription_count':len(rows)}
+    return {**config,'subscribed':bool(rows),'subscription_count':len(rows),'after_timeout':any(r.get('consent_version')==1 for r in rows)}
 
 
 def _default_sender(subscription,payload,settings):
@@ -179,20 +234,28 @@ def dispatch_pending(store,*,sender=None,env=None,limit_per_subscription=PER_SUB
         raise ValueError('Invalid Web Push delivery limits.') from None
     sent=failed=expired=attempted=0
     for subscription in push_subscriptions(store):
+        if subscription.get('surface') in {'owner', 'staff'}: continue
         if attempted>=budget:break
         endpoint=subscription.get('endpoint','');principal=subscription.get('principal_id','')
         if not endpoint or not principal:continue
         remaining=min(per_subscription,budget-attempted)
         for item in _pending_for(store,subscription.get('cursor',0),remaining):
             if attempted>=budget:break
+            # Check every attempted delivery, including revocation during a batch.
+            # Legacy unbound subscriptions stay inert until explicit registration.
+            try:
+                if subscription.get('consent_version') == 1: _consent_delivery(store, subscription)
+                else: _delivery_principal(store, principal, subscription.get('session_id'))
+            except (PermissionError, ValueError):
+                break
             attempted+=1
             payload={
-                'title':str(item['title'])[:160],
-                'body':str(item['body'])[:500],
+                'title':'Chief update',
+                'body':'Sign in to view your update.',
                 'severity':item['severity'],
                 'tag':f"chief-job-{item['id']}",
                 'url':'/jobs/',
-                'related_page':str(item.get('related_page') or '')[:120],
+                'related_page':'',
             }
             try:
                 send(subscription,payload,settings)

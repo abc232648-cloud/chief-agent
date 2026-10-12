@@ -1,25 +1,29 @@
 {
-  "snapshot_date": "2026-09-24",
+  "snapshot_date": "2026-10-12",
   "candidates": [
     {
-      "id": "openclaw-2026.9.5",
+      "id": "openclaw-2026.10.1",
       "product": "OpenClaw",
-      "version": "2026.9.5",
-      "release_date": "2026-09-19",
-      "release_url": "https://github.com/openclaw/openclaw/releases/tag/v2026.9.5",
+      "version": "2026.10.1",
+      "release_date": "2026-10-10",
+      "release_url": "https://github.com/openclaw/openclaw/releases/tag/v2026.10.1",
       "documentation_urls": [
         "https://docs.openclaw.ai/gateway/multiple-gateways",
-        "https://docs.openclaw.ai/web/control-ui",
-        "https://docs.openclaw.ai/nodes/command-policy",
-        "https://docs.openclaw.ai/install/updating/rollback-and-recovery",
-        "https://docs.openclaw.ai/network"
+        "https://docs.openclaw.ai/gateway/sandbox-vs-tool-policy-vs-elevated",
+        "https://docs.openclaw.ai/gateway/config-agents/sandbox",
+        "https://docs.openclaw.ai/gateway/security/secure-file-operations",
+        "https://docs.openclaw.ai/gateway/security",
+        "https://docs.openclaw.ai/browser",
+        "https://docs.openclaw.ai/releases"
       ],
       "documented_capabilities": [
         "isolated named gateway profiles with separate config/state/workspace/ports",
-        "loopback-first gateway with authenticated non-loopback modes",
-        "Control UI can be mounted below a base path and disabled independently",
-        "paired device/node command surface with declaration plus approval/allowlist checks",
-        "managed update and rollback workflow with explicit state-migration cautions"
+        "role-required sandboxing can fail closed and cannot be escaped through elevated execution",
+        "sandbox workspace access can be none, read-only, or read-write with explicit tool policy",
+        "sandbox network access defaults to none for the documented container configuration",
+        "root-bounded security-sensitive file operations are documented across Windows and Linux",
+        "managed browser can use a dedicated agent-only user-data profile separate from the personal browser profile",
+        "stable release provenance includes signed tags and release verification evidence"
       ]
     },
     {
@@ -32,15 +36,20 @@
         "https://hermes-agent.nousresearch.com/docs/user-guide/profiles",
         "https://hermes-agent.nousresearch.com/docs/user-guide/security",
         "https://hermes-agent.nousresearch.com/docs/user-guide/checkpoints-and-rollback",
-        "https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins",
+        "https://hermes-agent.nousresearch.com/docs/user-guide/features/delegation",
+        "https://hermes-agent.nousresearch.com/docs/user-guide/features/web-search",
+        "https://hermes-agent.nousresearch.com/docs/user-guide/features/cron",
         "https://hermes-agent.nousresearch.com/docs/user-guide/configuration"
       ],
       "documented_capabilities": [
         "independent profiles with separate config/keys/memory/sessions/skills/cron/state",
-        "dangerous-command approval plus optional Docker/remote sandbox backends",
-        "isolated subagent and worktree workflows",
-        "MCP and plugin extensibility with explicit trust caveats",
-        "optional checkpoint/rollback for workspace changes"
+        "dangerous-command approval plus optional isolated terminal backends",
+        "isolated subagent and git worktree workflows",
+        "web search and extraction use configurable provider backends including a no-key DDGS search backend",
+        "delegated research can run isolated subagents and return structured results",
+        "scheduled jobs run in fresh sessions and can survive parent-session closure",
+        "optional checkpoint/rollback for workspace changes",
+        "running delegated children are documented as unknown rather than resumed after process restart"
       ]
     }
   ]

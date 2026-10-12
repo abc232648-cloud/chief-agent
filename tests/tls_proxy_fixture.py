@@ -10,7 +10,7 @@ from threading import Thread
 
 
 @contextmanager
-def local_tls_proxy(root, backend_port):
+def local_tls_proxy(root, backend_port, *, bundles=None, faults=None):
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import ec
@@ -33,6 +33,35 @@ def local_tls_proxy(root, backend_port):
     class Proxy(BaseHTTPRequestHandler):
         def log_message(self,*args):pass
         def forward(self):
+            # Fail before static serving or backend forwarding. This models an
+            # unreachable Chief origin without disabling local Blob/File I/O.
+            if faults is not None and faults.get('network_unavailable'):
+                faults['blocked_requests'] = faults.get('blocked_requests', 0) + 1
+                self.close_connection = True
+                return
+            # Optional production bundles for isolated paired-client acceptance.
+            # Never serve API responses or another client's fallback from disk.
+            if bundles and self.command in {'GET', 'HEAD'}:
+                from pathlib import Path
+                from urllib.parse import unquote, urlsplit
+                import mimetypes
+                path = unquote(urlsplit(self.path).path)
+                for prefix, directory in bundles.items():
+                    if path.startswith(prefix):
+                        base = Path(directory).resolve()
+                        target = (base / (path[len(prefix):] or 'index.html')).resolve()
+                        if not target.is_relative_to(base) or not target.is_file():
+                            self.send_error(404)
+                            return
+                        data = target.read_bytes()
+                        self.send_response(200)
+                        self.send_header('Content-Type', mimetypes.guess_type(target.name)[0] or 'application/octet-stream')
+                        self.send_header('Content-Length', str(len(data)))
+                        self.send_header('Cache-Control', 'no-store')
+                        self.end_headers()
+                        if self.command != 'HEAD':
+                            self.wfile.write(data)
+                        return
             backend=http.client.HTTPConnection('127.0.0.1',backend_port,timeout=5)
             try:
                 data=self.rfile.read(int(self.headers.get('Content-Length','0')))
@@ -40,12 +69,19 @@ def local_tls_proxy(root, backend_port):
                 headers['X-Forwarded-Proto']='https'
                 backend.request(self.command,self.path,body=data or None,headers=headers)
                 response=backend.getresponse();body=response.read()
+                if faults is not None and faults.get('drop_response') == (self.command, self.path):
+                    faults['accepted_status'] = response.status
+                    # Keep the outage active until the test restores transport.
+                    # Browsers may transparently retry a disconnected request.
+                    faults.setdefault('dropped_statuses', []).append(response.status)
+                    self.close_connection = True
+                    return
                 self.send_response(response.status)
                 for k,v in response.getheaders():
                     if k.lower() not in {'server','date','connection','transfer-encoding'}:self.send_header(k,v)
                 self.end_headers();self.wfile.write(body)
             finally:backend.close()
-        do_GET=do_POST=forward
+        do_GET=do_POST=do_HEAD=forward
     server=ThreadingHTTPServer(('127.0.0.1',0),Proxy)
     server.socket=context.wrap_socket(server.socket,server_side=True)
     thread=Thread(target=server.serve_forever,daemon=True);thread.start()

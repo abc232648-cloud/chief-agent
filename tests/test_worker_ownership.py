@@ -84,18 +84,21 @@ except WorkerAlreadyRunning: print('REFUSED',flush=True)
 def test_lock_refuses_symlink(tmp_path):
     from operations.backup import BackupError
     owner=WorkerOwnership(tmp_path/'worker.db')
-    if os.name=='nt':
+    target=tmp_path/'outside-sentinel.txt';target.write_text('must remain unchanged',encoding='utf-8');before=target.read_text(encoding='utf-8')
+    try:
+        owner.path.symlink_to(target)
+    except OSError as exc:
+        fixture_path=os.environ.get('CHIEF_TEST_SYMLINK_FIXTURE')
+        if not fixture_path:
+            pytest.skip(f'This Windows runner cannot create a symlink and no reviewed fixture is configured: {exc}')
         import json
-        manifest_path=Path(os.environ['CHIEF_TEST_SYMLINK_FIXTURE'])
-        fixture=json.loads(manifest_path.read_text())
+        manifest_path=Path(fixture_path)
+        fixture=json.loads(manifest_path.read_text(encoding='utf-8'))
         assert fixture['fixture']=='chief-symlink-denial-v1'
         target=manifest_path.parent/'outside-sentinel.txt'
         owner.path=manifest_path.parent/'dashboard-root/logs/linked.txt'
         assert owner.path.is_symlink() and owner.path.resolve()==target.resolve()
-        before=target.read_text();assert before==fixture['sentinel']
-    else:
-        target=tmp_path/'outside';target.write_text('must remain unchanged');before=target.read_text()
-        owner.path.symlink_to(target)
+        before=target.read_text(encoding='utf-8');assert before==fixture['sentinel']
     with pytest.raises(BackupError):
         with owner:pass
-    assert target.read_text()==before
+    assert target.read_text(encoding='utf-8')==before

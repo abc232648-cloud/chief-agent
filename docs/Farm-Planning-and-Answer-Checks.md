@@ -47,8 +47,22 @@ questionnaire; valid real forecasts still require confirmed farm inputs.
 Cost settings accept currency amounts such as NGN 123.45 per kg. Reports display
 currency, including four decimal places per egg, with exact integer/decimal-based
 rounding rather than JavaScript floating-point conversion. Underlying valuation
-remains provisional. Saleable egg cost is still unavailable without production-cohort
-attribution. Price references remain reported sources, not independent verification.
+remains provisional. Owners may explicitly link existing egg losses to their
+collection records. Unknown sources remain unallocated; corrections require review.
+Only complete recorded attribution permits the collection-period estimate after
+linked losses. It does not certify grading, complete reporting or saleable stock.
+Price references remain reported sources, not independent verification.
+
+Owners may also split recorded expense claims between registered flocks using
+exact amounts in the bill's currency. No equal split, exchange rate or other
+allocation formula is inferred. Unallocated remainders stay visible. Reports show
+these allocated expenses separately from consumed-feed valuation: feed purchase
+shares must not be added again to feed consumption costs. These figures are not
+complete flock costs or profit. Voided expenses cease contributing; earlier
+allocation revisions remain in history. Allocation changes create neither new
+expenses nor stock movements. Financial readers need existing Farm finance access;
+only an Owner with the existing sensitive-action authorization may change shares.
+The existing domain_records storage is used; there is no schema migration.
 
 ## Farm guidance and diagnostics
 
@@ -72,16 +86,30 @@ model label is logged. The alias is not proof of a particular provider registrat
 or successful qualification. Existing diagnostic limit: 1 MiB plus three rotations;
 audit retention is separate. Filtering applies at both the logger and file sink.
 
+## Phase 5 reconciliation status
+
+The current Farm source already contains the authoritative implementations for
+journal/history and corrections, opening-history handling, flock health records,
+labour, bookkeeping/finance, planning, offline reporting, photo attachment,
+physical-count reconciliation, explicit egg-loss attribution and explicit
+per-flock expense allocation. Phase 5 therefore reconciles and preserves these
+existing authorities rather than adding parallel services or duplicate ledgers.
+
+The explicit loss/allocation features remain revision-aware and do not invent
+stock movement, equal allocation, exchange rates or additional expenses. General
+shared-overhead allocation beyond explicit recorded expense allocations remains a
+future capability rather than an implied result of the existing allocation logic.
+
 ## Browser identity and remaining acceptance
 
-The user selected a move to Chromium. Do not silently select installed Google Chrome.
-This host's Playwright `chromium` cache identifies itself as **Google Chrome for
-Testing 153.0.8010.12**. Results on it are labelled accordingly, not counted as an
-independent Chromium-build pass. No standalone Chromium executable was found here.
+The selected target is Chromium. Do not silently substitute a branded browser
+build. This host's Playwright cache is a testing runtime and is not counted as an
+independent installed Chromium-build qualification. No standalone Chromium
+executable was found here.
 
 The existing `CHIEF_BROWSER_RUNTIME` supports an explicit absolute executable,
-SHA-256 and version with Chromium sandbox enabled. Supply/qualify the intended
-Chromium build on each installation; do not reuse a Google Chrome hash or bypass
+SHA-256 and version with Chromium sandbox enabled. Supply and qualify the intended
+Chromium build on each installation; do not reuse a different browser hash or bypass
 the sandbox on failure. Physical-phone PWA and installed-host acceptance stay
 separate from headless regression checks.
 
@@ -89,4 +117,4 @@ Still pending: full installed Windows/Linux qualification of this changed source
 real notification delivery, owner-specific configuration, saleable-cost attribution,
 further finance/contact/history scaling and complete human-facing audit navigation,
 actual provider answer evaluation, final scoped pentest and production acceptance.
-Sensors, physical automation and detailed shared-cost allocation remain deferred.
+Sensors, physical automation and general shared-overhead allocation remain deferred.
