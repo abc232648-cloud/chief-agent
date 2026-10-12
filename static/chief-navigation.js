@@ -59,3 +59,9 @@ document.addEventListener('toggle',event=>{
   const target=event.target;
   if(target.matches?.('.domainNav')&&target.open)document.querySelectorAll('.domainNav').forEach(d=>{if(d!==target)d.open=false;});
 },true);
+document.addEventListener('DOMContentLoaded',()=>{
+  const root=document.getElementById('farmRecords');
+  if(!root)return;
+  const observer=new MutationObserver(()=>applyFarmDashboardSectionOpenPreference());
+  observer.observe(root,{subtree:true,attributes:true,attributeFilter:['hidden']});
+});
