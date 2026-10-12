@@ -1,9 +1,10 @@
 """Fail-closed production installation readiness without installing or starting Chief.
 
 This validates the already prepared production instance, private storage, pinned
-source tree, sandboxed browser selection, a separately pinned operational backup,
-and the reviewable service definitions. It never installs services, starts
-components, promotes a restore, changes Farm approval, or performs network operations.
+source tree, sandboxed browser selection, external-runtime profile isolation, a
+separately pinned operational backup, and the reviewable service definitions. It
+never installs services, starts components, promotes a restore, changes Farm
+approval, or performs network operations.
 """
 import os
 from pathlib import Path
@@ -58,6 +59,13 @@ def installation_readiness(config, *, source_root, source_manifest, backup_direc
         actual_source=source_identity(source_root,source_manifest)
         if actual_source!=expected_source:
             raise ValueError('Installed source tree does not match the pinned backup source identity.')
+
+        # Existing desktop/global runtime profiles are never discovered or imported.
+        # Each pinned candidate gets one reserved path below Chief private state. An
+        # unmarked pre-existing path is a conflict, not something readiness may reuse.
+        from deployment.runtime_profiles import plans_from_source
+        runtime_profiles=plans_from_source(instance.state_root,source_root)
+
         manifest=verify_backup(backup_directory,manifest_sha256=manifest_sha256,
                                expected_source=expected_source,expected_schema=expected_schema)
 
@@ -82,6 +90,7 @@ def installation_readiness(config, *, source_root, source_manifest, backup_direc
             'schema_sha256':instance.schema_sha256,
             'storage_scope':storage['scope'],
             'browser_sandbox_required':True,
+            'runtime_profiles':[{'candidate_id':item['candidate_id'],'status':item['status']} for item in runtime_profiles],
             'backup_id':manifest['backup_id'],
             'backup_coverage':manifest['coverage'],
             'service_definitions':sorted(files),
