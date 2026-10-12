@@ -10,7 +10,9 @@ def test_work_shell_is_available_even_when_context_load_fails(dashboard):
             page.route('**/api/ui/context', lambda route: route.abort())
             page.goto(d.url + '/work', wait_until='domcontentloaded')
             expect(page.locator('#farmEntrySection')).to_be_attached()
-            expect(page.get_by_role('button', name='Expand all sections', exact=True)).to_be_attached()
+            toolbar = page.locator('#farmRecords > .farmSectionTools')
+            expect(toolbar).to_be_attached()
+            expect(toolbar.locator('button', has_text='Expand all sections')).to_be_attached()
         finally:
             browser.close()
 
