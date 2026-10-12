@@ -1,4 +1,14 @@
 'use strict';
+function refreshFarmPhysicalPreview(){
+  const unit=document.getElementById('farmPhysicalUnit')?.value;
+  const quantity=document.getElementById('farmPhysicalQuantity')?.value;
+  const target=document.getElementById('farmPhysicalPreview');
+  if(!target)return;
+  try{
+    const converted=['crates','bags'].includes(unit)?farmConvertedQuantity(unit,quantity):null;
+    target.textContent=converted?'Will submit a total count of '+converted.base+' '+converted.unit+'. Owner review is still required.':'Enter the total physically counted, not an increase or decrease.';
+  }catch(error){target.textContent=error.message;}
+}
 async function renderPhysicalCounts(){
   let card=document.getElementById('farmPhysicalCounts');
   if(!card){
@@ -6,8 +16,7 @@ async function renderPhysicalCounts(){
     card.innerHTML='<h2>Current stock: count and adjustment</h2><p>Use this when the stock you physically count differs from the record, such as finding an uncounted tray of eggs. Enter the total counted, not just the extra amount. For an old collection or loss record, use Record activity or update history instead. Record what was counted and when. A count does not change stock until the Owner reviews and approves it. Use individual birds or eggs, kilograms of feed, or a saved crate/bag size.</p><form id="farmPhysicalCountForm"><label>Flock or store<select id="farmPhysicalEntity" required></select></label><label>Unit<select id="farmPhysicalUnit"><option value="birds">Birds</option><option value="eggs">Eggs</option><option value="kg">Feed (kg)</option></select></label><label>Counted quantity<input id="farmPhysicalQuantity" type="number" min="0" max="999999999" step="0.001" required></label><p id="farmPhysicalPreview" role="status"></p><label>Counted at (Lagos)<input id="farmPhysicalObserved" type="datetime-local" required></label><label>Count source and reason<input id="farmPhysicalReason" maxlength="400" required></label><button type="submit">Save physical count for review</button></form><p id="farmPhysicalCountResult" role="status"></p><div id="farmPhysicalItems"></div>';
     document.getElementById('farmRecords').append(card);
     document.getElementById('farmPhysicalObserved').value=new Date(Date.now()+3600000).toISOString().slice(0,16);
-    const preview=()=>{const unit=document.getElementById('farmPhysicalUnit').value,target=document.getElementById('farmPhysicalPreview');try{const c=['crates','bags'].includes(unit)?farmConvertedQuantity(unit,document.getElementById('farmPhysicalQuantity').value):null;target.textContent=c?'Will submit a total count of '+c.base+' '+c.unit+'. Owner review is still required.':'Enter the total physically counted, not an increase or decrease.';}catch(error){target.textContent=error.message;}};
-    document.getElementById('farmPhysicalUnit').addEventListener('change',preview);document.getElementById('farmPhysicalQuantity').addEventListener('input',preview);
+    document.getElementById('farmPhysicalUnit').addEventListener('change',refreshFarmPhysicalPreview);document.getElementById('farmPhysicalQuantity').addEventListener('input',refreshFarmPhysicalPreview);
     let pending=null;
     document.getElementById('farmPhysicalCountForm').onsubmit=async event=>{
       event.preventDefault();const button=event.target.querySelector('button');button.disabled=true;
@@ -59,4 +68,5 @@ async function renderPhysicalCounts(){
     }
     items.append(row);
   }
+  refreshFarmPhysicalPreview();
 }
