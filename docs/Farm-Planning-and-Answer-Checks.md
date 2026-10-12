@@ -47,8 +47,22 @@ questionnaire; valid real forecasts still require confirmed farm inputs.
 Cost settings accept currency amounts such as NGN 123.45 per kg. Reports display
 currency, including four decimal places per egg, with exact integer/decimal-based
 rounding rather than JavaScript floating-point conversion. Underlying valuation
-remains provisional. Saleable egg cost is still unavailable without production-cohort
-attribution. Price references remain reported sources, not independent verification.
+remains provisional. Owners may explicitly link existing egg losses to their
+collection records. Unknown sources remain unallocated; corrections require review.
+Only complete recorded attribution permits the collection-period estimate after
+linked losses. It does not certify grading, complete reporting or saleable stock.
+Price references remain reported sources, not independent verification.
+
+Owners may also split recorded expense claims between registered flocks using
+exact amounts in the bill's currency. No equal split, exchange rate or other
+allocation formula is inferred. Unallocated remainders stay visible. Reports show
+these allocated expenses separately from consumed-feed valuation: feed purchase
+shares must not be added again to feed consumption costs. These figures are not
+complete flock costs or profit. Voided expenses cease contributing; earlier
+allocation revisions remain in history. Allocation changes create neither new
+expenses nor stock movements. Financial readers need existing Farm finance access;
+only an Owner with the existing sensitive-action authorization may change shares.
+The existing domain_records storage is used; there is no schema migration.
 
 ## Farm guidance and diagnostics
 

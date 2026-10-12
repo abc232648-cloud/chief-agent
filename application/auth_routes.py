@@ -79,9 +79,17 @@ def intercept(handler,store):
         raw=cookie['chief_session'].value if 'chief_session' in cookie else ''
         if path=='/api/auth/login' and method=='POST':
             if handler.headers.get('Origin') != handler.scheme+'://'+handler.headers.get('Host',''):raise PermissionError('Same-origin sign-in required.')
-            body=handler.read_body();raw,principal=service.login(body.get('username'),body.get('password'))
+            body=handler.read_body();previous_raw=raw;raw,principal=service.login(body.get('username'),body.get('password'))
+            service.revoke_token(previous_raw)
             secure='; Secure' if handler.secure_transport else ''
             handler.json({'status':'SIGNED_IN','csrf':service.csrf(raw)},extra_headers=(('Set-Cookie','chief_session='+raw+'; HttpOnly; SameSite=Strict; Path=/'+secure),));return True
+        if path=='/api/auth/logout' and method=='POST':
+            if handler.headers.get('Origin') != handler.scheme+'://'+handler.headers.get('Host',''):raise PermissionError('Same-origin logout required.')
+            if not raw or not hmac.compare_digest(handler.headers.get('X-Chief-CSRF',''),service.csrf(raw)):raise PermissionError('CSRF validation failed.')
+            if handler.read_body() != {}:raise ValueError('Logout accepts no fields.')
+            service.revoke_token(raw)
+            secure='; Secure' if handler.secure_transport else ''
+            handler.json({'status':'SIGNED_OUT'},extra_headers=(('Set-Cookie','chief_session=; Max-Age=0; HttpOnly; SameSite=Strict; Path=/'+secure),));return True
         try:principal=service.authenticate(raw)
         except AuthenticationRequired:
             if path in {'/', '/work'}:
@@ -107,6 +115,8 @@ def intercept(handler,store):
             service.activity(raw);handler.json({'status':'ACTIVITY_RECORDED'});return True
         from .exposure import guard
         guard(store, service, principal, method, path, body)
+        from notifications.device_push import route as notification_route
+        if notification_route(handler,store,principal,path,method,body):return True
         from .farm_api import dispatch as farm_dispatch
         if farm_dispatch(handler,store,principal,path,method,body):return True
         from .ui_api import dispatch as ui_dispatch
@@ -115,9 +125,6 @@ def intercept(handler,store):
             raw,principal=service.reauthenticate(principal,body.get('password'),raw=raw)
             secure='; Secure' if handler.secure_transport else ''
             handler.json({'status':'REAUTHENTICATED','csrf':service.csrf(raw)},extra_headers=(('Set-Cookie','chief_session='+raw+'; HttpOnly; SameSite=Strict; Path=/'+secure),));return True
-        if path=='/api/auth/logout' and method=='POST':
-            secure='; Secure' if handler.secure_transport else ''
-            service.revoke(principal);handler.json({'status':'SIGNED_OUT'},extra_headers=(('Set-Cookie','chief_session=; Max-Age=0; HttpOnly; SameSite=Strict; Path=/'+secure),));return True
         if path=='/api/auth/users' and method=='POST':
             try:
                 service.user_management(principal,sensitive=True)

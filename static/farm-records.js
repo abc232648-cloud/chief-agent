@@ -41,6 +41,7 @@ async function loadFarmRecords() {
   const setup = await api('/api/farm/setup');
   farmCatalog = setup.entities;
   farmUnitSettings=await api('/api/farm/units');
+  await renderFarmClarifications();
   await renderFarmSetup(setup);
   await renderFarmFinance(setup);
   await renderFarmStaff();
@@ -381,7 +382,7 @@ function prepareFarmSections() {
   const balanceCard = document.createElement('div'); balanceCard.className = 'card'; balanceCard.id = 'farmBalancesSection';
   const heading = document.createElement('h2'); heading.textContent = 'Birds, eggs and feed balances';
   balances.before(balanceCard); balanceCard.append(heading, balances);
-  for (const card of [...root.children].filter(node => node.classList.contains('card'))) {
+  for (const card of [...root.children].filter(node => node.classList.contains('card') && !node.classList.contains('farmSection'))) {
     const title = card.querySelector('h2'); if (!title) continue;
     const section = document.createElement('details');
     for (const attribute of [...card.attributes]) section.setAttribute(attribute.name, attribute.value);

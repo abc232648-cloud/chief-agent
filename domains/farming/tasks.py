@@ -190,6 +190,8 @@ def append(store, principal, payload):
         if operation == 'REASSIGN':
             identifier(p['assigned_to'])
             if p['supervisor_id'] is not None: identifier(p['supervisor_id'])
+    from control.notifications import initialize as initialize_notifications
+    initialize_notifications(store)  # Existing accepted schema; operational stores never run DDL here.
     with store._connect() as con:
         con.execute('BEGIN IMMEDIATE')
         principal = setup.authorize(store, con, principal, 'setup' if operation == 'CREATE' else 'task')
@@ -233,4 +235,6 @@ def append(store, principal, payload):
         con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",
                     (KIND, json.dumps(record, sort_keys=True), time.time()))
         IdentityService(store)._event(con, principal, 'FARM_TASK_' + operation, 'farming', p['event_id'], 'RECORDED')
+        from .notification_events import publish
+        publish(store, con, record, 'farm-task', p['task_id'])
     return {'status': 'RECORDED', 'revision': p['event_id']}

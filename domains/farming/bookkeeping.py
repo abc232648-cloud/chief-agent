@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 """Reported operational money records. No banking, purchasing or payment effects.
 
 Approval is prospective permission for a request, never evidence of payment.
@@ -64,11 +65,14 @@ def validate(payload):
     return p
 
 
-def append(store, principal, payload):
+def append(store, principal, payload, *, connection=None):
     p = validate(payload)
     owner_only = p['kind'] in {'APPROVE_REQUEST', 'REJECT_REQUEST', 'CONFIRM_PAYMENT', 'VOID', 'DEBT_DOCUMENT', 'RESOLVE_DEBT_DISPUTE'}
-    with store._connect() as con:
-        con.execute('BEGIN IMMEDIATE')
+    with (store._connect() if connection is None else nullcontext(connection)) as con:
+        if connection is None:
+            con.execute('BEGIN IMMEDIATE')
+        elif not con.in_transaction:
+            raise ValueError('A caller-owned transaction is required.')
         principal = setup.authorize(store, con, principal, 'approve' if owner_only else 'finance')
         if principal.role != 'Owner':
             from .financial_permissions import effective

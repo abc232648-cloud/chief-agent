@@ -69,11 +69,13 @@ def _owned_main(store, stopping=None, ready=lambda:None) -> int:
 
     def push_delivery():
         from notifications.web_push import dispatch_pending
+        from notifications.device_push import dispatch_pending as dispatch_devices
         while not stopping.is_set():
             try:
                 # Notification transport is deliberately isolated from Job execution.
                 # Provider/network failures retain durable cursors and retry later.
                 dispatch_pending(store)
+                dispatch_devices(store)
             except Exception:
                 # Do not turn a notification-channel problem into worker failure or
                 # leak provider exception details into the operational audit trail.

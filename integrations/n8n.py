@@ -2,6 +2,9 @@
 import http.client
 import json
 import os
+import time
+import socket
+from threading import Event, Thread
 from urllib.parse import urlsplit
 from database.store_extensions import add_audit
 
@@ -57,13 +60,47 @@ def inventory():
     parsed, token = config
     cls = http.client.HTTPSConnection if parsed.scheme == 'https' else http.client.HTTPConnection
     connection = cls('127.0.0.1', parsed.port, timeout=5)
+    deadline=time.monotonic()+5
+    finished=Event(); expired=Event(); responses=[]
+    def enforce_deadline():
+        # A socket timeout only bounds inactivity, not trickling HTTP headers.
+        # Interrupt the actual socket; do not abandon a request in a thread.
+        if finished.wait(5):
+            return
+        expired.set()
+        while not finished.is_set():
+            sock=connection.sock
+            if sock is None and responses:
+                sock=getattr(getattr(getattr(responses[0], 'fp', None), 'raw', None), '_sock', None)
+            if sock is not None:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except (OSError, AttributeError):
+                    pass
+            finished.wait(.01)
+    watchdog=Thread(target=enforce_deadline, daemon=True)
+    watchdog.start()
     try:
         connection.request('GET', '/api/v1/workflows?limit=100', headers={
             'X-N8N-API-KEY': token, 'Accept': 'application/json'})
         response = connection.getresponse()
+        responses.append(response)
+        if expired.is_set():raise ValueError('n8n inventory exceeded its deadline.')
         if response.status != 200:
             raise ValueError('n8n connection refused or access unavailable. Check the service and API permissions.')
-        body = response.read(1_000_001)
+        chunks=[];size=0
+        while size<=1_000_000:
+            remaining=deadline-time.monotonic()
+            if remaining<=0:raise ValueError('n8n inventory exceeded its deadline.')
+            sock=connection.sock
+            if sock is None:
+                sock=getattr(getattr(getattr(response,'fp',None),'raw',None),'_sock',None)
+            if sock is not None:sock.settimeout(remaining)
+            chunk=response.read1(1_000_001-size)
+            if not chunk:break
+            chunks.append(chunk);size+=len(chunk)
+        if time.monotonic()>=deadline:raise ValueError('n8n inventory exceeded its deadline.')
+        body=b''.join(chunks)
         if len(body) > 1_000_000:
             raise ValueError('n8n workflow inventory exceeds the response limit.')
         data = json.loads(body)
@@ -79,6 +116,8 @@ def inventory():
     except (OSError, http.client.HTTPException, UnicodeError, json.JSONDecodeError):
         raise ValueError('n8n connection check failed. No workflows were changed.') from None
     finally:
+        finished.set()
+        watchdog.join()
         connection.close()
 
 
