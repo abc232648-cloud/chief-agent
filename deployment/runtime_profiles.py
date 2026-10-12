@@ -84,11 +84,11 @@ def prepare_profile(state_root,candidate_id):
 
 
 def plans_from_source(state_root,source_root):
-    """Reserve only candidates named by the pinned policy; no discovery of host profiles."""
+    """Reserve only role-assigned candidates from pinned policy; never discover host profiles."""
     source_root=Path(source_root)
     from runtime_qualification.catalog import load_candidates
     from runtime_qualification.policy import load_policy
     candidates=load_candidates((source_root/'config/runtime_candidates.json').read_text(encoding='utf-8'))
     policy=load_policy((source_root/'config/runtime_policy.json').read_text(encoding='utf-8'),candidates)
-    ids=(policy.primary_candidate_id,policy.supplemental_candidate_id)
+    ids=(policy.execution_candidate_id,policy.research_candidate_id)
     return tuple(inspect_profile(state_root,candidate_id) for candidate_id in ids)
