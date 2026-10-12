@@ -25,11 +25,20 @@ class RuntimePlan:
     authorized_supplemental_workloads: tuple[str, ...]
 
 
+def _no_duplicates(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('Duplicate runtime policy key.')
+        result[key] = value
+    return result
+
+
 def load_policy(data, candidates):
     if isinstance(data, (bytes, bytearray)):
         data = bytes(data).decode('utf-8')
     if isinstance(data, str):
-        data = json.loads(data)
+        data = json.loads(data, object_pairs_hook=_no_duplicates)
     expected = {'primary_candidate_id', 'supplemental_candidate_id', 'supplemental_mode', 'supplemental_workloads'}
     if not isinstance(data, dict) or set(data) != expected:
         raise ValueError('Runtime policy has an invalid shape.')
