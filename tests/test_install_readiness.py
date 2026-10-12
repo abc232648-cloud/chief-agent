@@ -31,8 +31,8 @@ def seams(tmp_path,monkeypatch,*,browser=None,files=None,actual_source=SOURCE,pr
     monkeypatch.setattr('operations.backup.source_identity',
         lambda root,manifest:(calls.append(('source',root,manifest)) or actual_source))
     default_profiles=(
-        {'candidate_id':'runtime-primary','status':'CREATE_REQUIRED','path':str(tmp_path/'runtime-profiles/runtime-primary')},
-        {'candidate_id':'runtime-supplemental','status':'CHIEF_OWNED','path':str(tmp_path/'runtime-profiles/runtime-supplemental')},
+        {'candidate_id':'runtime-execution','status':'CREATE_REQUIRED','path':str(tmp_path/'runtime-profiles/runtime-execution')},
+        {'candidate_id':'runtime-research','status':'CHIEF_OWNED','path':str(tmp_path/'runtime-profiles/runtime-research')},
     )
     monkeypatch.setattr('deployment.runtime_profiles.plans_from_source',
         lambda state_root,source_root:(calls.append(('profiles',state_root,source_root)) or (profiles if profiles is not None else default_profiles)))
@@ -61,8 +61,8 @@ def test_install_readiness_requires_all_gates_and_restores_environment(tmp_path,
         'mode':'production','source_tree_sha256':SOURCE,'schema_sha256':SCHEMA,
         'storage_scope':'STARTUP_PROBE_ONLY','browser_sandbox_required':True,
         'runtime_profiles':[
-            {'candidate_id':'runtime-primary','status':'CREATE_REQUIRED'},
-            {'candidate_id':'runtime-supplemental','status':'CHIEF_OWNED'},
+            {'candidate_id':'runtime-execution','status':'CREATE_REQUIRED'},
+            {'candidate_id':'runtime-research','status':'CHIEF_OWNED'},
         ],
         'backup_id':'synthetic-backup','backup_coverage':'database-only',
         'service_definitions':['chief-agent-dashboard.service','chief-agent-scheduler.service','chief-agent-worker.service'],
