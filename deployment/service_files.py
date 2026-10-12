@@ -2,8 +2,15 @@
 import argparse
 import json
 import plistlib
+import re
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import xml.etree.ElementTree as ET
+
+
+def _linux_account(value):
+    if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.-]{0,63}', value or ''):
+        raise ValueError('Linux service owner must be one explicit local account name.')
+    return value
 
 
 def definitions(platform,project,user,*,instance_config,python=None):
@@ -19,6 +26,7 @@ def definitions(platform,project,user,*,instance_config,python=None):
     if python is not None:
         interpreter=path_type(python)
         if not interpreter.is_absolute():raise ValueError('Absolute interpreter required.')
+    if platform=='linux':_linux_account(user)
     result={}
     for component in ('dashboard','worker','scheduler'):
         args=['-u','-m','deployment.launch','--component',component,'--config',str(config)]
@@ -48,7 +56,7 @@ def definitions(platform,project,user,*,instance_config,python=None):
         elif platform=='linux':
             if any(c in project+str(config)+str(interpreter) for c in '"%\\$'):raise ValueError('Unsupported systemd path character.')
             command=' '.join('"'+a+'"' for a in [str(interpreter),*args])
-            result[name+'.service']=(f'[Unit]\nDescription=Chief Agent {component}\nAfter=network.target\nStartLimitIntervalSec=120\nStartLimitBurst=3\n\n[Service]\nType=simple\nWorkingDirectory={root}\nExecStart={command}\nExecStop={command} --stop\nTimeoutStopSec=30\nKillMode=control-group\nNoNewPrivileges=yes\nRestart=on-failure\nRestartSec=10\nUMask=0077\n\n[Install]\nWantedBy=default.target\n').encode()
+            result[name+'.service']=(f'[Unit]\nDescription=Chief Agent {component}\nConditionUser={user}\nAfter=network.target\nStartLimitIntervalSec=120\nStartLimitBurst=3\n\n[Service]\nType=simple\nWorkingDirectory={root}\nExecStart={command}\nExecStop={command} --stop\nTimeoutStopSec=30\nKillMode=control-group\nNoNewPrivileges=yes\nRestart=on-failure\nRestartSec=10\nUMask=0077\n\n[Install]\nWantedBy=default.target\n').encode()
         else:raise ValueError('Supported targets: linux, windows, macos.')
     return result
 
