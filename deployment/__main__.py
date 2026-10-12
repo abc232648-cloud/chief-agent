@@ -51,9 +51,9 @@ def main():
         instance=load_instance();print(json.dumps({'status':'READY','mode':instance.mode,'schema_sha256':instance.schema_sha256,'schema_migration':False}))
     elif args.command=='install-readiness':
         from .install_readiness import installation_readiness
-        result=installation_readiness(str(Path(args.config).absolute()),source_root=str(Path(args.source_root).absolute()),
-            source_manifest=str(Path(args.source_manifest).absolute()),backup_directory=str(Path(args.backup_directory).absolute()),
-            manifest_sha256=args.manifest_sha256,expected_source=args.expected_source,expected_schema=args.expected_schema,
+        result=installation_readiness(args.config,source_root=args.source_root,source_manifest=args.source_manifest,
+            backup_directory=args.backup_directory,manifest_sha256=args.manifest_sha256,
+            expected_source=args.expected_source,expected_schema=args.expected_schema,
             platform=args.platform,project=args.project,user=args.user,python=args.python)
         print(json.dumps(result,sort_keys=True))
     else:
