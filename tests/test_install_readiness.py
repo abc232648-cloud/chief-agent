@@ -11,7 +11,7 @@ SOURCE='b'*64
 MANIFEST='c'*64
 
 
-def seams(tmp_path,monkeypatch,*,browser=None,files=None,actual_source=SOURCE):
+def seams(tmp_path,monkeypatch,*,browser=None,files=None,actual_source=SOURCE,profiles=None):
     config=(tmp_path/'instance.json').resolve();config.write_text('{}')
     source=(tmp_path/'source').resolve();source.mkdir()
     source_manifest=(tmp_path/'source-manifest.json').resolve();source_manifest.write_text('{}')
@@ -30,6 +30,12 @@ def seams(tmp_path,monkeypatch,*,browser=None,files=None,actual_source=SOURCE):
         lambda:(calls.append(('browser',None)) or (browser if browser is not None else {'executable_path':'/synthetic/browser','chromium_sandbox':True})))
     monkeypatch.setattr('operations.backup.source_identity',
         lambda root,manifest:(calls.append(('source',root,manifest)) or actual_source))
+    default_profiles=(
+        {'candidate_id':'runtime-primary','status':'CREATE_REQUIRED','path':str(tmp_path/'runtime-profiles/runtime-primary')},
+        {'candidate_id':'runtime-supplemental','status':'CHIEF_OWNED','path':str(tmp_path/'runtime-profiles/runtime-supplemental')},
+    )
+    monkeypatch.setattr('deployment.runtime_profiles.plans_from_source',
+        lambda state_root,source_root:(calls.append(('profiles',state_root,source_root)) or (profiles if profiles is not None else default_profiles)))
     monkeypatch.setattr('operations.backup.verify_backup',
         lambda *a,**kw:(calls.append(('backup',a,kw)) or {'backup_id':'synthetic-backup','coverage':'database-only'}))
     expected={'chief-agent-dashboard.service','chief-agent-worker.service','chief-agent-scheduler.service'}
@@ -54,10 +60,14 @@ def test_install_readiness_requires_all_gates_and_restores_environment(tmp_path,
         'services_started':False,'restore_promoted':False,'network_checks_performed':False,
         'mode':'production','source_tree_sha256':SOURCE,'schema_sha256':SCHEMA,
         'storage_scope':'STARTUP_PROBE_ONLY','browser_sandbox_required':True,
+        'runtime_profiles':[
+            {'candidate_id':'runtime-primary','status':'CREATE_REQUIRED'},
+            {'candidate_id':'runtime-supplemental','status':'CHIEF_OWNED'},
+        ],
         'backup_id':'synthetic-backup','backup_coverage':'database-only',
         'service_definitions':['chief-agent-dashboard.service','chief-agent-scheduler.service','chief-agent-worker.service'],
     }
-    assert [item[0] for item in calls]==['configure','storage','browser','source','backup','services']
+    assert [item[0] for item in calls]==['configure','storage','browser','source','profiles','backup','services']
     assert os.environ['CHIEF_INSTANCE_MODE']=='test'
     assert os.environ['CHIEF_BROWSER_RUNTIME']=='/previous/browser.json'
 
@@ -85,11 +95,23 @@ def test_install_readiness_rejects_source_tree_not_matching_backup_pin(tmp_path,
     assert [item[0] for item in calls]==['configure','storage','browser','source']
 
 
+def test_install_readiness_propagates_runtime_profile_conflict_before_backup(tmp_path,monkeypatch):
+    from deployment.runtime_profiles import RuntimeProfileConflict
+    config,calls,source,source_manifest,backup=seams(tmp_path,monkeypatch)
+    def conflict(state_root,source_root):
+        calls.append(('profiles',state_root,source_root))
+        raise RuntimeProfileConflict('Existing runtime profile is not Chief-owned')
+    monkeypatch.setattr('deployment.runtime_profiles.plans_from_source',conflict)
+    with pytest.raises(RuntimeProfileConflict,match='not Chief-owned'):
+        ready(config,source,source_manifest,backup)
+    assert [item[0] for item in calls]==['configure','storage','browser','source','profiles']
+
+
 def test_install_readiness_requires_complete_service_definition_set(tmp_path,monkeypatch):
     config,calls,source,source_manifest,backup=seams(tmp_path,monkeypatch,files={'chief-agent-dashboard.service','chief-agent-worker.service'})
     with pytest.raises(ValueError,match='Incomplete service-definition'):
         ready(config,source,source_manifest,backup)
-    assert [item[0] for item in calls]==['configure','storage','browser','source','backup','services']
+    assert [item[0] for item in calls]==['configure','storage','browser','source','profiles','backup','services']
 
 
 def test_install_readiness_never_accepts_nonproduction_instance(tmp_path,monkeypatch):
