@@ -40,6 +40,19 @@ function applyChiefVisibility(){
   document.getElementById('notificationDropdown').hidden=!canPage('notifications');
   const summaries=document.getElementById('summaryControls');if(summaries)summaries.hidden=!canGlobal('installation.manage');
 }
+function prepareFarmDashboardShell(){if(typeof prepareFarmSections==='function')prepareFarmSections();}
+prepareFarmDashboardShell();
+document.addEventListener('click',async event=>{
+  const button=event.target.closest('button[data-action="farm-ai-setup"]');
+  if(!button||!uiActionAllowed(button.dataset))return;
+  event.preventDefault();event.stopImmediatePropagation();button.disabled=true;
+  try{
+    clearError();prepareFarmDashboardShell();
+    if(typeof renderFarmAI==='function')await renderFarmAI();
+    await show('farmRecords');
+    const card=document.getElementById('farmAssistantCard');openFarmSection('farmAssistantCard');card.scrollIntoView({block:'start'});card.setAttribute('tabindex','-1');card.focus({preventScroll:true});
+  }catch(error){reportError(error);}finally{button.disabled=false;}
+},true);
 document.addEventListener('toggle',event=>{
   const target=event.target;
   if(target.matches?.('.domainNav')&&target.open)document.querySelectorAll('.domainNav').forEach(d=>{if(d!==target)d.open=false;});
