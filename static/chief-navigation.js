@@ -51,7 +51,8 @@ document.addEventListener('click',async event=>{
     if(typeof renderFarmAI==='function')await renderFarmAI();
     openFarmSection('farmAssistantCard');
     try{await show('farmRecords');}catch(error){reportError(error);}
-    const card=document.getElementById('farmAssistantCard');openFarmSection('farmAssistantCard');card.scrollIntoView({block:'start'});card.setAttribute('tabindex','-1');card.focus({preventScroll:true});
+    const card=document.getElementById('farmAssistantCard');openFarmSection('farmAssistantCard');card.scrollIntoView({block:'start'});
+    const focusTarget=card.querySelector(':scope > summary')||card;focusTarget.setAttribute('tabindex','-1');focusTarget.focus({preventScroll:true});
   }catch(error){reportError(error);}finally{button.disabled=false;}
 },true);
 document.addEventListener('toggle',event=>{
