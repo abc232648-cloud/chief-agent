@@ -13,6 +13,7 @@
         "https://docs.openclaw.ai/gateway/config-agents/sandbox",
         "https://docs.openclaw.ai/gateway/security/secure-file-operations",
         "https://docs.openclaw.ai/gateway/security",
+        "https://docs.openclaw.ai/browser",
         "https://docs.openclaw.ai/releases"
       ],
       "documented_capabilities": [
@@ -21,6 +22,7 @@
         "sandbox workspace access can be none, read-only, or read-write with explicit tool policy",
         "sandbox network access defaults to none for the documented container configuration",
         "root-bounded security-sensitive file operations are documented across Windows and Linux",
+        "managed browser can use a dedicated agent-only user-data profile separate from the personal browser profile",
         "stable release provenance includes signed tags and release verification evidence"
       ]
     },
@@ -35,6 +37,7 @@
         "https://hermes-agent.nousresearch.com/docs/user-guide/security",
         "https://hermes-agent.nousresearch.com/docs/user-guide/checkpoints-and-rollback",
         "https://hermes-agent.nousresearch.com/docs/user-guide/features/delegation",
+        "https://hermes-agent.nousresearch.com/docs/user-guide/features/web-search",
         "https://hermes-agent.nousresearch.com/docs/user-guide/features/cron",
         "https://hermes-agent.nousresearch.com/docs/user-guide/configuration"
       ],
@@ -42,6 +45,8 @@
         "independent profiles with separate config/keys/memory/sessions/skills/cron/state",
         "dangerous-command approval plus optional isolated terminal backends",
         "isolated subagent and git worktree workflows",
+        "web search and extraction use configurable provider backends including a no-key DDGS search backend",
+        "delegated research can run isolated subagents and return structured results",
         "scheduled jobs run in fresh sessions and can survive parent-session closure",
         "optional checkpoint/rollback for workspace changes",
         "running delegated children are documented as unknown rather than resumed after process restart"
