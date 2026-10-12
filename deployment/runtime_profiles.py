@@ -20,6 +20,14 @@ def _candidate_id(value):
     return value
 
 
+def _marker_object(pairs):
+    value={}
+    for key,item in pairs:
+        if key in value:raise ValueError('Duplicate runtime profile marker field.')
+        value[key]=item
+    return value
+
+
 def profile_path(state_root,candidate_id):
     root=_plain(Path(state_root))
     candidate_id=_candidate_id(candidate_id)
@@ -43,7 +51,7 @@ def inspect_profile(state_root,candidate_id):
     try:
         _plain(marker,file=True)
         if marker.stat().st_size>4096:raise ValueError('marker too large')
-        data=json.loads(marker.read_text(encoding='utf-8'))
+        data=json.loads(marker.read_text(encoding='utf-8'),object_pairs_hook=_marker_object)
     except Exception as exc:
         raise RuntimeProfileConflict('Existing runtime profile ownership marker is invalid.') from exc
     expected={'format_version':1,'owner':'CHIEF','candidate_id':candidate_id}
@@ -67,6 +75,8 @@ def prepare_profile(state_root,candidate_id):
             json.dump({'format_version':1,'owner':'CHIEF','candidate_id':candidate_id},stream,sort_keys=True)
             stream.write('\n');stream.flush();os.fsync(stream.fileno())
     except BaseException:
+        # Never adopt or recursively clean a path after a concurrent/partial write.
+        # An incomplete nonempty profile intentionally remains a conflict for review.
         path=Path(plan['path'])
         if path.exists() and path.is_dir() and not any(path.iterdir()):path.rmdir()
         raise
