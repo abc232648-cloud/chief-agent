@@ -3,6 +3,8 @@ let chiefContext=null;
 async function api(path){const r=await fetch(path,{cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.reason||'Access unavailable.');return d;}
 async function postJson(path,body){return farmPost(path,body);}
 function canDomain(permission,domain){return !!chiefContext?.domains.find(d=>d.id===domain)?.permissions[permission];}
+function prepareFarmWorkShell(){if(typeof prepareFarmSections==='function')prepareFarmSections();}
+prepareFarmWorkShell();
 async function showWork(id){
   const allowed=new Set(['workHome']);
   if(canDomain('work.read','farming'))allowed.add('farmRecords');
@@ -11,6 +13,7 @@ async function showWork(id){
   if(!allowed.has(id))throw new Error('This page is outside your work responsibilities.');
   for(const s of document.querySelectorAll('#workContent>section'))s.classList.toggle('hidden',s.id!==id);
   if(id==='farmRecords'){
+    prepareFarmWorkShell();
     await loadFarmRecords();
     const setup=await api('/api/farm/setup');
     document.getElementById('workRole').textContent=setup.farm_role.replaceAll('_',' ');
@@ -27,6 +30,7 @@ async function showWork(id){
 }
 document.addEventListener('DOMContentLoaded',async()=>{
   try{
+    prepareFarmWorkShell();
     chiefContext=await api('/api/ui/context');
     document.getElementById('workTitle').onclick=()=>showWork('workHome').catch(e=>document.getElementById('workError').textContent=e.message);
     if(canDomain('work.read','farming')){document.title='Farm Agent';document.getElementById('workTitle').textContent='Farm Agent';document.querySelector('link[rel=manifest]').href='/static/farm.webmanifest';}
