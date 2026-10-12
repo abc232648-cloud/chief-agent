@@ -78,7 +78,7 @@ jobs:
           for browser in chromium firefox webkit; do
             CHIEF_A10_BROWSER="$browser" python -m pytest tests/test_a10_paired_clients.py tests/test_a10_operational_chain.py -q --junitxml="a10-$browser.xml"
           done
-          python -m pytest tests/test_a10_push_authority.py tests/test_web_push.py tests/test_notification_bus.py tests/test_a10_transport_outage.py -q --junitxml=a10-push.xml
+          python -m pytest tests/test_a10_push_authority.py tests/test_a10_after_timeout_consent.py tests/test_web_push.py tests/test_notification_bus.py tests/test_a10_transport_outage.py -q --junitxml=a10-push.xml
       - uses: actions/upload-artifact@v4
         if: always()
         with:
