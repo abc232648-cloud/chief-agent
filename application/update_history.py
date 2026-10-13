@@ -1,8 +1,6 @@
 """Record a local operator observation. Never installs or activates an update."""
 import argparse
 import json
-import sqlite3
-from contextlib import contextmanager
 
 
 def main(argv=None):
@@ -16,19 +14,10 @@ def main(argv=None):
     try:
         from deployment.launch import configure
         from update_center.history import record
+        from update_center.storage import ExistingUpdateStore
         instance = configure(args.config)
         # Existing DB only; no Store initialization, schema changes or data restore.
-        class ExistingStore:
-            @contextmanager
-            def _connect(self):
-                con = sqlite3.connect(instance.database.as_uri() + '?mode=rw', uri=True)
-                con.row_factory = sqlite3.Row
-                try:
-                    with con:
-                        yield con
-                finally:
-                    con.close()
-        receipt = record(ExistingStore(), dict(event_id=args.event_id, outcome=args.outcome,
+        receipt = record(ExistingUpdateStore(instance.database), dict(event_id=args.event_id, outcome=args.outcome,
                          source_sha256=args.source_sha256, evidence_sha256=args.evidence_sha256))
         print(json.dumps({'status': 'OPERATOR_OBSERVATION_RECORDED', 'event': receipt,
                           'installation_changed': False}))

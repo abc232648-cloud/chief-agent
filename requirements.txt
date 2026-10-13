@@ -8,5 +8,6 @@ python-dotenv>=1.0.0
 argon2-cffi==25.1.0
 waitress==3.0.2
 pywebpush==2.5.0
+cryptography==50.0.1
 # Windows does not ship an IANA timezone database for zoneinfo.
 tzdata==2026.5; sys_platform == "win32"
