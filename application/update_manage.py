@@ -35,6 +35,8 @@ def main(argv=None):
     parser.add_argument('--confirm-private-storage', action='store_true')
     args = parser.parse_args(argv)
     authentication = raw = None
+    cleanup_failed = False
+    exit_code = 2
     try:
         if not args.confirm_private_storage:
             raise ValueError('Private operator storage confirmation is required.')
@@ -86,17 +88,20 @@ def main(argv=None):
                 raise PermissionError('Recovery was not confirmed.')
             result = updater.recover_previous(principal, candidate, confirm_recovery=True, private_storage_confirmed=True)
         print(json.dumps(result, sort_keys=True))
-        return 0 if result['status'] != 'FAILED' and result['status'] not in {'TIMED_OUT', 'INVALID_REPORT'} else 2
+        exit_code = 0 if result['status'] != 'FAILED' and result['status'] not in {'TIMED_OUT', 'INVALID_REPORT'} else 2
     except Exception:
         print(json.dumps({'status':'UPDATE_NOT_COMPLETED', 'message':'An identity, trust, compatibility, acceptance or maintenance requirement was not met. Existing operational data was not restored.'}))
-        return 2
+        exit_code = 2
     finally:
         if authentication is not None and raw is not None:
             try:
                 authentication.revoke_token(raw)
             except Exception:
+                cleanup_failed = True
                 print(json.dumps({'status':'SESSION_CLEANUP_FAILED', 'message':'The local sign-in could not be revoked. Review local identity storage before another update attempt.'}))
-                return 2
+    if cleanup_failed:
+        return 2
+    return exit_code
 
 
 if __name__ == '__main__':

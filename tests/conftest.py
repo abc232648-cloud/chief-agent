@@ -137,4 +137,6 @@ def isolate_external_notification_delivery(monkeypatch):
 def synthetic_farm_timezone(monkeypatch):
     """Existing fixtures describe the Lagos farm, independently of the test host."""
     from zoneinfo import ZoneInfo
-    monkeypatch.setattr("domains.farming.timezone.host_zone", lambda: ZoneInfo("Africa/Lagos"))
+    import domains.farming.timezone as farm_time
+    monkeypatch.setattr(farm_time, "host_zone", lambda: ZoneInfo("Africa/Lagos"))
+

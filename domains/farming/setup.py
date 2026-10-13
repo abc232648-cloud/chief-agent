@@ -56,7 +56,8 @@ def available(store, con):
     if not enabled or not enabled[0] or any((r['kind'], r['id']) in relevant and r['mode'] != 'ENABLED'
                                           for r in ComponentState(store).rows(con)):
         raise PermissionError('Farm record entry is disabled.')
-    pin_timezone(con)
+    if con.in_transaction:
+        pin_timezone(con)
 
 
 def entities(con):

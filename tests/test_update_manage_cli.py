@@ -60,3 +60,14 @@ def test_cli_never_exposes_password_on_rejected_login(coordinator, tmp_path, mon
     assert main(arguments(coordinator, tmp_path, 'validate')) == 2
     output = capsys.readouterr().out
     assert secret not in output and 'UPDATE_NOT_COMPLETED' in output
+
+
+def test_cli_reports_session_cleanup_failure_when_token_revocation_fails(coordinator, tmp_path, monkeypatch, capsys):
+    answers = iter(('fixture-owner', 'VALIDATE'))
+    monkeypatch.setattr('builtins.input', lambda *_: next(answers))
+    monkeypatch.setattr('application.update_manage.getpass.getpass', lambda *_: PASSWORD)
+    monkeypatch.setattr('identity.service.IdentityService.revoke_token', lambda *_: (_ for _ in ()).throw(RuntimeError('forced revocation failure')))
+    assert main(arguments(coordinator, tmp_path, 'validate')) == 2
+    output = capsys.readouterr().out
+    assert 'SESSION_CLEANUP_FAILED' in output
+

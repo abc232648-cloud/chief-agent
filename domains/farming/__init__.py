@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone as dt_timezone
 import math
 import time
 from domains.contracts import AgentDefinition, DomainAction, DomainDefinition
@@ -15,7 +15,7 @@ def record_soil(storage,payload):
         raise ValueError('Confirm that you are entering an actual observed soil result; inferred results are not accepted.')
     plot=text(payload['plot'],'Plot');source=text(payload['source'],'Source')
     sampled=datetime.strptime(payload['sample_date'],'%Y-%m-%d').date()
-    if sampled>datetime.now(timezone.utc).date():raise ValueError('A soil sample cannot be from the future.')
+    if sampled>datetime.now(dt_timezone.utc).date():raise ValueError('A soil sample cannot be from the future.')
     if isinstance(payload['ph'],bool):raise ValueError('pH must be a number.')
     ph=float(payload['ph'])
     if not math.isfinite(ph) or not 0<=ph<=14:raise ValueError('Enter a pH value from 0 to 14.')

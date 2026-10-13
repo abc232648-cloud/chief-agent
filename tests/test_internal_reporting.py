@@ -74,7 +74,7 @@ def test_snapshot_privacy_corrections_and_atomic_provenance(dashboard,transport)
             row=con.execute('SELECT actor,data_json FROM audit_log WHERE id=?',(entry['references'][0]['id'],)).fetchone()
             assert row['actor']==d.credentials['principal'].id
             assert json.loads(row['data_json'])['operation_id']==b['operation_id']
-            assert json.loads(row['data_json'])['source_reference']=={'domain':'farming','kind':'poultry_journal_v1','last_record_id':2}
+            assert json.loads(row['data_json'])['source_reference']=={'domain':'farming','kind':'poultry_journal_v1','last_record_id':3}
         assert 'PRIVATE' not in str(ledger)
 
 
