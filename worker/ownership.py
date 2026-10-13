@@ -25,11 +25,24 @@ class ComponentOwnership:
             else:
                 import fcntl
                 fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
-            os.write(fd,b'1');os.fsync(fd);self.fd=fd
-            return self
         except OSError:
             os.close(fd)
             raise WorkerAlreadyRunning('Another process owns this component; recovery was not attempted.') from None
+        try:
+            if os.environ.get('CHIEF_MANAGED_INSTALLATION') or os.environ.get('CHIEF_MANAGED_SOURCE'):
+                # Recheck after ownership acquisition: selection before exec can
+                # race with maintenance. Never start an old slot after a switch.
+                from update_center.managed import ManagedInstallation
+                installation=ManagedInstallation(os.environ.get('CHIEF_MANAGED_INSTALLATION',''))
+                selected=installation.selection()
+                source,_=installation.source(selected)
+                if selected!=os.environ.get('CHIEF_MANAGED_SOURCE') or source!=Path(__file__).resolve().parents[1]:
+                    raise PermissionError('Managed source selection changed before service ownership.')
+            os.write(fd,b'1');os.fsync(fd);self.fd=fd
+            return self
+        except BaseException:
+            os.close(fd)
+            raise
 
     def __exit__(self,*args):
         if self.fd is not None:
