@@ -100,3 +100,16 @@ def test_revoked_publisher_blocks_execution_even_after_valid_staging(acceptance,
         run_candidate(installation, plan, store, owner, policy, [replace(keys[0], revoked=True)],
                       evidence_parent=tmp_path, confirm_reviewed_code=True)
     assert not list(tmp_path.glob('update-tests-*'))
+
+
+def test_candidate_summary_excludes_private_extra_fields(acceptance, tmp_path):
+    from update_center.acceptance import recent
+    result = run_candidate(*acceptance, evidence_parent=tmp_path, confirm_reviewed_code=True)
+    store = acceptance[2]
+    with store._connect() as con:
+        value = dict(result, private_extra='synthetic-never-publish')
+        con.execute('UPDATE control_state SET value=? WHERE key=?', (json.dumps(value), PREFIX+result['run_id']))
+    summary = recent(store)
+    assert summary['checks'][0]['counts']['passed'] == 1
+    assert 'synthetic-never-publish' not in json.dumps(summary)
+    assert 'human_id' not in summary['checks'][0]

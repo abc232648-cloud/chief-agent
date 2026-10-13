@@ -63,7 +63,7 @@ def append(store, principal, payload, *, connection=None):
             entity=setup.entities(con).get(p['entity_id'])
             if not entity or entity['entity_type']!=('FEED_STORE' if p['unit']=='kg' else 'FLOCK'):
                 raise ValueError('Choose a registered flock or feed store matching the count unit.')
-            if entity['opened_on'] and aware_utc(p['observed_at']).astimezone(setup.LAGOS).date().isoformat()<entity['opened_on']:
+            if entity['opened_on'] and aware_utc(p['observed_at']).astimezone(setup.farm_zone(con)).date().isoformat()<entity['opened_on']:
                 raise ValueError('Count predates the opening date.')
             revision,balance=stock(con,p['entity_id'],p['unit'],p['observed_at'])
             record.update(stock_revision=revision,recorded_balance=balance,

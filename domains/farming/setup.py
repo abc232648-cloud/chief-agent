@@ -1,5 +1,5 @@
 """Farm-owned identities and assignments; never installation role grants."""
-from datetime import date, timezone, timedelta
+from datetime import date
 import json
 import time
 
@@ -9,7 +9,7 @@ from .journal import bounded_text, identifier
 
 KIND = 'farm_setup_v1'
 ROLES = ('GENERAL_MANAGER', 'SUPERVISOR', 'WORKER')
-LAGOS = timezone(timedelta(hours=1), 'Africa/Lagos')
+from .timezone import zone as farm_zone, pin as pin_timezone, setting as timezone_setting
 
 
 def rows(con):
@@ -56,6 +56,7 @@ def available(store, con):
     if not enabled or not enabled[0] or any((r['kind'], r['id']) in relevant and r['mode'] != 'ENABLED'
                                           for r in ComponentState(store).rows(con)):
         raise PermissionError('Farm record entry is disabled.')
+    pin_timezone(con)
 
 
 def entities(con):
@@ -69,12 +70,12 @@ def entities(con):
     return catalog
 
 
-def opening_date(value):
+def opening_date(value, store):
     if value is None:
         return
     if not isinstance(value, str) or date.fromisoformat(value).isoformat() != value:
         raise ValueError('Use an ISO opening date or leave it unknown.')
-    if date.fromisoformat(value) > utc_now().astimezone(LAGOS).date():
+    if date.fromisoformat(value) > utc_now().astimezone(farm_zone(store)).date():
         raise ValueError('An opening date cannot be in the future.')
 
 
@@ -91,7 +92,7 @@ def append(store, principal, payload):
         if p['entity_type'] not in ('HOUSE', 'FLOCK', 'FEED_STORE'):
             raise ValueError('Unknown Farm entity type.')
         p['name'] = bounded_text(p['name'], 80)
-        opening_date(p['opened_on'])
+        opening_date(p['opened_on'], store)
         if p['house_id'] is not None:
             identifier(p['house_id'])
         action = 'setup'
@@ -102,7 +103,7 @@ def append(store, principal, payload):
         identifier(p['expected_revision'])
         p['name'] = bounded_text(p['name'], 80)
         p['reason'] = bounded_text(p['reason'], 400)
-        opening_date(p['opened_on'])
+        opening_date(p['opened_on'], store)
         action = 'setup'
     elif operation == 'assign_role':
         if set(p) != common | {'human_id', 'role', 'reason'} or p['role'] not in ROLES:
@@ -141,7 +142,7 @@ def append(store, principal, payload):
                 from operations.time_integrity import aware_utc
                 for row in con.execute('SELECT data_json FROM domain_records WHERE domain=? AND kind IN (?,?)', ('farming', 'poultry_journal_v1', 'farm_physical_count_v1')):
                     entry = json.loads(row[0])['payload']
-                    if entry.get('entity_id') == p['entity_id'] and aware_utc(entry['observed_at']).astimezone(LAGOS).date().isoformat() < p['opened_on']:
+                    if entry.get('entity_id') == p['entity_id'] and aware_utc(entry['observed_at']).astimezone(farm_zone(con)).date().isoformat() < p['opened_on']:
                         raise ValueError('Opening date would contradict existing observation history.')
             parent = catalog.get(current['house_id'])
             if parent and parent['opened_on'] is not None and p['opened_on'] is not None and parent['opened_on'] > p['opened_on']:
@@ -168,7 +169,7 @@ def overview(store, principal):
     with store._connect() as con:
         principal = authorize(store, con, principal, 'read')
         current = role(con, principal)
-        result = {'entities': list(entities(con).values()), 'farm_role': current,
+        result = {'timezone': timezone_setting(con)['timezone'], 'timezone_basis': timezone_setting(con)['basis'], 'entities': list(entities(con).values()), 'farm_role': current,
                   'can_manage': current in {'OWNER', 'GENERAL_MANAGER', 'SUPERVISOR'},
                   'can_setup': current in {'OWNER', 'GENERAL_MANAGER'}, 'can_assign': current == 'OWNER'}
         from .financial_permissions import effective, DEFAULTS

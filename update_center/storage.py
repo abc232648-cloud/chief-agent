@@ -9,8 +9,11 @@ from operations.storage_health import configure_connection
 
 
 class ExistingUpdateStore:
-    def __init__(self, database):
+    def __init__(self, database, *, identity_events=False):
         self.path = Path(database)
+        if type(identity_events) is not bool:
+            raise ValueError('Explicit identity-event storage mode required.')
+        self.identity_events = identity_events
         if not self.path.is_absolute():
             raise ValueError('Absolute existing database required.')
 
@@ -26,6 +29,8 @@ class ExistingUpdateStore:
             allowed = {sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ, sqlite3.SQLITE_INSERT,
                        sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_TRANSACTION, sqlite3.SQLITE_FUNCTION}
             def authorize(action, table, column, database, trigger):
+                if self.identity_events and action == sqlite3.SQLITE_INSERT and table == 'human_security_events':
+                    return sqlite3.SQLITE_OK
                 if action in {sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE} and table != 'control_state':
                     return sqlite3.SQLITE_DENY
                 return sqlite3.SQLITE_OK if action in allowed else sqlite3.SQLITE_DENY

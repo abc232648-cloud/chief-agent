@@ -42,8 +42,10 @@ def system_view(store,page):
     if page=='updates':
         from update_center.history import read
         from update_center.release_history import latest
+        from update_center.acceptance import recent
         return {'status':'MANUAL_HISTORY_ONLY','activation_available':False,'history':read(store),
                 'publisher_verification':latest(store),'update_scope':'CHIEF_ONLY',
+                'candidate_checks':recent(store),'manual_workflow':'LOCAL_OPERATOR_TOOL',
                 'limitation':'Operator-recorded activity, not an independent live release or compatibility check. Automatic installation and activation remain unavailable.'}
     if page=='devices':return {'status':'UNAVAILABLE','limitation':'Device management and Farm hardware workflows are not implemented. No device discovery or control is performed.'}
     if page=='integrations':

@@ -82,7 +82,7 @@ def calculate(p):
     if remaining is not None and remaining < 0:
         notices.append('This scenario uses more feed than the stated starting stock.')
     return {'calculation_version': VERSION, 'status': 'SCENARIO_ESTIMATE', 'days': days,
-            'currency': p['currency'], 'timezone': 'Africa/Lagos', 'authority': 'NONE',
+            'currency': p['currency'], 'timezone': setup.farm_zone(store).key, 'authority': 'NONE',
             'egg_production': {'estimated_eggs': production, 'rounding': 'Whole eggs rounded down'},
             'feed': {'estimated_use_kg': money(feed_use),
                      'days_available': format(duration.quantize(Decimal('.01'), rounding=ROUND_HALF_UP), 'f') if duration is not None else None,

@@ -20,8 +20,38 @@ from policy.contracts import ActionRisk, Outcome, PolicyRequest
 from update_center.contracts import UpdatePlan
 from update_center.managed import ManagedInstallation, _write
 from update_center.release_history import verify_and_record
+from update_center.processes import run as run_process
+from update_center.test_environment import resolve as test_environment
 
 PREFIX = 'update_acceptance_v1:'
+
+
+def recent(store, *, limit=20):
+    """Bounded non-secret presentation; never accepts a result as authority."""
+    if type(limit) is not int or not 1 <= limit <= 100:
+        raise ValueError('Bounded candidate history required.')
+    with store._connect() as con:
+        if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='control_state'").fetchone():
+            return {'checks':[], 'invalid_records':0}
+        rows = con.execute('SELECT key,value FROM control_state WHERE substr(key,1,?)=? ORDER BY rowid DESC LIMIT ?',
+                           (len(PREFIX), PREFIX, limit)).fetchall()
+    checks, invalid = [], 0
+    from operations.time_integrity import aware_utc
+    for row in rows:
+        try:
+            value = json.loads(row['value'])
+            if (type(value['version']) is not int or value['version'] != 1 or
+                row['key'] != PREFIX+value['run_id'] or value['status'] not in {'PASSED','FAILED','TIMED_OUT','INVALID_REPORT'}):
+                raise ValueError()
+            counts = value['counts']
+            if set(counts) != {'passed','failed','skipped'} or any(type(n) is not int or not 0 <= n <= 10000000 for n in counts.values()):
+                raise ValueError()
+            source = backup._sha(value['candidate_source'])
+            aware_utc(value['finished_at'])
+            checks.append(dict(status=value['status'], counts=counts, finished_at=value['finished_at'], candidate_source=source))
+        except (ValueError, KeyError, TypeError):
+            invalid += 1
+    return {'checks':checks, 'invalid_records':invalid}
 
 
 def _results(path, required):
@@ -44,7 +74,7 @@ def _results(path, required):
 
 
 def run_candidate(installation, plan, store, principal, policy, publisher_keys, *, evidence_parent,
-                  confirm_reviewed_code=False, timeout=1800, minimum_sequence=0, now=None):
+                  confirm_reviewed_code=False, timeout=1800, minimum_sequence=0, now=None, test_config=None):
     """Produce server-owned evidence from a fixed command, not submitted results.
 
     Required tests with skips do not qualify. Model/benchmark qualifications need
@@ -62,10 +92,11 @@ def run_candidate(installation, plan, store, principal, policy, publisher_keys, 
         raise ValueError('Candidate needs unresolved qualification or migration gates.')
     if type(timeout) is not int or not 1 <= timeout <= 7200:
         raise ValueError('Bounded test timeout required.')
+    test_variables, environment_digest = test_environment(test_config)
     current = installation.selection()
     if ManagedInstallation(installation.root).config != installation.config:
         raise ValueError('Managed runtime configuration changed.')
-    source, _ = installation.source(plan.candidate_source)
+    source, source_manifest = installation.source(plan.candidate_source)
     if plan.candidate_source == current:
         raise ValueError('Candidate validation requires a different staged source.')
     envelope_path = backup._plain(source.parent / 'envelope.json', file=True)
@@ -88,6 +119,16 @@ def run_candidate(installation, plan, store, principal, policy, publisher_keys, 
     run_id = uuid.uuid4().hex
     directory = parent / ('update-tests-' + run_id)
     directory.mkdir(mode=0o700)
+    execution = directory / 'source'
+    execution.mkdir(mode=0o700)
+    manifest = json.loads(source_manifest.read_bytes())
+    for name in manifest['files']:
+        relative = backup._relative(name)
+        destination = execution / relative
+        destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        _write(destination, backup._plain(source / relative, file=True).read_bytes())
+    if backup.source_identity(execution, source_manifest) != plan.candidate_source:
+        raise ValueError('Isolated executable copy differs from the candidate.')
     configuration = directory / 'pytest.ini'
     _write(configuration, b'[pytest]\n')
     report = directory / 'results.xml'
@@ -95,8 +136,9 @@ def run_candidate(installation, plan, store, principal, policy, publisher_keys, 
     environment = {k: os.environ[k] for k in ('SystemRoot', 'WINDIR', 'LD_LIBRARY_PATH') if k in os.environ}
     environment.update(HOME=str(directory), USERPROFILE=str(directory), TEMP=str(directory), TMP=str(directory),
                        PYTEST_DISABLE_PLUGIN_AUTOLOAD='1', PYTHONUTF8='1')
+    environment.update(test_variables)
     command = [installation.config['python'], '-B', '-E', '-s', '-m', 'pytest',
-               '-c', str(configuration), '--rootdir', str(source), '-p', 'no:cacheprovider',
+               '-c', str(configuration), '--rootdir', str(execution), '-p', 'no:cacheprovider',
                '-o', 'junit_family=legacy', '--basetemp', str(directory / 'temporary'),
                '--junitxml', str(report), '-q', *required]
     identity.event(principal, 'UPDATE_TESTS_STARTED', resource=run_id, outcome='RECORDED')
@@ -104,8 +146,7 @@ def run_candidate(installation, plan, store, principal, policy, publisher_keys, 
     with (directory / 'private-output.log').open('xb') as output:
         os.chmod(directory / 'private-output.log', 0o600)
         try:
-            result = subprocess.run(command, cwd=source, env=environment, stdin=subprocess.DEVNULL,
-                                    stdout=output, stderr=output, timeout=timeout, check=False)
+            result = run_process(command, cwd=execution, env=environment, output=output, timeout=timeout)
             counts, passing = _results(report, required)
             if result.returncode == 0 and passing:
                 status = 'PASSED'
@@ -114,12 +155,17 @@ def run_candidate(installation, plan, store, principal, policy, publisher_keys, 
         except (OSError, ValueError, ET.ParseError):
             status = 'INVALID_REPORT'
     installation.source(plan.candidate_source)
+    if backup.source_identity(execution, source_manifest) != plan.candidate_source:
+        raise ValueError('Tested source changed during acceptance.')
     verify_and_record(store, envelope, publisher_keys, minimum_sequence=minimum_sequence, now=now)
     if installation.selection() != current:
         raise ValueError('Selected source changed during candidate validation.')
+    if test_environment(test_config)[1] != environment_digest:
+        raise ValueError('Browser/client test identities changed during acceptance.')
     receipt = dict(version=1, run_id=run_id, status=status, current_source=current,
                    candidate_source=plan.candidate_source, plan_id=plan.plan_id,
                    envelope_sha256=release.envelope_sha256,
+                   test_environment_sha256=environment_digest,
                    plan_sha256=hashlib.sha256(json.dumps(asdict(plan), sort_keys=True).encode()).hexdigest(),
                    required_tests=list(required), counts=counts, started_at=started,
                    finished_at=utc_text(utc_now()), human_id=principal.id,

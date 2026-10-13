@@ -60,6 +60,8 @@ def test_update_history_browser_labels_records_as_observations(dashboard):
             page=browser.new_page();page.goto(dashboard.url);navigate(page,'updates')
             expect(page.locator('#updatesContent')).to_contain_text('Operator-recorded activity')
             expect(page.locator('#updatesContent')).to_contain_text('DEPLOYED')
+            expect(page.locator('#updatesContent')).to_contain_text('Candidate checks')
+            expect(page.locator('#updatesContent')).to_contain_text('Automatic installation is not enabled')
             expect(page.locator('#updatesContent')).to_contain_text('a'*64)
             assert page.locator('#updatesContent button').count()==0
         finally:browser.close()

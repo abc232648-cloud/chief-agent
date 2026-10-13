@@ -14,6 +14,7 @@ import zipfile
 from deployment.service_runtime import atomic_json
 from operations import backup
 from update_center.release_trust import verify_artifact
+from update_center.processes import run as run_process
 
 
 def _read(path, limit=2 * 1024 * 1024):
@@ -174,10 +175,9 @@ class ManagedInstallation:
             environment.update(HOME=scratch, USERPROFILE=scratch, TEMP=scratch, TMP=scratch)
             with tempfile.TemporaryFile(dir=scratch) as output:
                 try:
-                    result = subprocess.run([self.config['python'], '-B', '-E', '-s', '-m', 'deployment.update_probe',
+                    result = run_process([self.config['python'], '-B', '-E', '-s', '-m', 'deployment.update_probe',
                         '--config', self.config['instance_config'], '--schema', self.config['schema_sha256']],
-                        cwd=source, env=environment, stdin=subprocess.DEVNULL, stdout=output, stderr=output,
-                        timeout=timeout, check=False)
+                        cwd=source, env=environment, output=output, timeout=timeout)
                 except subprocess.TimeoutExpired:
                     return False
                 output.seek(0)

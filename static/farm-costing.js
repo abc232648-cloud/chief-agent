@@ -15,8 +15,8 @@ async function mountCosting(){
   add('h3','Whole-farm costing');
   add('p','Compare recorded feed consumed and other operating expenses with eggs collected. One-off expenses are not assumed to repeat. This is a provisional estimate, not profit or permission to spend. Missing records remain incomplete.');
   const form=add('form'),input=(parent,label,id,type='text')=>{const l=add('label',label,parent),i=add('input',null,l);i.id=id;i.type=type;return i;};
-  const start=input(form,'From (Lagos)','farmCostStart','date'),end=input(form,'Through (Lagos)','farmCostEnd','date');start.required=end.required=true;
-  const today=new Date(Date.now()+3600000).toISOString().slice(0,10);start.value=end.value=today;
+  const start=input(form,'From (Farm reporting timezone)','farmCostStart','date'),end=input(form,'Through (Farm reporting timezone)','farmCostEnd','date');start.required=end.required=true;
+  const today=chiefReportingDay(farmReportingTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone);start.value=end.value=today;
   const label=add('label','Saved costing settings',form),select=add('select',null,label);select.id='farmCostPolicy';
   function options(){select.replaceChildren();for(const row of [...data.policies].reverse()){const o=add('option',farmDateText(row.received_at)+' — '+row.payload.currency+' — '+row.payload.reason,select);o.value=row.payload.event_id;}}
   options();const calculate=add('button','Calculate recorded costs',form);calculate.type='submit';

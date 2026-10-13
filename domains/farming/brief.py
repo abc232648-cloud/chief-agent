@@ -1,6 +1,6 @@
 """Recorded daily operations and in-app reporting alerts; no external dispatch.
 
-Owner schedules take effect tomorrow in Lagos. A report satisfies presence, not
+Owner schedules take effect tomorrow in the saved Farm timezone. A report satisfies presence, not
 proof that a whole day's work was completed. Corrections remain authoritative.
 """
 from datetime import date, datetime, time as clock_time, timedelta
@@ -11,6 +11,7 @@ import time
 from . import setup, journal, journal_queries, staff, finance
 from identity.service import IdentityService
 from operations.time_integrity import utc_now, utc_text, aware_utc
+from .timezone import unambiguous_deadline
 
 KIND = 'farm_reporting_schedule_v1'
 REPORTS = {'mortality': 'FLOCK', 'eggs_collected': 'FLOCK', 'feed_used': 'FEED_STORE'}
@@ -22,7 +23,7 @@ def schedules(con):
 
 
 def schedule_status(con):
-    today = utc_now().astimezone(setup.LAGOS).date().isoformat()
+    today = utc_now().astimezone(setup.farm_zone(con)).date().isoformat()
     history = schedules(con)
     current = [r for r in history if r['effective_on'] <= today]
     return 'CONFIGURED' if current and current[-1]['payload']['requirements'] else 'NOT_CONFIGURED'
@@ -61,7 +62,7 @@ def configure(store, principal, payload):
             if catalog.get(r['entity_id'], {}).get('entity_type') != REPORTS[r['kind']]:
                 raise ValueError('Choose a registered flock or feed store appropriate for the report.')
             if not isinstance(r['due_time'], str) or not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d', r['due_time']):
-                raise ValueError('Use a Lagos deadline in HH:MM format.')
+                raise ValueError('Use a farm-local deadline in HH:MM format.')
             key = (r['entity_id'], r['kind'])
             if key in seen:
                 raise ValueError('Only one daily requirement per location and report type.')
@@ -71,7 +72,7 @@ def configure(store, principal, payload):
                 raise ValueError('Choose an enabled Farm account as the responsible person.')
         now = utc_now()
         record = {'payload': payload, 'actor_id': principal.id, 'session_id': principal.session_id,
-                  'received_at': utc_text(now), 'effective_on': (now.astimezone(setup.LAGOS).date()+timedelta(days=1)).isoformat()}
+                  'received_at': utc_text(now), 'effective_on': (now.astimezone(setup.farm_zone(con)).date()+timedelta(days=1)).isoformat()}
         con.execute('INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES(?,?,?,?)',
                     ('farming', KIND, json.dumps(record, sort_keys=True), time.time()))
         IdentityService(store)._event(con, principal, 'FARM_REPORTING_SCHEDULE', 'farming', payload['event_id'], 'RECORDED')
@@ -79,7 +80,7 @@ def configure(store, principal, payload):
 
 
 def overview(store, principal, day=''):
-    now = utc_now(); today = now.astimezone(setup.LAGOS).date()
+    now = utc_now(); report_zone = setup.farm_zone(store); today = now.astimezone(report_zone).date()
     try:
         selected = date.fromisoformat(day) if day else today
         if day and selected.isoformat() != day:
@@ -103,7 +104,7 @@ def overview(store, principal, day=''):
         metrics = {}; reported = {}; last_received = None
         for row in con.execute("SELECT data_json FROM domain_records d WHERE d.domain='farming' AND d.kind='poultry_journal_v1' AND "+journal_queries.ACTIVE):
             record = json.loads(row[0]); p = record['payload']
-            if aware_utc(p['observed_at']).astimezone(setup.LAGOS).date() != selected:
+            if aware_utc(p['observed_at']).astimezone(setup.farm_zone(con)).date() != selected:
                 continue
             key = (p.get('entity_id'), p['kind'])
             # A correction submitted later must not make an on-time original late.
@@ -131,9 +132,9 @@ def overview(store, principal, day=''):
         for requirement in requirements:
             if not manager and requirement['assignee'] != principal.id:
                 continue
-            deadline = datetime.combine(selected, clock_time.fromisoformat(requirement['due_time']), setup.LAGOS)
+            deadline = unambiguous_deadline(datetime.combine(selected, clock_time.fromisoformat(requirement['due_time'])), report_zone)
             receipts = reported.get((requirement['entity_id'], requirement['kind']), [])
-            status = ('REPORTED_LATE' if min(map(aware_utc, receipts)) > deadline else 'REPORTED') if receipts else ('MISSING' if now >= deadline else 'AWAITING')
+            status = ('REPORTED' if receipts else 'TIMEZONE_REVIEW_REQUIRED') if deadline is None else (('REPORTED_LATE' if min(map(aware_utc, receipts)) > deadline else 'REPORTED') if receipts else ('MISSING' if now >= deadline else 'AWAITING'))
             checks.append({**requirement, 'location': catalog[requirement['entity_id']]['name'], 'status': status,
                            'id': day+':'+requirement['entity_id']+':'+requirement['kind']})
         work = [item for item in staff.projection(staff.rows(con)).values()
@@ -147,13 +148,13 @@ def overview(store, principal, day=''):
                             requirements=latest['payload']['requirements'] if latest else [],
                             effective_on=latest['effective_on'] if latest else None,
                             assignees=[{'id':r['id'],'username':r['username']} for r in con.execute('SELECT id,username,domains FROM human_identities WHERE enabled=1') if {'farming','*'} & set(json.loads(r['domains']))])
-    result = {'date': day, 'timezone':'Africa/Lagos', 'generated_at':utc_text(now), 'farm_role':role,
+    result = {'date': day, 'timezone':report_zone.key, 'generated_at':utc_text(now), 'farm_role':role,
               'scope':'FARM' if manager else 'OWN_REPORTS_AND_ASSIGNED_WORK', 'metrics':list(metrics.values()),
               'last_report_received_at':last_received, 'reporting':checks,
               'schedule_status':'CONFIGURED' if requirements else 'NOT_CONFIGURED', 'settings':settings,
               'current_work':work, 'current_balances':balances, 'external_notifications':'NOT_CONFIGURED',
               'notice':'Quantities are recorded observations, not verified full-day totals. No report means unknown, not zero. Reporting checks require at least one matching report; they do not certify a full day. Work and stock balances show the current state, even when viewing a past day.'}
-    result['alerts'] = [{'id':r['id'],'type':'MISSING_REPORT','text':r['location']+' — '+r['kind'].replace('_',' ')+' report missing after '+r['due_time']+' Lagos'} for r in checks if r['status']=='MISSING']
+    result['alerts'] = [{'id':r['id'],'type':'MISSING_REPORT','text':r['location']+' — '+r['kind'].replace('_',' ')+' report missing after '+r['due_time']+' '+report_zone.key} for r in checks if r['status']=='MISSING']
     result['alerts'] += [{'id':str(b.get('entity_id') or b['location'])+':'+b['unit'], 'type':'STOCK_RECONCILIATION', 'text':b['location']+' — '+b['unit']+' opening balance or reconciliation needed'} for b in balances if b['needs_reconciliation']]
     result['alerts'] += [{'id':w['id'],'type':'OVERDUE_TASK' if w['overdue'] else 'OPEN_INCIDENT','text':w['text']} for w in work if w['overdue'] or w['kind']=='INCIDENT']
     if role in {'OWNER','GENERAL_MANAGER'} and setup.overview(store, principal)['can_finance']:

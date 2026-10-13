@@ -50,7 +50,10 @@ def test_no_runtime_vendor_package_or_install_command_is_imported_by_chief_code(
 def test_update_discovery_has_metadata_transport_but_no_install_or_activation_authority():
     update_files=tuple((ROOT/'update_center').rglob('*.py'))
     compatibility_files=tuple((ROOT/'compatibility').rglob('*.py'))
-    text='\n'.join(path.read_text(encoding='utf-8') for path in compatibility_files+update_files)
+    # Later manual execution modules are separate from G's pure planning surface.
+    manual={'managed.py','acceptance.py','processes.py','approval.py','coordinator.py'}
+    planning_files=tuple(path for path in update_files if path.name not in manual)
+    text='\n'.join(path.read_text(encoding='utf-8') for path in compatibility_files+planning_files)
     forbidden=('subprocess','requests.','httpx','pip install','npm install','openclaw update','hermes update','shutil.copytree(','os.system(','Popen(','check_call(','check_output(')
     assert all(token not in text for token in forbidden)
 
@@ -67,6 +70,19 @@ def test_update_discovery_has_metadata_transport_but_no_install_or_activation_au
     assert '_ALLOWED_HOSTS = {"api.github.com", "pypi.org"}' in discovery
     assert 'parsed.scheme != "https"' in discovery
     assert 'os.replace(temp_name, path)' in discovery
+
+
+def test_manual_update_mechanics_do_not_grant_agents_or_install_dependencies():
+    catalogs=default_catalogs()
+    assert 'chief.update_source_selection' in catalogs.capabilities.capabilities
+    assert catalogs.capabilities.capabilities['chief.update_planning'].side_effects==()
+    for agent in catalogs.agents.agents.values():
+        assert 'chief.update_source_selection' not in agent.capabilities
+    for path in (ROOT/'update_center').glob('*.py'):
+        text=path.read_text(encoding='utf-8')
+        assert all(command not in text for command in ('pip install','npm install','openclaw update','hermes update','os.system('))
+        if 'Popen(' in text:
+            assert path.name=='processes.py'
 
 
 def test_docker_payload_contains_g_foundation_packages():

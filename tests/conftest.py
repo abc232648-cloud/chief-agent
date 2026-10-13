@@ -131,3 +131,10 @@ def isolate_external_notification_delivery(monkeypatch):
     # Regression runs never send email or desktop notifications to real users.
     monkeypatch.setattr("notifications.channels.SmtpEmailChannel._send",lambda *a,**kw:None)
     monkeypatch.setattr("notifications.desktop.DesktopNotificationChannel._send",lambda *a,**kw:True)
+
+
+@pytest.fixture(autouse=True)
+def synthetic_farm_timezone(monkeypatch):
+    """Existing fixtures describe the Lagos farm, independently of the test host."""
+    from zoneinfo import ZoneInfo
+    monkeypatch.setattr("domains.farming.timezone.host_zone", lambda: ZoneInfo("Africa/Lagos"))

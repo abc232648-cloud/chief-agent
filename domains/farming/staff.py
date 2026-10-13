@@ -119,7 +119,7 @@ def overview(store, principal):
             for member in team['members']
         ] if full_manager else [],
         'team': team,
-        'timezone': 'Africa/Lagos',
+        'timezone': setup.farm_zone(store).key,
         'daily_report_schedule': schedule,
         'external_notifications': 'PENDING',
         'open_count': sum(item['state'] != 'RESOLVED' for item in items),

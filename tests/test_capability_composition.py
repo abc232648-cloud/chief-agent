@@ -74,7 +74,7 @@ def test_missing_extra_or_wrong_owner_domain_declaration_is_rejected():
 def test_read_only_catalog_and_regression_cli(capsys):
     assert main([]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert len(payload['capabilities']) == 17
+    assert len(payload['capabilities']) == 18
     assert 'farming.assistant.ask' in {c['id'] for c in payload['capabilities']}
     assert {'chief.model_registry','chief.runbooks','chief.update_planning','chief.runtime_qualification'} <= {c['id'] for c in payload['capabilities']}
     assert {'chief.evidence','chief.data_quality','chief.decision_ledger'} <= {c['id'] for c in payload['capabilities']}

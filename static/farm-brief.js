@@ -6,7 +6,7 @@ function ensureFarmBriefShell(){
   if(card)return card;
   card=document.createElement('div');card.id='farmBriefCard';card.className='card';
   briefText(card,'h2','Daily brief and alerts');
-  const label=briefText(card,'label','Reporting day (Lagos)');
+  const label=briefText(card,'label','Reporting day (Farm reporting timezone)');
   const date=document.createElement('input');date.type='date';date.id='farmBriefDate';label.append(date);
   const refresh=briefText(card,'button','Refresh brief');refresh.type='button';refresh.onclick=()=>renderFarmBrief();
   date.onchange=()=>{date.dataset.selected='true';renderFarmBrief();};
@@ -23,7 +23,7 @@ async function renderFarmBrief(){
     const card=ensureFarmBriefShell();
     const date=document.getElementById('farmBriefDate');
     const data=await api('/api/farm/brief'+(date.dataset.selected&&date.value?'?day='+encodeURIComponent(date.value):''));
-    date.value=data.date;date.max=new Date(Date.now()+3600000).toISOString().slice(0,10);
+    date.value=data.date;date.max=chiefReportingDay(data.timezone);
     const title='Daily brief and alerts ('+data.alerts.length+')';
     card.querySelector('h2').textContent=title;
     const summary=card.querySelector(':scope > summary');if(summary)summary.textContent=title;
@@ -39,7 +39,7 @@ async function renderFarmBrief(){
     for(const m of data.metrics)briefText(content,'p',m.location+' — '+(farmTypes[m.kind]||m.kind)+': '+m.quantity+' '+m.unit+' ('+m.reports+' reports'+(m.contains_estimates?', includes estimates':'')+')');
     briefText(content,'h3','Reporting deadlines');
     if(data.schedule_status==='NOT_CONFIGURED')briefText(content,'p','No reporting deadlines apply to this day. The Owner can configure them below once confirmed.');
-    for(const r of data.reporting)briefText(content,'p',r.location+' — '+farmTypes[r.kind]+', '+r.due_time+' Lagos: '+r.status.replaceAll('_',' '));
+    for(const r of data.reporting)briefText(content,'p',r.location+' — '+farmTypes[r.kind]+', '+r.due_time+' '+data.timezone+': '+r.status.replaceAll('_',' '));
     briefText(content,'h3','Current work and stock');
     briefText(content,'p',data.current_work.length+' unresolved work items. Review Staff work to report progress or resolve them.');
     for(const b of data.current_balances)briefText(content,'p',b.location+': '+(b.recorded_balance===null?'opening balance missing':b.recorded_balance+' '+b.unit)+(b.needs_reconciliation?' — reconciliation needed':'')+(b.contains_estimates?' — includes estimates':''));
@@ -61,7 +61,7 @@ function renderBriefSettings(settings){
   const root=document.getElementById('farmBriefSettings');root.hidden=!settings.can_configure;
   if(!settings.can_configure||root.childElementCount)return;
   briefText(root,'h3','Owner: reporting schedule');
-  briefText(root,'p','Choose a responsible person and at least one daily report per flock/store. Changes apply tomorrow in Lagos, never retrospectively. An empty schedule disables checks from tomorrow. Report zero explicitly when observed; do not enter invented values.');
+  briefText(root,'p','Choose a responsible person and at least one daily report per flock/store. Changes apply tomorrow in the saved Farm reporting timezone, never retrospectively. An empty schedule disables checks from tomorrow. Report zero explicitly when observed; do not enter invented values.');
   const rows=document.createElement('div');root.append(rows);
   function addRow(value={}){
     const row=document.createElement('fieldset');rows.append(row);
@@ -69,7 +69,7 @@ function renderBriefSettings(settings){
     const entity=options('Flock or feed store',farmCatalog.filter(e=>e.entity_type!=='HOUSE').map(e=>[e.entity_id,e.name+' ('+e.entity_type+')']),value.entity_id);
     const kind=options('Required report',[['mortality','Bird deaths'],['eggs_collected','Egg collection'],['feed_used','Feed used']],value.kind);
     const person=options('Responsible person',settings.assignees.map(u=>[u.id,u.username]),value.assignee);
-    const label=briefText(row,'label','Deadline (Lagos)'),time=document.createElement('input');time.type='time';time.value=value.due_time||'';label.append(time);
+    const label=briefText(row,'label','Deadline (Farm reporting timezone)'),time=document.createElement('input');time.type='time';time.value=value.due_time||'';label.append(time);
     row.read=()=>({entity_id:entity.value,kind:kind.value,assignee:person.value,due_time:time.value});
     const remove=briefText(row,'button','Remove requirement');remove.type='button';remove.onclick=()=>row.remove();
   }
@@ -85,7 +85,7 @@ function renderBriefSettings(settings){
       if(pending&&pending.fingerprint!==fingerprint)throw Error('Previous save has an unknown outcome. Retry unchanged or reload to check the saved schedule.');
       if(!pending)pending={fingerprint,payload:{event_id:crypto.randomUUID(),expected_revision:settings.revision,requirements}};
       const result=await farmPost('/api/farm/brief/schedule',pending.payload);settings.revision=pending.payload.event_id;pending=null;
-      message.textContent='Saved. Schedule takes effect '+result.effective_on+' (Lagos).';await renderFarmBrief();
+      message.textContent='Saved. Schedule takes effect '+result.effective_on+' (Farm reporting timezone).';await renderFarmBrief();
     }catch(error){if(error.status>=400&&error.status<500)pending=null;message.textContent=error.message;}
     finally{save.disabled=false;}
   };
