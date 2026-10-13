@@ -28,6 +28,10 @@ The Chief Updates page displays recorded verification separately from operator-r
 
 ## Boundaries still to complete
 
-This verification/staging path does not download releases, build an isolated runtime, run candidate acceptance, establish verified operational backup/restore, approve installation, switch service versions, restart Chief or perform post-update rollback. Those remain separate lifecycle gates; do not use a verification receipt as permission to bypass them. There are no separate PWA/domain update controls and no unattended self-modification.
+`update_center.recovery.guarded_recovery` connects the existing B.5 backup/isolated restore drill to managed-writer ownership. It refuses to run while any dashboard, worker, scheduler, scheduler-cycle or approved-action component owns its lock. It does not stop or kill services. Ownership remains held across the maintenance context; closing it invalidates the live-lock flag. A verified backup and quarantined restore remain available after an interrupted maintenance context, without automatic replay or deletion.
+
+The recovery result reports its actual database-only or explicitly selected-file coverage. Credentials and browser sessions still need separate protected recovery. It does not infer a complete operational inventory, freeze external/manual writers, certify deployment recovery, or authorize activation. Source rollback identity is verified before and after the drill. Recovery destinations cannot be inside the software source. No application rows or schema are changed by this preparation.
+
+This verification/staging path does not download releases, build an isolated runtime, run candidate acceptance, certify real deployment backup/restore, approve installation, switch service versions, restart Chief or perform post-update rollback. Those remain separate lifecycle gates; do not use a verification receipt as permission to bypass them. There are no separate PWA/domain update controls and no unattended self-modification.
 
 Existing Job/Farm controls, identities, policy checks, audit records and workflows remain authoritative. No schema addition is needed for verification receipts, which use the existing `control_state` table. Ordinary software rollback returns to the previous source; operational data restore remains a separate, quarantined procedure.
