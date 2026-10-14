@@ -2,7 +2,9 @@
 
 The source package is publisher-verified before this module is called. Automatic
 dependency changes additionally require a signed, hash-locked wheel requirements
-file. The bootstrap interpreter and operational state are never mutated.
+file. Dependency-compatible releases persist an immutable runtime reference so
+runtime provenance survives later update transactions. The bootstrap interpreter
+and operational state are never mutated.
 """
 from __future__ import annotations
 
@@ -84,8 +86,29 @@ def _run(command, *, cwd, environment, output, timeout):
         raise RuntimeError('Dependency runtime preparation failed; inspect the private install log.')
 
 
+def _record_reference(installation, identity, current, requirements_sha256):
+    """Persist which already-qualified source supplies this release's runtime."""
+    source, _ = installation.source(identity)
+    slot = backup._plain(source.parent)
+    path = slot / 'runtime-reference.json'
+    value = {
+        'version': 1,
+        'source_sha256': identity,
+        'requirements_sha256': requirements_sha256,
+        'runtime_source_sha256': current,
+        'prepared_by': 'chief-runtime-reference-v1',
+    }
+    if path.exists() or path.is_symlink():
+        from update_center.managed import _read
+        if _read(path, 16384) != value:
+            raise PermissionError('Candidate runtime reference differs from its qualified lineage.')
+    else:
+        atomic_json(path, value)
+    return installation.runtime(identity)
+
+
 def prepare_runtime(installation, identity, *, timeout=1800):
-    """Prepare a candidate runtime only when its production dependency identity changed."""
+    """Prepare or reference a candidate runtime for its production dependencies."""
     if type(timeout) is not int or not 60 <= timeout <= 7200:
         raise ValueError('Dependency installation timeout must be between 60 and 7200 seconds.')
     source, _ = installation.source(identity)
@@ -96,11 +119,16 @@ def prepare_runtime(installation, identity, *, timeout=1800):
     candidate_requirements = requirements_identity(source)
     current_requirements = requirements_identity(current_source)
     if candidate_requirements == current_requirements:
-        return {'status': 'DEPENDENCIES_UNCHANGED', 'python': installation.runtime(current),
-                'requirements_sha256': candidate_requirements}
+        python = _record_reference(installation, identity, current, candidate_requirements)
+        return {'status': 'DEPENDENCIES_UNCHANGED', 'python': python,
+                'requirements_sha256': candidate_requirements,
+                'runtime_source_sha256': current}
     lock = _validate_lock(source)
     slot = backup._plain(source.parent)
     metadata_path = slot / 'runtime.json'
+    reference_path = slot / 'runtime-reference.json'
+    if reference_path.exists() or reference_path.is_symlink():
+        raise PermissionError('Dependency-changing candidate cannot reuse a runtime reference.')
     if metadata_path.exists():
         return {'status': 'RUNTIME_ALREADY_PREPARED', 'python': installation.runtime(identity),
                 'requirements_sha256': candidate_requirements}
