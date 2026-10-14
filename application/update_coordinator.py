@@ -1,8 +1,9 @@
-"""Local manual source-only lifecycle; never restart, migrate or promote restores.
+"""Local manual managed-update lifecycle with guarded source rollback.
 
 All filesystem/publisher policy inputs are operator-provisioned, not HTTP fields.
-The running dashboard must be stopped before selection: recovery refuses every
-live managed writer. Human review does not grant an agent installation powers.
+Human review does not grant an agent installation power. Managed service restart
+is performed separately and any failed activation can roll back only the exact
+completed source transaction after writers are stopped again.
 """
 from pathlib import Path
 import uuid
@@ -81,7 +82,6 @@ class ManualUpdater:
         with guarded_recovery(self.instance.database, source_root=source, source_manifest=manifest,
             expected_source=self.current.source_tree_sha256, backup_parent=self.backup_parent,
             restore_parent=self.restore_parent, private_storage_confirmed=private_storage_confirmed) as recovery:
-            # Re-read trust/control/session after the potentially long backup drill.
             fresh, _, _ = self._gates(principal, candidate, action='chief.update.select_source')
             if fresh != plan:
                 raise ValueError('Update requirements changed during recovery preparation.')
@@ -96,12 +96,32 @@ class ManualUpdater:
                     'backup_manifest_sha256': recovery['backup']['manifest_sha256'],
                     'restore_status': 'QUARANTINED', 'deployment_certified': False}
 
-    def recover_previous(self, principal, candidate, *, confirm_recovery=False, private_storage_confirmed=False):
-        """Explicitly recover only this baseline's interrupted source transaction.
+    def rollback_after_activation_failure(self, principal, candidate, *, private_storage_confirmed=False):
+        """Rollback only the exact completed candidate after local services are stopped.
 
-        It cannot select an arbitrary older release, unlock a restore, replay work
-        or restart services. The operator must review and confirm recovery anew.
+        This is source rollback, not operational-data restore. A new quarantined
+        backup/restore drill proves all managed writers are stopped before the
+        previous source pointer is restored.
         """
+        self._authority(principal, 'chief.update.rollback_after_start_failure')
+        if self.installation.selection(for_stop=True) != candidate:
+            raise ValueError('Failed activation candidate is not the active managed source.')
+        source, manifest = self.installation.source(candidate)
+        with guarded_recovery(self.instance.database, source_root=source, source_manifest=manifest,
+            expected_source=candidate, backup_parent=self.backup_parent,
+            restore_parent=self.restore_parent, private_storage_confirmed=private_storage_confirmed) as recovery:
+            self._authority(principal, 'chief.update.rollback_after_start_failure')
+            reference = uuid.uuid4().hex
+            self.identity.event(principal, 'UPDATE_STARTUP_ROLLBACK_REQUESTED', resource=reference, outcome='RECORDED')
+            result = self.installation._rollback_completed(
+                expected_previous=self.current.source_tree_sha256, expected_candidate=candidate)
+            self.identity.event(principal, 'UPDATE_STARTUP_ROLLED_BACK', resource=reference, outcome='RESTART_REQUIRED')
+            return {**result, 'recovery_id': reference,
+                    'backup_manifest_sha256': recovery['backup']['manifest_sha256'],
+                    'restore_status': 'QUARANTINED', 'deployment_certified': False}
+
+    def recover_previous(self, principal, candidate, *, confirm_recovery=False, private_storage_confirmed=False):
+        """Explicitly recover only this baseline's interrupted source transaction."""
         self._authority(principal, 'chief.update.recover_previous')
         if confirm_recovery is not True:
             raise PermissionError('Explicit recovery confirmation is required.')
