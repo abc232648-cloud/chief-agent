@@ -68,6 +68,7 @@ class ManualUpdater:
 
     def validate(self, principal, candidate, *, confirm_reviewed_code=False):
         plan, keys, floor = self._gates(principal, candidate, action='chief.update.validate')
+        self.installation.prepare_runtime(candidate)
         return run_candidate(self.installation, plan, self.store, principal, self.policy, keys,
             evidence_parent=self.evidence_parent, confirm_reviewed_code=confirm_reviewed_code,
             minimum_sequence=floor, test_config=self.test_config)
@@ -97,12 +98,6 @@ class ManualUpdater:
                     'restore_status': 'QUARANTINED', 'deployment_certified': False}
 
     def rollback_after_activation_failure(self, principal, candidate, *, private_storage_confirmed=False):
-        """Rollback only the exact completed candidate after local services are stopped.
-
-        This is source rollback, not operational-data restore. A new quarantined
-        backup/restore drill proves all managed writers are stopped before the
-        previous source pointer is restored.
-        """
         self._authority(principal, 'chief.update.rollback_after_start_failure')
         if self.installation.selection(for_stop=True) != candidate:
             raise ValueError('Failed activation candidate is not the active managed source.')
@@ -121,7 +116,6 @@ class ManualUpdater:
                     'restore_status': 'QUARANTINED', 'deployment_certified': False}
 
     def recover_previous(self, principal, candidate, *, confirm_recovery=False, private_storage_confirmed=False):
-        """Explicitly recover only this baseline's interrupted source transaction."""
         self._authority(principal, 'chief.update.recover_previous')
         if confirm_recovery is not True:
             raise PermissionError('Explicit recovery confirmation is required.')
