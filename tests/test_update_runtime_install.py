@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import shutil
@@ -6,8 +7,9 @@ import sys
 
 import pytest
 
+from deployment.service_runtime import atomic_json
 from tests.test_managed_updates import managed
-from tests.test_update_release_trust import NOW
+from tests.test_update_release_trust import NOW, release
 
 LOCK = b'synthetic-new-dependency==1 --hash=sha256:' + b'a' * 64 + b'\n'
 
@@ -73,14 +75,36 @@ def test_dependency_lock_rejects_external_sources_and_directives(managed):
             installation.prepare_runtime(target, timeout=60)
 
 
-def test_unchanged_dependencies_reuse_qualified_previous_runtime(managed):
+def test_unchanged_dependencies_persist_qualified_runtime_reference(managed):
     installation, previous, candidate = managed
     data, envelope, keys, target = candidate()
     installation.stage(data, envelope, keys, minimum_sequence=1, now=NOW)
     result = installation.prepare_runtime(target, timeout=60)
     assert result['status'] == 'DEPENDENCIES_UNCHANGED'
+    assert result['runtime_source_sha256'] == previous
     assert result['python'] == installation.runtime(previous)
     assert installation.runtime(target) == installation.runtime(previous)
+    reference = json.loads((installation.root / 'releases' / target / 'runtime-reference.json').read_text())
+    assert reference['source_sha256'] == target
+    assert reference['runtime_source_sha256'] == previous
+
+
+def test_runtime_reference_cycle_is_rejected(managed):
+    installation, previous, candidate = managed
+    data, envelope, keys, target = candidate()
+    installation.stage(data, envelope, keys, minimum_sequence=1, now=NOW)
+    installation.prepare_runtime(target, timeout=60)
+    source, _ = installation.source(previous)
+    from update_center.runtime_install import requirements_identity
+    atomic_json(source.parent / 'runtime-reference.json', {
+        'version': 1,
+        'source_sha256': previous,
+        'requirements_sha256': requirements_identity(source),
+        'runtime_source_sha256': target,
+        'prepared_by': 'chief-runtime-reference-v1',
+    })
+    with pytest.raises(ValueError, match='cycle'):
+        installation.runtime(target)
 
 
 def test_later_release_reuses_active_dependency_runtime_not_bootstrap(managed, monkeypatch):
@@ -104,4 +128,5 @@ def test_later_release_reuses_active_dependency_runtime_not_bootstrap(managed, m
     installation.stage(data, envelope, keys, minimum_sequence=1, now=NOW)
     reused = installation.prepare_runtime(second, timeout=60)
     assert reused['status'] == 'DEPENDENCIES_UNCHANGED'
+    assert reused['runtime_source_sha256'] == first
     assert installation.runtime(second) == first_python
