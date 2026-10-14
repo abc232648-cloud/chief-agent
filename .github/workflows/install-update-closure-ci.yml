@@ -1,6 +1,7 @@
 name: Install and Update Closure CI
 
 on:
+  workflow_call:
   pull_request:
     branches: [main]
     paths:
@@ -30,7 +31,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: install-update-closure-${{ github.event.pull_request.number || github.ref }}-${{ matrix.os }}
+  group: install-update-closure-${{ github.event.pull_request.number || github.ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:
