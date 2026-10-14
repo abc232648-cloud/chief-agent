@@ -1,15 +1,15 @@
 """Prepare isolated per-release Python runtimes for dependency-changing updates.
 
-The source package is already publisher-verified before this module is called.
-Dependencies are installed into a new release-local virtual environment; the
-bootstrap interpreter and operational state are never mutated.
+The source package is publisher-verified before this module is called. Automatic
+dependency changes additionally require a signed, hash-locked wheel requirements
+file. The bootstrap interpreter and operational state are never mutated.
 """
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 
@@ -17,16 +17,61 @@ from deployment.service_runtime import atomic_json
 from operations import backup
 from update_center.processes import run as run_process
 
+_LOCK = 'requirements-lock.txt'
+_PRIMARY = 'requirements.txt'
+_MAX_LOCK = 2 * 1024 * 1024
+_PACKAGE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]*(?:\[[A-Za-z0-9_,.-]+\])?==[A-Za-z0-9.!+_-]+(?:\s*;[^\\]+?)?(?:\s+--hash=sha256:[0-9a-f]{64})+$')
+_HASH = re.compile(r'--hash=sha256:[0-9a-f]{64}')
+
 
 def requirements_identity(source):
+    """Identity only files that define the production managed runtime."""
     source = backup._plain(source)
-    rows = []
-    for path in sorted(source.glob('requirements*.txt'), key=lambda item: item.name):
-        plain = backup._plain(path, file=True)
-        rows.append(path.name + '\0' + backup.digest_file(plain))
-    if not rows:
-        raise ValueError('Managed release has no root requirements file.')
+    primary = backup._plain(source / _PRIMARY, file=True)
+    rows = [_PRIMARY + '\0' + backup.digest_file(primary)]
+    lock = source / _LOCK
+    if lock.exists() or lock.is_symlink():
+        lock = backup._plain(lock, file=True)
+        rows.append(_LOCK + '\0' + backup.digest_file(lock))
     return hashlib.sha256('\n'.join(rows).encode()).hexdigest()
+
+
+def _validate_lock(source):
+    """Reject requirements-file directives, URLs, editable refs and unhashed pins."""
+    path = backup._plain(source / _LOCK, file=True)
+    raw = path.read_bytes()
+    if len(raw) > _MAX_LOCK:
+        raise ValueError('Dependency lock exceeds its size limit.')
+    try:
+        text = raw.decode('utf-8')
+    except UnicodeDecodeError as exc:
+        raise ValueError('Dependency lock must be UTF-8.') from exc
+    logical, pending = [], ''
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith('#'):
+            continue
+        pending = (pending + ' ' + line).strip()
+        if pending.endswith('\\'):
+            pending = pending[:-1].rstrip()
+            continue
+        logical.append(' '.join(pending.split()))
+        pending = ''
+    if pending:
+        raise ValueError('Dependency lock has an incomplete continuation.')
+    if not logical:
+        raise ValueError('Dependency-changing release requires a non-empty dependency lock.')
+    for line in logical:
+        lowered = line.lower()
+        if ('://' in line or ' @ ' in line or line.startswith('-') or
+                '--index-url' in lowered or '--extra-index-url' in lowered or
+                '--find-links' in lowered or '--trusted-host' in lowered or
+                '--editable' in lowered or '--requirement' in lowered):
+            raise ValueError('Dependency lock contains an unsupported source or directive.')
+        hashes = _HASH.findall(line)
+        if not hashes or len(hashes) != len(set(hashes)) or not _PACKAGE.fullmatch(line):
+            raise ValueError('Dependency lock must contain exact SHA-256-hashed package pins only.')
+    return path
 
 
 def _runtime_python(root):
@@ -40,7 +85,7 @@ def _run(command, *, cwd, environment, output, timeout):
 
 
 def prepare_runtime(installation, identity, *, timeout=1800):
-    """Prepare a candidate runtime only when its dependency identity changed."""
+    """Prepare a candidate runtime only when its production dependency identity changed."""
     if type(timeout) is not int or not 60 <= timeout <= 7200:
         raise ValueError('Dependency installation timeout must be between 60 and 7200 seconds.')
     source, _ = installation.source(identity)
@@ -53,6 +98,7 @@ def prepare_runtime(installation, identity, *, timeout=1800):
     if candidate_requirements == current_requirements:
         return {'status': 'DEPENDENCIES_UNCHANGED', 'python': installation.runtime(current),
                 'requirements_sha256': candidate_requirements}
+    lock = _validate_lock(source)
     slot = backup._plain(source.parent)
     metadata_path = slot / 'runtime.json'
     if metadata_path.exists():
@@ -74,7 +120,8 @@ def prepare_runtime(installation, identity, *, timeout=1800):
             python = _runtime_python(runtime)
             backup._plain(python.parent)
             _run([str(python), '-I', '-m', 'pip', 'install', '--isolated', '--disable-pip-version-check',
-                  '--no-input', '--index-url', 'https://pypi.org/simple', '--requirement', str(source / 'requirements.txt')],
+                  '--no-input', '--require-hashes', '--only-binary=:all:', '--index-url',
+                  'https://pypi.org/simple', '--requirement', str(lock)],
                  cwd=source, environment=environment, output=output, timeout=timeout)
             _run([str(python), '-I', '-m', 'pip', 'check'], cwd=source,
                  environment=environment, output=output, timeout=min(timeout, 600))
