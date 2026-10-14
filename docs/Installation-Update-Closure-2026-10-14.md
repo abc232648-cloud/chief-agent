@@ -12,11 +12,15 @@ The existing publisher trust path remains authoritative. `ManagedInstallation.st
 
 ### Dependency-changing releases
 
-A signed, compatibility-approved candidate whose root requirements differ from the selected release is no longer rejected solely because dependencies changed. During explicit human-authorized validation, `update_center.runtime_install` prepares a new runtime inside that candidate's private release slot. It creates a virtual environment from the separately pinned bootstrap interpreter, installs the candidate's declared `requirements.txt` through the explicit PyPI simple index with non-interactive isolated pip operation, runs `pip check`, and records the runtime interpreter target/hash plus the requirements identity.
+A signed, compatibility-approved candidate whose production dependency identity differs from the selected release is no longer rejected solely because dependencies changed. During explicit human-authorized validation, `update_center.runtime_install` prepares a new runtime inside that candidate's private release slot.
 
-The bootstrap interpreter is not modified in place. Incomplete runtime creation fails closed for operator review. A candidate requiring different dependencies cannot probe, run acceptance, or become selected until its release-local runtime is valid. Candidate regression tests, read-only probes, and managed service launch all use the same qualified runtime. Releases whose dependency identity is unchanged reuse the previously qualified runtime.
+Automatic dependency changes require the signed source package to contain both `requirements.txt` and `requirements-lock.txt`. The lock must contain exact `==` package pins with SHA-256 hashes only. Requirements-file index directives, external/direct URLs, editable references, unpinned entries, missing hashes and duplicate hashes are rejected before pip runs. Test/development requirements files do not alter the production runtime identity.
 
-This mechanism does not make third-party packages trusted merely because pip installed them. Dependency provenance, exact lock/hash policy and supply-chain acceptance remain part of final security qualification before unattended production updating is enabled.
+The installer creates a virtual environment from the separately pinned bootstrap interpreter and runs isolated, non-interactive pip against the explicit `https://pypi.org/simple` index with `--require-hashes` and `--only-binary=:all:`. It then runs `pip check` and records the runtime interpreter target/hash plus the signed production-requirements identity. This intentionally fails closed when the required locked wheel set is unavailable for the platform; a source-distribution build is not silently executed by the automatic path.
+
+The bootstrap interpreter is not modified in place. Incomplete runtime creation fails closed for operator review. A candidate requiring different dependencies cannot probe, run acceptance, or become selected until its release-local runtime is valid. Candidate regression tests, read-only probes, and managed service launch all use the same qualified runtime. Later releases whose production dependency identity is unchanged inherit the currently active qualified runtime, including across an earlier dependency-changing release; they do not fall back to the original bootstrap environment.
+
+The signed lock and hashes make automatic resolution deterministic, but they do not by themselves prove that a third-party dependency is safe. Publisher dependency review and final supply-chain/security acceptance remain required before unattended production updating is enabled.
 
 ### Linux managed service restart and rollback
 
@@ -46,7 +50,8 @@ The new installation/update code has dedicated regression tests for:
 
 - bounded release acquisition and redirect/host policy;
 - dependency-change staging and runtime gating;
-- isolated runtime preparation and interpreter identity;
+- signed hash-lock validation and deterministic wheel-only dependency preparation;
+- isolated runtime preparation, interpreter identity and multi-release runtime inheritance;
 - managed source activation rollback;
 - fixed Linux service stop/start ordering and fresh READY requirements;
 - the optional authenticated CLI restart path.
