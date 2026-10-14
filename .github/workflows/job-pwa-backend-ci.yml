@@ -138,7 +138,7 @@ jobs:
 
   full-suite:
     name: Full suite (${{ matrix.label }})
-    timeout-minutes: 45
+    timeout-minutes: ${{ matrix.timeout }}
     strategy:
       fail-fast: false
       matrix:
@@ -146,12 +146,15 @@ jobs:
           - os: ubuntu-latest
             python: '3.12.14'
             label: linux-py312
+            timeout: 45
           - os: ubuntu-latest
             python: '3.14.4'
             label: linux-py314
+            timeout: 45
           - os: windows-latest
             python: '3.12'
             label: windows-py312
+            timeout: 75
     runs-on: ${{ matrix.os }}
     env:
       CHIEF_INSTANCE_MODE: test
