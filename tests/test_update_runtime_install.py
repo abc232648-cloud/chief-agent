@@ -93,6 +93,7 @@ def test_later_release_reuses_active_dependency_runtime_not_bootstrap(managed, m
     monkeypatch.setattr('update_center.runtime_install.run_process', _fake_runtime_runner(calls))
     prepared = installation.prepare_runtime(first, timeout=60)
     first_python = prepared['python']
+    monkeypatch.setattr(installation, 'probe', lambda *_args, **_kwargs: True)
     installation._switch(first, expected_current=previous)
     assert installation.runtime(first) == first_python
 

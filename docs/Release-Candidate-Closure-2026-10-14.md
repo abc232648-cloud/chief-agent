@@ -12,7 +12,7 @@ The authoritative fresh full-suite evidence retained in the private handover is:
 - Ubuntu: 2,396 collected; 2,393 passed; 0 failed; 3 skipped.
 - Paired browser acceptance: Chromium 36/36, Firefox 36/36, WebKit 36/36 (108/108 total).
 
-The private package contains the fresh Windows and Ubuntu full-suite log/XML evidence. Raw browser XML files are not present in the handover archive; `TEST_RESULTS.json` preserves their result summaries and SHA-256 identities. Their absence is an evidence-retention gap, not a reason to invent or regenerate historical artifacts.
+The private package contains the fresh Windows and Ubuntu full-suite log/XML evidence. Raw browser XML files are not present in the handover archive; `TEST_RESULTS.json` preserves their result summaries and SHA-256 identities. A repository Actions lookup for the exact tested Chief commit `1cdac6178fe9964ac7fbb80fd9c02fb42740dbb9` also has no retained workflow run from which those raw browser artifacts can be recovered. Their absence is therefore recorded as an evidence-retention gap, not a reason to invent or regenerate historical artifacts.
 
 No full suite is repeated solely to rewrite this metadata. New installation/update code added after this evidence point receives its own targeted tests and must be covered by final pre-deployment acceptance.
 

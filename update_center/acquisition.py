@@ -23,9 +23,14 @@ class AcquisitionError(RuntimeError):
 
 
 def _url(value, allowed_hosts):
-    parsed = urlparse(value)
+    try:
+        parsed = urlparse(value)
+        port = parsed.port
+    except (TypeError, ValueError) as exc:
+        raise ValueError('Release URL is invalid.') from exc
     if (parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or
-            parsed.fragment or parsed.query or parsed.hostname not in allowed_hosts):
+            parsed.fragment or parsed.query or port not in (None, 443) or
+            parsed.hostname.lower() not in allowed_hosts):
         raise ValueError('Release URL must be credential-free HTTPS on an approved host.')
     return value
 
@@ -63,13 +68,19 @@ def acquire_release(archive_url, envelope_url, destination, *, allowed_hosts,
 
     The caller supplies the host allow-list from local operator policy. Query
     strings and embedded credentials are rejected so release acquisition cannot
-    become a secret-bearing generic downloader.
+    become a secret-bearing generic downloader. Both URLs are validated before
+    either network request is made.
     """
     if private_storage_confirmed is not True:
         raise ValueError('Private release staging storage must be confirmed.')
-    hosts = frozenset(allowed_hosts)
-    if not hosts or any(not isinstance(item, str) or not item for item in hosts):
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 1 <= timeout <= 120:
+        raise ValueError('Release acquisition timeout must be between 1 and 120 seconds.')
+    values = tuple(allowed_hosts)
+    if not values or any(not isinstance(item, str) or not item.strip() or item != item.strip() for item in values):
         raise ValueError('At least one explicit release host is required.')
+    hosts = frozenset(item.lower() for item in values)
+    _url(archive_url, hosts)
+    _url(envelope_url, hosts)
     root = backup._plain(Path(destination))
     identity = uuid.uuid4().hex
     folder = root / ('download-' + identity)
