@@ -147,21 +147,41 @@ class ManagedInstallation:
         return str(entry)
 
     def runtime(self, identity):
-        """Return a runtime whose requirements match the requested source slot."""
+        """Return a runtime whose requirements match the requested source slot.
+
+        A not-yet-selected candidate inherits from the currently active source
+        when their requirement identities match. An active candidate from a
+        completed/interrupted switch inherits from that transaction's previous
+        source. This preserves a chain of already qualified runtimes across
+        sequential source-only releases without falling back to the bootstrap
+        environment after a dependency-changing release.
+        """
         source, _ = self.source(identity)
         prepared = self._prepared_runtime(identity)
         if prepared is not None:
             return prepared
         from update_center.runtime_install import requirements_identity
+        active = _read(self.root / 'active.json', 1024)
         transaction = _read(self.root / 'transaction.json', 4096)
-        previous = transaction['previous']
-        backup._sha(previous)
-        if identity == previous:
-            _interpreter(self.config['python'])
-            return self.config['python']
-        previous_source, _ = self.source(previous)
-        if requirements_identity(source) == requirements_identity(previous_source):
-            return self.runtime(previous)
+        if (set(active) != {'version', 'source_sha256'} or type(active['version']) is not int or active['version'] != 1 or
+                set(transaction) != {'version', 'phase', 'previous', 'candidate'} or
+                type(transaction['version']) is not int or transaction['version'] != 1):
+            raise ValueError('Invalid managed runtime selection metadata.')
+        active_identity = backup._sha(active['source_sha256'])
+        previous = backup._sha(transaction['previous'])
+        candidate = backup._sha(transaction['candidate'])
+        phase = transaction['phase']
+        if identity == active_identity:
+            if phase in {'SWITCHING', 'COMPLETED', 'ROLLING_BACK_AFTER_START_FAILURE'} and candidate == active_identity and previous != identity:
+                reference = previous
+            else:
+                _interpreter(self.config['python'])
+                return self.config['python']
+        else:
+            reference = active_identity
+        reference_source, _ = self.source(reference)
+        if requirements_identity(source) == requirements_identity(reference_source):
+            return self.runtime(reference)
         raise PermissionError('Candidate dependencies require a prepared isolated runtime.')
 
     def prepare_runtime(self, identity, *, timeout=1800):
