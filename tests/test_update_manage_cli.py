@@ -53,6 +53,26 @@ def test_cli_apply_requires_explicit_confirmation_and_uses_existing_acceptance(c
     assert result['services_started'] is False and result['data_restored'] is False
 
 
+def test_cli_optional_linux_restart_requires_fresh_service_success(coordinator, tmp_path, monkeypatch, capsys):
+    updater, owner, candidate, _, _ = coordinator
+    validated = updater.validate(owner, candidate, confirm_reviewed_code=True)
+    args = arguments(coordinator, tmp_path, 'apply') + [
+        '--run-id', validated['run_id'], '--restart-linux-services']
+    answers = iter(('fixture-owner', 'APPLY'))
+    monkeypatch.setattr('builtins.input', lambda *_: next(answers))
+    monkeypatch.setattr('application.update_manage.getpass.getpass', lambda *_: PASSWORD)
+    calls = []
+    monkeypatch.setattr('deployment.linux_service_control.stop_services',
+                        lambda **kwargs: calls.append('stop') or {'status':'SERVICES_STOPPED'})
+    monkeypatch.setattr('deployment.linux_service_control.start_services',
+                        lambda instance, **kwargs: calls.append('start') or {'status':'SERVICES_READY'})
+    assert main(args) == 0
+    result = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert result['status'] == 'SOURCE_SELECTED_SERVICES_READY'
+    assert result['services_started'] is True and result['deployment_certified'] is False
+    assert calls == ['stop', 'start']
+
+
 def test_cli_never_exposes_password_on_rejected_login(coordinator, tmp_path, monkeypatch, capsys):
     monkeypatch.setattr('builtins.input', lambda *_:'fixture-owner')
     secret = 'synthetic-wrong-password-do-not-print'
@@ -70,4 +90,3 @@ def test_cli_reports_session_cleanup_failure_when_token_revocation_fails(coordin
     assert main(arguments(coordinator, tmp_path, 'validate')) == 2
     output = capsys.readouterr().out
     assert 'SESSION_CLEANUP_FAILED' in output
-
