@@ -62,10 +62,13 @@ def test_browser_upload_converts_to_bounded_metadata_free_png(dashboard):
         try:
             page=browser.new_page();page.goto(d.url+'/work')
             page.get_by_role('button', name='Expand all sections', exact=True).click()
-            upload=page.locator('#farmStaffItems input[type=file]').first
+            staff_items=page.locator('#farmStaffItems')
+            incident=staff_items.locator('article.item').filter(has_text='Synthetic issue')
+            expect(incident).to_have_count(1, timeout=60_000)
+            upload=incident.locator('input[type=file]').first
             upload.set_input_files({'name':'synthetic.png','mimeType':'image/png','buffer':png()})
-            expect(page.locator('#farmStaffItems')).to_contain_text('Photo attached. Metadata was not retained.')
+            expect(staff_items).to_contain_text('Photo attached. Metadata was not retained.')
             page.get_by_role('button',name='View photos',exact=True).first.click()
-            expect(page.locator('#farmStaffItems img')).to_have_count(1)
+            expect(staff_items.locator('img')).to_have_count(1)
             page.wait_for_function("()=>document.querySelector('#farmStaffItems img')?.naturalWidth>0")
         finally:browser.close()
