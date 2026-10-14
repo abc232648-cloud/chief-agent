@@ -1,7 +1,8 @@
 """Private immutable source slots and manual, fail-closed version selection.
 
-This module never installs dependencies, migrates data, starts a worker, or
-restores a live database. Provisioning the service entrypoint is an operator task.
+Source slots remain immutable. Dependency-changing releases use separately
+prepared per-release runtimes; source selection never mutates the bootstrap
+interpreter, installs packages in place, migrates data, or restores a database.
 """
 import io
 import json
@@ -82,7 +83,7 @@ class ManagedInstallation:
             raise ValueError('Bootstrap source identity differs.')
         python, python_target = _interpreter(python)
         instance_config = backup._plain(instance_config, file=True)
-        root.mkdir(mode=0o700)  # Never adopt or overwrite an existing installation.
+        root.mkdir(mode=0o700)
         (root / 'releases').mkdir(mode=0o700)
         slot = root / 'releases' / expected_source
         slot.mkdir(mode=0o700)
@@ -113,7 +114,6 @@ class ManagedInstallation:
         manifest = slot / 'SOURCE_MANIFEST.json'
         if backup.source_identity(source, manifest) != identity:
             raise ValueError('Managed source identity differs.')
-        # Extra executable source must not slip through an otherwise valid manifest.
         declared = set(_read(manifest)['files'])
         for path in source.rglob('*'):
             backup._plain(path)
@@ -122,6 +122,51 @@ class ManagedInstallation:
                 if name not in declared:
                     raise ValueError('Unlisted file in managed source.')
         return source, manifest
+
+    def _prepared_runtime(self, identity):
+        source, _ = self.source(identity)
+        path = source.parent / 'runtime.json'
+        if not path.exists():
+            return None
+        value = _read(path, 16384)
+        expected = {'version', 'source_sha256', 'requirements_sha256', 'python', 'python_target', 'python_sha256', 'prepared_by'}
+        if (not isinstance(value, dict) or set(value) != expected or type(value['version']) is not int or
+                value['version'] != 1 or value['source_sha256'] != identity or value['prepared_by'] != 'chief-runtime-v1'):
+            raise ValueError('Invalid prepared runtime metadata.')
+        backup._sha(value['requirements_sha256']); backup._sha(value['python_sha256'])
+        from update_center.runtime_install import requirements_identity
+        if requirements_identity(source) != value['requirements_sha256']:
+            raise ValueError('Prepared runtime no longer matches release requirements.')
+        entry = Path(value['python'])
+        runtime_root = source.parent / 'runtime'
+        if not entry.is_absolute() or not entry.is_relative_to(runtime_root):
+            raise ValueError('Prepared runtime escaped its release slot.')
+        entry, target = _interpreter(entry)
+        if str(target) != value['python_target'] or backup.digest_file(target) != value['python_sha256']:
+            raise ValueError('Prepared runtime interpreter changed.')
+        return str(entry)
+
+    def runtime(self, identity):
+        """Return a runtime whose requirements match the requested source slot."""
+        source, _ = self.source(identity)
+        prepared = self._prepared_runtime(identity)
+        if prepared is not None:
+            return prepared
+        from update_center.runtime_install import requirements_identity
+        transaction = _read(self.root / 'transaction.json', 4096)
+        previous = transaction['previous']
+        backup._sha(previous)
+        if identity == previous:
+            _interpreter(self.config['python'])
+            return self.config['python']
+        previous_source, _ = self.source(previous)
+        if requirements_identity(source) == requirements_identity(previous_source):
+            return self.runtime(previous)
+        raise PermissionError('Candidate dependencies require a prepared isolated runtime.')
+
+    def prepare_runtime(self, identity, *, timeout=1800):
+        from update_center.runtime_install import prepare_runtime
+        return prepare_runtime(self, identity, timeout=timeout)
 
     def selection(self, *, for_stop=False):
         active = _read(self.root / 'active.json', 1024)
@@ -141,13 +186,9 @@ class ManagedInstallation:
 
     def stage(self, data, envelope, keys, *, minimum_sequence, now=None):
         release = verify_artifact(data, envelope, keys, minimum_sequence=minimum_sequence, now=now)
-        current, _ = self.source(self.selection())
+        self.source(self.selection())
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             manifest = json.loads(archive.read('SOURCE_MANIFEST.json'))
-            installed_requirements = {p.name: backup.digest_file(p) for p in current.glob('requirements*.txt')}
-            incoming_requirements = {n: h for n, h in manifest['files'].items() if '/' not in n and n.startswith('requirements') and n.endswith('.txt')}
-            if incoming_requirements != installed_requirements:
-                raise ValueError('Dependency changes require a separately qualified runtime; source switching is blocked.')
             slot = self.root / 'releases' / release.manifest.source_tree_sha256
             if slot.exists():
                 self.source(release.manifest.source_tree_sha256)
@@ -165,17 +206,18 @@ class ManagedInstallation:
         return release
 
     def probe(self, identity, *, timeout=60):
-        """Run a fixed read-only Chief preflight, never a command from metadata."""
+        """Run a fixed read-only Chief preflight with the qualified release runtime."""
         if ManagedInstallation(self.root).config != self.config:
             raise ValueError('Managed runtime configuration changed.')
         source, _ = self.source(identity)
+        python = self.runtime(identity)
         environment = {k: os.environ[k] for k in ('SystemRoot', 'WINDIR', 'LD_LIBRARY_PATH') if k in os.environ}
         environment.update(PYTHONUTF8='1', PYTHONDONTWRITEBYTECODE='1')
         with tempfile.TemporaryDirectory(prefix='update-probe-', dir=self.root) as scratch:
             environment.update(HOME=scratch, USERPROFILE=scratch, TEMP=scratch, TMP=scratch)
             with tempfile.TemporaryFile(dir=scratch) as output:
                 try:
-                    result = run_process([self.config['python'], '-B', '-E', '-s', '-m', 'deployment.update_probe',
+                    result = run_process([python, '-B', '-E', '-s', '-m', 'deployment.update_probe',
                         '--config', self.config['instance_config'], '--schema', self.config['schema_sha256']],
                         cwd=source, env=environment, output=output, timeout=timeout)
                 except subprocess.TimeoutExpired:
@@ -192,14 +234,10 @@ class ManagedInstallation:
         return value == {'status': 'READY', 'schema_sha256': self.config['schema_sha256'], 'external_actions': False}
 
     def _switch(self, candidate, *, expected_current):
-        """Called only inside approved, guarded maintenance by the coordinator.
-
-        A crash leaves SWITCHING and blocks managed startup. Ordinary failures
-        restore the previous source pointer, never a database snapshot.
-        """
         if self.selection() != expected_current or candidate == expected_current:
             raise ValueError('The current release changed or this release is already selected.')
         self.source(candidate)
+        self.runtime(candidate)
         transaction = dict(version=1, phase='SWITCHING', previous=expected_current, candidate=candidate)
         atomic_json(self.root / 'transaction.json', transaction)
         try:
@@ -216,12 +254,7 @@ class ManagedInstallation:
                 'previous_source_sha256': expected_current, 'services_started': False, 'data_restored': False}
 
     def _recover_previous(self, *, expected_previous, expected_candidate):
-        """Coordinator-only recovery under reauthorization and maintenance locks.
-
-        Bind recovery to the exact interrupted transaction. Never infer a source
-        from directory names or perform operational data restoration.
-        """
-        self.selection(for_stop=True)  # Validate both records before interpreting them.
+        self.selection(for_stop=True)
         transaction = _read(self.root / 'transaction.json', 4096)
         if transaction != dict(version=1, phase='SWITCHING', previous=expected_previous,
                                candidate=expected_candidate):
@@ -230,9 +263,34 @@ class ManagedInstallation:
         if active not in {expected_previous, expected_candidate}:
             raise ValueError('Active source is unrelated to the interrupted switch.')
         self.source(expected_previous)
+        self.runtime(expected_previous)
         if not self.probe(expected_previous):
             raise ValueError('Previous source failed its read-only startup preflight.')
         atomic_json(self.root / 'active.json', dict(version=1, source_sha256=expected_previous))
         atomic_json(self.root / 'transaction.json', dict(transaction, phase='ROLLED_BACK'))
         return {'status': 'PREVIOUS_SOURCE_SELECTED_RESTART_REQUIRED',
                 'source_sha256': expected_previous, 'services_started': False, 'data_restored': False}
+
+    def _rollback_completed(self, *, expected_previous, expected_candidate):
+        """Rollback the exact completed selection after managed startup fails."""
+        self.selection(for_stop=True)
+        transaction = _read(self.root / 'transaction.json', 4096)
+        completed = dict(version=1, phase='COMPLETED', previous=expected_previous, candidate=expected_candidate)
+        if transaction != completed:
+            raise ValueError('Startup rollback does not match the exact completed transaction.')
+        if _read(self.root / 'active.json', 1024) != dict(version=1, source_sha256=expected_candidate):
+            raise ValueError('Active source differs from the failed startup candidate.')
+        self.source(expected_previous); self.runtime(expected_previous)
+        atomic_json(self.root / 'transaction.json', dict(completed, phase='ROLLING_BACK_AFTER_START_FAILURE'))
+        try:
+            atomic_json(self.root / 'active.json', dict(version=1, source_sha256=expected_previous))
+            if not self.probe(expected_previous):
+                raise ValueError('Previous source failed its read-only startup preflight.')
+            atomic_json(self.root / 'transaction.json', dict(completed, phase='ROLLED_BACK'))
+        except Exception:
+            atomic_json(self.root / 'active.json', dict(version=1, source_sha256=expected_candidate))
+            atomic_json(self.root / 'transaction.json', completed)
+            raise
+        return {'status': 'PREVIOUS_SOURCE_SELECTED_AFTER_START_FAILURE',
+                'source_sha256': expected_previous, 'failed_source_sha256': expected_candidate,
+                'services_started': False, 'data_restored': False}
