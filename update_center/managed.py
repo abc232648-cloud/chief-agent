@@ -1,8 +1,10 @@
 """Private immutable source slots and manual, fail-closed version selection.
 
 Source slots remain immutable. Dependency-changing releases use separately
-prepared per-release runtimes; source selection never mutates the bootstrap
-interpreter, installs packages in place, migrates data, or restores a database.
+prepared per-release runtimes; dependency-compatible releases persist a runtime
+reference to an already-qualified source. Source selection never mutates the
+bootstrap interpreter, installs packages in place, migrates data, or restores a
+database.
 """
 import io
 import json
@@ -146,20 +148,50 @@ class ManagedInstallation:
             raise ValueError('Prepared runtime interpreter changed.')
         return str(entry)
 
-    def runtime(self, identity):
-        """Return a runtime whose requirements match the requested source slot.
+    def _runtime_reference(self, identity):
+        """Return and validate an immutable dependency-compatible runtime lineage edge."""
+        source, _ = self.source(identity)
+        path = source.parent / 'runtime-reference.json'
+        if not path.exists():
+            return None
+        value = _read(path, 16384)
+        expected = {'version', 'source_sha256', 'requirements_sha256', 'runtime_source_sha256', 'prepared_by'}
+        if (not isinstance(value, dict) or set(value) != expected or type(value['version']) is not int or
+                value['version'] != 1 or value['source_sha256'] != identity or
+                value['prepared_by'] != 'chief-runtime-reference-v1'):
+            raise ValueError('Invalid runtime reference metadata.')
+        from update_center.runtime_install import requirements_identity
+        requirements = backup._sha(value['requirements_sha256'])
+        reference = backup._sha(value['runtime_source_sha256'])
+        if reference == identity or requirements_identity(source) != requirements:
+            raise ValueError('Runtime reference does not match its source requirements.')
+        reference_source, _ = self.source(reference)
+        if requirements_identity(reference_source) != requirements:
+            raise ValueError('Runtime reference target has different production requirements.')
+        return reference
 
-        A not-yet-selected candidate inherits from the currently active source
-        when their requirement identities match. An active candidate from a
-        completed/interrupted switch inherits from that transaction's previous
-        source. This preserves a chain of already qualified runtimes across
-        sequential source-only releases without falling back to the bootstrap
-        environment after a dependency-changing release.
+    def runtime(self, identity, _seen=None):
+        """Return the qualified interpreter for one managed source slot.
+
+        New dependency-compatible releases persist a runtime-reference edge when
+        validation prepares them. Legacy source-only releases can still inherit
+        the pinned bootstrap runtime, because the pre-closure mechanism rejected
+        dependency-changing releases. A cycle in persisted or transient lineage
+        is always rejected instead of recursing.
         """
+        identity = backup._sha(identity)
+        seen = frozenset() if _seen is None else frozenset(_seen)
+        if identity in seen:
+            raise ValueError('Managed runtime lineage contains a cycle.')
+        seen = seen | {identity}
         source, _ = self.source(identity)
         prepared = self._prepared_runtime(identity)
         if prepared is not None:
             return prepared
+        reference = self._runtime_reference(identity)
+        if reference is not None:
+            return self.runtime(reference, seen)
+
         from update_center.runtime_install import requirements_identity
         active = _read(self.root / 'active.json', 1024)
         transaction = _read(self.root / 'transaction.json', 4096)
@@ -171,18 +203,31 @@ class ManagedInstallation:
         previous = backup._sha(transaction['previous'])
         candidate = backup._sha(transaction['candidate'])
         phase = transaction['phase']
-        if identity == active_identity:
-            if phase in {'SWITCHING', 'COMPLETED', 'ROLLING_BACK_AFTER_START_FAILURE'} and candidate == active_identity and previous != identity:
-                reference = previous
-            else:
-                _interpreter(self.config['python'])
-                return self.config['python']
-        else:
+        allowed = {'IDLE', 'SWITCHING', 'COMPLETED', 'ROLLED_BACK', 'ROLLING_BACK_AFTER_START_FAILURE'}
+        if phase not in allowed:
+            raise ValueError('Invalid managed update phase for runtime selection.')
+
+        # No runtime metadata on a transaction predecessor means a legacy
+        # source-only release. Such releases were only selectable under the old
+        # dependency-equality rule, so the pinned bootstrap interpreter remains
+        # their qualified runtime.
+        if identity == previous and identity != candidate:
+            _interpreter(self.config['python'])
+            return self.config['python']
+
+        if (phase in {'SWITCHING', 'COMPLETED', 'ROLLING_BACK_AFTER_START_FAILURE'} and
+                identity == candidate and previous != identity):
+            reference = previous
+        elif identity != active_identity:
             reference = active_identity
+        else:
+            _interpreter(self.config['python'])
+            return self.config['python']
+
         reference_source, _ = self.source(reference)
-        if requirements_identity(source) == requirements_identity(reference_source):
-            return self.runtime(reference)
-        raise PermissionError('Candidate dependencies require a prepared isolated runtime.')
+        if requirements_identity(source) != requirements_identity(reference_source):
+            raise PermissionError('Candidate dependencies require a prepared isolated runtime.')
+        return self.runtime(reference, seen)
 
     def prepare_runtime(self, identity, *, timeout=1800):
         from update_center.runtime_install import prepare_runtime
