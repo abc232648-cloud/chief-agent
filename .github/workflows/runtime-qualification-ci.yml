@@ -132,7 +132,11 @@ jobs:
           hermes --version | Out-Host
           hermes --help | Out-Null
           $after = (Get-FileHash -Algorithm SHA256 $sentinel).Hash
-          if ($before -ne $after) { throw 'Research runtime modified the personal-profile sentinel.' }
+          if ($before -ne $after) { throw 'Research runtime modified the personal Hermes profile while HERMES_HOME was active.' }
           $extra = @(Get-ChildItem -Force $personalProfile | Where-Object { $_.Name -ne 'PERSONAL_PROFILE_SENTINEL.txt' })
-          if ($extra.Count -ne 0) { throw 'Research runtime wrote into the personal Hermes profile while HERMES_HOME was active.' }
+          if ($extra.Count -ne 0) { throw 'Research runtime wrote into the personal Hermes profile while Chief overrides were active.' }
           "SMOKE_ONLY: exact version installed from pinned source and personal profile remained isolated; production installer is still unqualified." | Out-Host
+
+  install-update-closure:
+    name: Install/update closure regression
+    uses: ./.github/workflows/install-update-closure-ci.yml
