@@ -97,6 +97,7 @@ def run_candidate(installation, plan, store, principal, policy, publisher_keys, 
     if ManagedInstallation(installation.root).config != installation.config:
         raise ValueError('Managed runtime configuration changed.')
     source, source_manifest = installation.source(plan.candidate_source)
+    candidate_python = installation.runtime(plan.candidate_source)
     if plan.candidate_source == current:
         raise ValueError('Candidate validation requires a different staged source.')
     envelope_path = backup._plain(source.parent / 'envelope.json', file=True)
@@ -137,7 +138,7 @@ def run_candidate(installation, plan, store, principal, policy, publisher_keys, 
     environment.update(HOME=str(directory), USERPROFILE=str(directory), TEMP=str(directory), TMP=str(directory),
                        PYTEST_DISABLE_PLUGIN_AUTOLOAD='1', PYTHONUTF8='1')
     environment.update(test_variables)
-    command = [installation.config['python'], '-B', '-E', '-s', '-m', 'pytest',
+    command = [candidate_python, '-B', '-E', '-s', '-m', 'pytest',
                '-c', str(configuration), '--rootdir', str(execution), '-p', 'no:cacheprovider',
                '-o', 'junit_family=legacy', '--basetemp', str(directory / 'temporary'),
                '--junitxml', str(report), '-q', *required]
@@ -174,9 +175,6 @@ def run_candidate(installation, plan, store, principal, policy, publisher_keys, 
     _write(directory / 'receipt.json', raw.encode())
     with store._connect() as con:
         con.execute('BEGIN IMMEDIATE')
-        # A long test run may outlast reauthentication. Its results can still be
-        # recorded; any later approval must independently reauthenticate and
-        # recheck revocation. This receipt never carries execution authority.
         con.execute('INSERT INTO control_state(key,value) VALUES(?,?)', (PREFIX + run_id, raw))
         identity._event(con, principal, 'UPDATE_TESTS_FINISHED', None, run_id, status)
     return receipt
