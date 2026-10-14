@@ -13,7 +13,7 @@ def main(argv=None):
     installation = ManagedInstallation(args.installation)
     identity = installation.selection(for_stop=args.stop)
     source, _ = installation.source(identity)
-    python = installation.config['python']
+    python = installation.runtime(identity)
     command = [python, '-B', '-E', '-s', '-m', 'deployment.launch', '--component', args.component,
                '--config', installation.config['instance_config']]
     if args.stop:
@@ -21,7 +21,6 @@ def main(argv=None):
     os.environ['CHIEF_MANAGED_INSTALLATION'] = str(installation.root)
     os.environ['CHIEF_MANAGED_SOURCE'] = identity
     os.chdir(source)
-    # The existing launcher still enforces instance, schema, identity and HTTPS.
     os.execve(python, command, dict(os.environ))
 
 
