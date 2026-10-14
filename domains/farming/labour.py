@@ -30,12 +30,12 @@ def append(store,principal,payload):
         if set(p)!=WORK:raise ValueError('Supply exactly the work and pay fields.')
         p['person']=bounded_text(p['person'],120);p['task']=bounded_text(p['task'],400);p['reason']=bounded_text(p['reason'],400)
         finance.day(p['work_date'])
-        if p['work_date']>utc_now().astimezone(setup.LAGOS).date().isoformat():raise ValueError('Record actual work, not a future plan.')
+        if p['work_date']>utc_now().astimezone(setup.farm_zone(store)).date().isoformat():raise ValueError('Record actual work, not a future plan.')
         if p['time_basis']=='TIMED':
             if p['days'] is not None:raise ValueError('Timed work does not also supply days.')
             start,end=aware_utc(p['started_at']),aware_utc(p['ended_at'])
             if end<=start or end>utc_now() or (end-start).total_seconds()>7*86400:raise ValueError('Use a completed time range of at most seven days.')
-            if start.astimezone(setup.LAGOS).date().isoformat()!=p['work_date']:raise ValueError('Work date must match the start date in Lagos.')
+            if start.astimezone(setup.farm_zone(store)).date().isoformat()!=p['work_date']:raise ValueError('Work date must match the start date in the farm reporting timezone.')
             p['started_at']=utc_text(start);p['ended_at']=utc_text(end)
         elif p['time_basis']=='DAYS':
             if p['started_at'] is not None or p['ended_at'] is not None:raise ValueError('Day-based work does not invent clock times.')

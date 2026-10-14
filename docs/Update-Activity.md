@@ -10,4 +10,4 @@ Compute the source digest using the referenced release's documented manifest met
 
 There is no remote history-writing endpoint and no delete/edit UI. This protects against accidental modification through the application, not a malicious database administrator; these records are not a cryptographically tamper-proof audit log. Malformed entries are reported as unreadable rather than treated as successful updates.
 
-Universal dependency installation, activation orchestration, signed release trust and independent compatibility checks remain separate work.
+Publisher verification and inert staging are described in [Chief Update Center](Chief-Update-Center.md). They do not change these operator observations into installation authority. Universal dependency installation, activation orchestration and executed candidate acceptance remain separate work.

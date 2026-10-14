@@ -1,13 +1,11 @@
 """Read-only whole-farm costing. Estimates never create payment authority."""
 import hashlib
 import json
-from datetime import timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from . import bookkeeping as books, finance, setup, egg_loss_links, journal, expense_allocations
 from .journal_queries import ACTIVE
 from operations.time_integrity import aware_utc
 
-LAGOS = timezone(timedelta(hours=1))
 
 
 def report(store, principal, *, start, end, currency, feed_minor_per_kg=None):
@@ -18,8 +16,9 @@ def report(store, principal, *, start, end, currency, feed_minor_per_kg=None):
         raise ValueError('Choose an explicitly supported currency.')
     if feed_minor_per_kg is not None and (type(feed_minor_per_kg) is not int or not 0 <= feed_minor_per_kg <= 999999999999):
         raise ValueError('Feed valuation must be explicit integer minor units per kg or unknown.')
+    report_zone = setup.farm_zone(store)
     def in_period(payload):
-        day = aware_utc(payload['observed_at']).astimezone(LAGOS).date().isoformat()
+        day = aware_utc(payload['observed_at']).astimezone(report_zone).date().isoformat()
         return start <= day <= end
     with store._connect() as con:
         con.execute('BEGIN')
@@ -90,7 +89,7 @@ def report(store, principal, *, start, end, currency, feed_minor_per_kg=None):
     identity = {'movements': movements, 'expenses': expenses, 'start': start, 'end': end,
                 'currency': currency, 'feed_minor_per_kg': feed_minor_per_kg, 'loss_links': relevant, 'link_history':link_history,
                 'expense_allocations': allocated_expenses, 'allocation_history': allocation_history, 'flocks': flocks}
-    return {'status': 'PROVISIONAL', 'start': start, 'end': end, 'timezone': 'Africa/Lagos',
+    return {'status': 'PROVISIONAL', 'start': start, 'end': end, 'timezone': report_zone.key,
             'currency': currency, 'feed_minor_per_kg': feed_minor_per_kg,
             'flock_expenses': [{'flock_id': key, 'name': flocks[key]['name'], 'allocated_minor': amount}
                               for key, amount in sorted(flock_totals.items())],

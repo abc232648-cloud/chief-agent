@@ -54,7 +54,7 @@ def validate(p):
     return days
 
 
-def calculate(p):
+def calculate(p, store_or_con=None):
     days = validate(p)
     a = p['assumptions']
     qty = lambda key: None if a[key] is None else Decimal(a[key])
@@ -81,8 +81,10 @@ def calculate(p):
         notices.append('Zero planned feed use does not establish unlimited feed duration.')
     if remaining is not None and remaining < 0:
         notices.append('This scenario uses more feed than the stated starting stock.')
+    from operations.local_timezone import host_zone
+    tz = setup.farm_zone(store_or_con).key if store_or_con is not None else host_zone().key
     return {'calculation_version': VERSION, 'status': 'SCENARIO_ESTIMATE', 'days': days,
-            'currency': p['currency'], 'timezone': 'Africa/Lagos', 'authority': 'NONE',
+            'currency': p['currency'], 'timezone': tz, 'authority': 'NONE',
             'egg_production': {'estimated_eggs': production, 'rounding': 'Whole eggs rounded down'},
             'feed': {'estimated_use_kg': money(feed_use),
                      'days_available': format(duration.quantize(Decimal('.01'), rounding=ROUND_HALF_UP), 'f') if duration is not None else None,
@@ -110,7 +112,7 @@ def preview(store, principal, p):
     with store._connect() as con:
         con.execute('BEGIN')
         setup.authorize(store, con, principal, 'finance')
-        result = calculate(p)
+        result = calculate(p, con)
         result['evidence_revision'] = _evidence_revision(con)
     return result
 
@@ -140,7 +142,7 @@ def save(store, principal, p, *, connection=None):
             raise ValueError('A plan was saved elsewhere. Refresh saved plans before saving.')
         if p['expected_evidence_revision'] != _evidence_revision(con):
             raise ValueError('Farm records changed. Review a fresh preview before saving.')
-        result = calculate({k: p[k] for k in FIELDS})
+        result = calculate({k: p[k] for k in FIELDS}, con)
         row = {'payload': p, 'result': result, 'actor_id': principal.id,
                'received_at': utc_text(utc_now()), 'evidence_revision': _evidence_revision(con)}
         con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)", (KIND, json.dumps(row, sort_keys=True), time.time()))

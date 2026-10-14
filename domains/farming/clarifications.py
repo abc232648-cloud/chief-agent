@@ -365,7 +365,7 @@ def append(store, principal, payload):
                     raise ValueError('Choose a listed answer.')
                 p['notes'] = journal.bounded_text(p['notes'], 1000, empty=True)
                 if p['defer_until'] is not None:
-                    if p['option'] != 'unknown' or not isinstance(p['defer_until'], str) or date.fromisoformat(p['defer_until']).isoformat() != p['defer_until'] or p['defer_until'] < utc_now().astimezone(setup.LAGOS).date().isoformat():
+                    if p['option'] != 'unknown' or not isinstance(p['defer_until'], str) or date.fromisoformat(p['defer_until']).isoformat() != p['defer_until'] or p['defer_until'] < utc_now().astimezone(setup.farm_zone(con)).date().isoformat():
                         raise ValueError('Deferral needs an unknown answer and a current or future date.')
                 _typed(item, p['option'], p['data'])
                 if 'quantity' in p['data'] and item['source']['kind'] == journal.KIND and p['data']['unit'] != journal.TYPES[source['payload']['kind']][0]:
@@ -404,7 +404,7 @@ def overview(store, principal):
             _, fresh = _source(con, item['source'], legacy=item['template_version'] < 3)
             item['source_changed'] = not fresh
             item['deferred'] = bool(item['answer'] and item['answer']['option'] == 'unknown' and
-                (item['deferred_until'] is None or item['deferred_until'] > utc_now().astimezone(setup.LAGOS).date().isoformat()))
+                (item['deferred_until'] is None or item['deferred_until'] > utc_now().astimezone(setup.farm_zone(con)).date().isoformat()))
             items.append(item)
         sources = []
         for kind in sorted(KINDS):

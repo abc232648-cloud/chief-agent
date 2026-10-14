@@ -28,7 +28,9 @@ class AutonomousScheduler:
         self.store = store
         self.registry = registry
         self.poll_seconds = float(poll_seconds or os.getenv("SCHEDULER_POLL_SECONDS", "30"))
-        self.timezone = ZoneInfo(os.getenv("JOB_WORKER_TIMEZONE", "Africa/Lagos"))
+        self._timezone_override = os.getenv("JOB_WORKER_TIMEZONE")
+        if self._timezone_override:
+            ZoneInfo(self._timezone_override)
         self.audit_hour = int(os.getenv("FULL_AUDIT_HOUR", "23"))
         self.audit_minute = int(os.getenv("FULL_AUDIT_MINUTE", "55"))
         self._last_audit_date: str | None = None
@@ -39,6 +41,11 @@ class AutonomousScheduler:
         else:
             self.dependency_checker = dependency_checker
             self._default_dependency_checker = False
+
+    @property
+    def timezone(self):
+        from operations.local_timezone import host_zone
+        return ZoneInfo(self._timezone_override) if self._timezone_override else host_zone()
 
     def local_now(self) -> datetime:
         return datetime.now(timezone.utc).astimezone(self.timezone)

@@ -7,8 +7,8 @@ import re
 from operations.backup import _plain
 
 
-def launch_options():
-    config = os.environ.get('CHIEF_BROWSER_RUNTIME')
+def launch_options(config=None):
+    config = config if config is not None else os.environ.get('CHIEF_BROWSER_RUNTIME')
     if not config:
         if os.environ.get('CHIEF_INSTANCE_MODE', '').lower() == 'production':
             raise PermissionError('Production browsing requires a qualified browser runtime.')

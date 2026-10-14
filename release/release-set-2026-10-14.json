@@ -1,0 +1,40 @@
+{
+  "format_version": 1,
+  "release_set": "chief-install-closure-2026-10-14",
+  "backend_contract": "chief-install-closure-v1",
+  "backend": {
+    "repository": "abc232648-cloud/chief-agent",
+    "release_branch": "release/2026-10-13-install-closure",
+    "tested_commit": "1cdac6178fe9964ac7fbb80fd9c02fb42740dbb9",
+    "tested_source_tree_sha256": "30d2f4580ebf06ec3d09251548c1f6291dce00a9275a7864f9569568f7a066c3"
+  },
+  "clients": [
+    {
+      "app": "owner",
+      "repository": "abc232648-cloud/chief-owner-pwa",
+      "release_branch": "release/2026-10-13-install-closure",
+      "tested_commit": "d0d924a507778be8497f827bf5471c81678a2934",
+      "tested_source_tree_sha256": "11e1eaeabebf5fcd846734a54783380532c51c46eb5909813a82915c3ecaff01",
+      "route": "/owner/",
+      "required": true
+    },
+    {
+      "app": "staff",
+      "repository": "abc232648-cloud/chief-staff-pwa",
+      "release_branch": "release/2026-10-13-install-closure",
+      "tested_commit": "d46b1c18b6fc6ce5f1ad0be6887235fca14dfb30",
+      "tested_source_tree_sha256": "3870105b6aeec5599f6ad9d843dd9ad6473e68e83b35523c732bb0a07d513122",
+      "route": "/staff/",
+      "required": true
+    },
+    {
+      "app": "jobs",
+      "repository": "abc232648-cloud/Job-agent-pwa",
+      "release_branch": "release/2026-10-13-install-closure",
+      "tested_commit": "3435ca0ffb4b04116a59268e48e8529fa377acac",
+      "tested_source_tree_sha256": "7337baa0d9c02d2d5f27b93cfd3db8347a0e6a53344b1eb42a3587e335b1c583",
+      "route": "/jobs/",
+      "required": false
+    }
+  ]
+}

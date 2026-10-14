@@ -83,3 +83,9 @@ Windows and Linux results, browser engine results, emulated viewport checks and
 actual Android/iPhone installation results must be reported separately. Real
 devices, installed-host TLS, external push delivery, operational restore and the
 final security assessment remain independent acceptance gates.
+
+## Reconciliation on the Phase 9 baseline
+
+Reconciled unique contracts from A10 commit `2a1b50ecceb280051d45e18897868231f6224e01` onto Phase9 `0e51408323c112615f0b2d4403fa8b9aba3d5562`. Its standalone workflow was not adopted: the existing paired-pwa-ci workflow already builds pinned clients and runs actual Chromium/Firefox/WebKit bundles. Its raw-fetch browser scenario overlaps module-exposure and paired lifecycle/logout tests. Its general missing/revoked session and CSRF cases overlap identity HTTP tests.
+
+The retained `test_a10_http_contracts.py` adds exact HTTP consumer schema/cache/privacy checks, broader role/domain interface matrices, stale discovery over GET/HEAD with forged claims, task object/replay/revision isolation over HTTP and current-role downgrade enforcement. It shares production fixtures/authority and joins the existing workflow, with no second contract engine or workflow. No production interface change is implied by these tests.

@@ -35,3 +35,32 @@ def test_linux_units_and_invalid_paths():
     with pytest.raises(ValueError):definitions('linux','/home/fixture\nInjected=yes','fixture',instance_config='/tmp/instance.json')
     with pytest.raises(ValueError,match='local account'):
         definitions('linux','/home/fixture/Chief Agent','fixture service',instance_config='/tmp/instance.json')
+
+
+def test_managed_linux_definitions_use_stable_launcher_and_same_stop_route():
+    files=definitions('linux','/home/fixture/bootstrap','fixture',instance_config='/home/fixture/private/instance.json',managed_installation='/home/fixture/managed')
+    for data in files.values():
+        assert b'deployment.managed_launch' in data and b'--installation' in data
+        assert b'WorkingDirectory=/home/fixture/bootstrap\n' in data
+        assert b'"-B" "-E" "-s"' in data and b'--stop' in data
+        assert b'--config' not in data
+
+
+def test_managed_windows_definitions_keep_least_privilege():
+    files=definitions('windows',r'C:\Chief\bootstrap','Fixture',instance_config=r'C:\Chief\private\instance.json',managed_installation=r'C:\Chief\managed')
+    for data in files.values():
+        root=ET.fromstring(data);ns={'t':'http://schemas.microsoft.com/windows/2004/02/mit/task'}
+        assert root.find('.//t:RunLevel',ns).text=='LeastPrivilege'
+        assert 'deployment.managed_launch' in root.find('.//t:Arguments',ns).text
+        assert root.find('.//t:WorkingDirectory',ns).text==r'C:\Chief\bootstrap'
+
+
+@pytest.mark.parametrize('target', ['relative', '/home/fixture/bad\nExecStart=evil', '/home/fixture/%bad', '/home/fixture/$bad'])
+def test_managed_definition_rejects_unsafe_paths(target):
+    with pytest.raises(ValueError):
+        definitions('linux','/home/fixture/bootstrap','fixture',instance_config='/home/fixture/instance.json',managed_installation=target)
+
+
+def test_managed_launcher_cannot_live_inside_switched_slots():
+    with pytest.raises(ValueError,match='Stable launcher'):
+        definitions('linux','/home/fixture/managed/releases/source','fixture',instance_config='/home/fixture/instance.json',managed_installation='/home/fixture/managed')

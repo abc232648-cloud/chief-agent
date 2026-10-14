@@ -8,11 +8,11 @@ async function mountLabour(){
   const input=(label,id,type='text')=>{const l=add('label',label,form),e=add('input',null,l);e.id=id;e.type=type;return e;};
   const person=input('Person or team','farmLabourPerson');person.required=true;person.maxLength=120;
   const task=input('Work done','farmLabourTask');task.required=true;task.maxLength=400;
-  const date=input('Work date (Lagos)','farmLabourDate','date');date.required=true;
+  const date=input('Work date (Farm reporting timezone)','farmLabourDate','date');date.required=true;
   const l=add('label','Time recorded as',form),basis=add('select',null,l);basis.id='farmLabourBasis';
   for(const [value,text] of [['DAYS','Stated days worked'],['TIMED','Actual start and end times']]){const o=add('option',text,basis);o.value=value;}
   const days=input('Days worked (day-based entry)','farmLabourDays','number');days.min='0.001';days.max='365';days.step='0.001';
-  const start=input('Started at (Lagos, timed entry)','farmLabourStart','datetime-local'),end=input('Finished at (Lagos, timed entry)','farmLabourEnd','datetime-local');
+  const start=input('Started at (this device’s local time)','farmLabourStart','datetime-local'),end=input('Finished at (this device’s local time)','farmLabourEnd','datetime-local');
   const currency=input('Currency','farmLabourCurrency');currency.value='NGN';currency.required=true;
   const amount=input('Agreed total pay (leave blank if unknown)','farmLabourPay','number');amount.min='0';amount.step='0.01';
   const reason=input('Source or explanation','farmLabourReason');reason.required=true;reason.maxLength=400;
@@ -34,7 +34,7 @@ async function mountLabour(){
         edit.onclick=()=>{
           if(pending){status.textContent='Retry the pending save unchanged or reload before correcting.';return;}
           corrects=p.event_id;person.value=p.person;task.value=p.task;date.value=p.work_date;basis.value=p.time_basis;days.value=p.days||'';
-          const local=v=>v?new Date(new Date(v).getTime()+3600000).toISOString().slice(0,16):'';
+          const local=v=>v?chiefLocalInput(v):'';
           start.value=local(p.started_at);end.value=local(p.ended_at);currency.value=p.currency;amount.value=p.agreed_total_minor===null?'':(p.agreed_total_minor/100).toFixed(2);reason.value='';
           save.textContent='Save labour correction';cancel.hidden=false;reason.focus();status.textContent='Correcting an existing record. Explain the change; the original will remain in history.';
         };
@@ -75,7 +75,7 @@ async function mountLabour(){
   }
   newer.onclick=()=>{offset=Math.max(0,offset-100);refresh().catch(e=>status.textContent=e.message);};older.onclick=()=>{offset+=100;refresh().catch(e=>status.textContent=e.message);};
   form.onsubmit=async e=>{e.preventDefault();save.disabled=true;try{
-    const fields={operation:'WORK',person:person.value,task:task.value,time_basis:basis.value,work_date:date.value,started_at:basis.value==='TIMED'?new Date(start.value+'+01:00').toISOString():null,ended_at:basis.value==='TIMED'?new Date(end.value+'+01:00').toISOString():null,days:basis.value==='DAYS'?days.value:null,currency:currency.value,agreed_total_minor:amount.value===''?null:farmMinorAmount(amount.value),corrects,reason:reason.value};const signature=JSON.stringify(fields);
+    const fields={operation:'WORK',person:person.value,task:task.value,time_basis:basis.value,work_date:date.value,started_at:basis.value==='TIMED'?chiefLocalISO(start.value):null,ended_at:basis.value==='TIMED'?chiefLocalISO(end.value):null,days:basis.value==='DAYS'?days.value:null,currency:currency.value,agreed_total_minor:amount.value===''?null:farmMinorAmount(amount.value),corrects,reason:reason.value};const signature=JSON.stringify(fields);
     if(pending&&pending.signature!==signature)throw Error('Retry unchanged or reload: previous save outcome unknown.');
     if(!pending)pending={signature,payload:{...fields,event_id:crypto.randomUUID()}};
     await farmPost('/api/farm/labour',pending.payload);pending=null;const corrected=!!corrects;corrects=null;save.textContent='Save labour record';cancel.hidden=true;await refresh();status.textContent=corrected?'Correction recorded. Original retained; no expense or payment created.':'Labour recorded. No expense or payment created.';

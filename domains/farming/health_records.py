@@ -47,7 +47,7 @@ def append(store,principal,payload):
             return {'status':'ALREADY_RECORDED'}
         entity=setup.entities(con).get(p['entity_id'])
         if not entity or entity['entity_type']!='FLOCK':raise ValueError('Choose a registered flock.')
-        if entity['opened_on'] and observed.astimezone(setup.LAGOS).date().isoformat()<entity['opened_on']:raise ValueError('Health record predates the flock opening date.')
+        if entity['opened_on'] and observed.astimezone(setup.farm_zone(con)).date().isoformat()<entity['opened_on']:raise ValueError('Health record predates the flock opening date.')
         if p['corrects']:
             replaced={r['payload']['corrects'] for r in history}
             original=next((r['payload'] for r in history if r['payload']['event_id']==p['corrects'] and p['corrects'] not in replaced),None)
@@ -67,6 +67,6 @@ def overview(store,principal,offset=0):
         for record in history:
             p=record['payload']
             if manager or record['actor_id']==principal.id or p['corrects'] in related:
-                related.add(p['event_id']);visible.append({**record,'is_current':p['event_id'] not in replaced,'expired_at_administration':bool(p['expires_on'] and p['expires_on']<aware_utc(p['observed_at']).astimezone(setup.LAGOS).date().isoformat())})
+                related.add(p['event_id']);visible.append({**record,'is_current':p['event_id'] not in replaced,'expired_at_administration':bool(p['expires_on'] and p['expires_on']<aware_utc(p['observed_at']).astimezone(setup.farm_zone(con)).date().isoformat())})
         visible.reverse()
         return {'items':visible[offset:offset+100],'total':len(visible),'next_offset':offset+100 if offset+100<len(visible) else None,'can_correct':manager,'notice':'Reported history only. Recording a treatment does not recommend it, authorize it, or establish a withdrawal period. Unknown details remain unknown.'}

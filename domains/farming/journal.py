@@ -129,7 +129,7 @@ def append(store, principal, payload, *, connection=None):
             expected = 'FEED_STORE' if payload['kind'].startswith('feed_') else 'FLOCK'
             if not entity or entity['entity_type'] != expected:
                 raise ValueError('Choose an existing entity of the correct stock type.')
-            if entity['opened_on'] is not None and aware_utc(payload['observed_at']).astimezone(setup.LAGOS).date().isoformat() < entity['opened_on']:
+            if entity['opened_on'] is not None and aware_utc(payload['observed_at']).astimezone(setup.farm_zone(con)).date().isoformat() < entity['opened_on']:
                 raise ValueError('Observation predates the entity opening date.')
             if not payload['corrects'] and payload['location'] != entity['name']:
                 raise ValueError('Location must match the referenced entity name.')

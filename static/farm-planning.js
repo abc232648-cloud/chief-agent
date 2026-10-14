@@ -18,8 +18,8 @@ async function mountPlanning() {
     return input;
   }
   field(form, 'Plan name', 'name', 'text', true).maxLength = 120;
-  field(form, 'Start date (Lagos)', 'start', 'date', true);
-  field(form, 'End date, inclusive (Lagos)', 'end', 'date', true);
+  field(form, 'Start date (Farm reporting timezone)', 'start', 'date', true);
+  field(form, 'End date, inclusive (Farm reporting timezone)', 'end', 'date', true);
   const currencyLabel = add('label', 'Currency', form), currency = add('select', null, currencyLabel);
   currency.id = 'farmPlan_currency'; controls.currency = currency;
   for (const value of ['NGN', 'USD', 'GBP', 'EUR']) add('option', value, currency).value = value;

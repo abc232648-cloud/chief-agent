@@ -18,7 +18,7 @@ def context(store, principal):
         can_finance = role == 'OWNER' or (role == 'GENERAL_MANAGER' and effective(con, principal.id)['access'])
     work = staff.overview(store, principal)
     records = journal.overview(store, principal, limit=20)
-    result = {'farm_role': role, 'timezone': 'Africa/Lagos',
+    result = {'farm_role': role, 'timezone': setup.farm_zone(store).key,
               'daily_report_schedule': work['daily_report_schedule'],
               'work_item_count': len(work['items']), 'unresolved_work_count': work['open_count'],
               'context_is_excerpt': len(work['items'])>10 or len(records['balances'])>10 or records['record_count']>20,
@@ -73,14 +73,14 @@ def _ask(store, principal, payload):
     lowered = question.casefold()
     answer = None
     if 'feed' in lowered and any(w in lowered for w in ('record', 'report', 'enter')):
-        answer = 'Choose Feed received or Feed used, select the registered feed store, enter kilograms, and state whether you measured or estimated the quantity. Use the actual observation time in Lagos. Recording a delivery does not approve a purchase.'
+        answer = 'Choose Feed received or Feed used, select the registered feed store, enter kilograms, and state whether you measured or estimated the quantity. Use the actual observation time shown by your device. Recording a delivery does not approve a purchase.'
     elif 'opening' in lowered or 'unknown balance' in lowered:
         answer = 'A missing opening balance means the current balance is unknown. Do not assume zero or use the provisional bird estimate. Ask a supervisor to record an explicit measured or estimated opening count.'
     elif 'task' in lowered or 'pending work' in lowered:
         count = data['unresolved_work_count']
         answer = f'Your authorized workspace contains {count} unresolved work items. A completion report still needs supervisor resolution. See Staff work for the assigned items and deadlines.'
     elif 'time' in lowered or 'late' in lowered:
-        answer = ('Farm times use Africa/Lagos. See Daily brief and alerts for the configured reporting deadlines.' if data['daily_report_schedule']=='CONFIGURED' else 'Farm times use Africa/Lagos. Daily reporting deadlines are not configured. Record observations when they happen; Farm Agent will not invent a reporting deadline.')
+        answer = ('Farm reporting timezone: '+data['timezone']+'. '+('See Daily brief and alerts for configured deadlines.' if data['daily_report_schedule']=='CONFIGURED' else 'Daily reporting deadlines are not configured. Record observations when they happen; Farm Agent will not invent a reporting deadline.'))
     if answer is None:
         answer = 'Live AI is not connected yet, so I cannot generate an answer to this question. You can currently ask for reporting instructions, opening-balance explanations or your pending work. Ask your supervisor about other work decisions.'
     IdentityService(store).event(principal, 'FARM_ASSISTANT_GUIDANCE', 'farming', None, 'GUIDANCE_ONLY')

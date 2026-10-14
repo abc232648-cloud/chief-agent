@@ -13,8 +13,8 @@ def _linux_account(value):
     return value
 
 
-def definitions(platform,project,user,*,instance_config,python=None):
-    if any(c in project+user+instance_config+(python or '') for c in '\r\n\x00'):raise ValueError('Paths/accounts must be single-line.')
+def definitions(platform,project,user,*,instance_config,python=None,managed_installation=None):
+    if any(c in project+user+instance_config+(python or '')+(managed_installation or '') for c in '\r\n\x00'):raise ValueError('Paths/accounts must be single-line.')
     if not user:raise ValueError('Specify the operating-system account that owns the project.')
     windows=platform=='windows'
     root=PureWindowsPath(project) if windows else PurePosixPath(project)
@@ -23,6 +23,10 @@ def definitions(platform,project,user,*,instance_config,python=None):
     path_type=PureWindowsPath if windows else PurePosixPath
     config=path_type(instance_config)
     if not config.is_absolute():raise ValueError('Absolute instance config required.')
+    if managed_installation is not None:
+        managed=path_type(managed_installation)
+        if not managed.is_absolute():raise ValueError('Absolute managed installation required.')
+        if root==managed or root.is_relative_to(managed):raise ValueError('Stable launcher source must stay outside managed releases.')
     if python is not None:
         interpreter=path_type(python)
         if not interpreter.is_absolute():raise ValueError('Absolute interpreter required.')
@@ -30,6 +34,8 @@ def definitions(platform,project,user,*,instance_config,python=None):
     result={}
     for component in ('dashboard','worker','scheduler'):
         args=['-u','-m','deployment.launch','--component',component,'--config',str(config)]
+        if managed_installation is not None:
+            args=['-B','-E','-s','-u','-m','deployment.managed_launch','--component',component,'--installation',str(managed)]
         name='chief-agent-'+component
         if platform=='windows':
             from subprocess import list2cmdline
@@ -54,7 +60,7 @@ def definitions(platform,project,user,*,instance_config,python=None):
             value={'Label':'local.'+name,'ProgramArguments':[str(interpreter),*args],'WorkingDirectory':str(root),'UserName':user,'RunAtLoad':True,'KeepAlive':{'SuccessfulExit':False},'ThrottleInterval':10,'Umask':0o077,'StandardOutPath':str(root/'logs'/(component+'.out.log')),'StandardErrorPath':str(root/'logs'/(component+'.err.log'))}
             result['local.'+name+'.plist']=plistlib.dumps(value)
         elif platform=='linux':
-            if any(c in project+str(config)+str(interpreter) for c in '"%\\$'):raise ValueError('Unsupported systemd path character.')
+            if any(c in project+str(config)+str(interpreter)+(managed_installation or '') for c in '"%\\$'):raise ValueError('Unsupported systemd path character.')
             command=' '.join('"'+a+'"' for a in [str(interpreter),*args])
             result[name+'.service']=(f'[Unit]\nDescription=Chief Agent {component}\nConditionUser={user}\nAfter=network.target\nStartLimitIntervalSec=120\nStartLimitBurst=3\n\n[Service]\nType=simple\nWorkingDirectory={root}\nExecStart={command}\nExecStop={command} --stop\nTimeoutStopSec=30\nKillMode=control-group\nNoNewPrivileges=yes\nRestart=on-failure\nRestartSec=10\nUMask=0077\n\n[Install]\nWantedBy=default.target\n').encode()
         else:raise ValueError('Supported targets: linux, windows, macos.')
@@ -66,7 +72,8 @@ def main():
     parser.add_argument('--platform',choices=['linux','windows','macos'],required=True)
     parser.add_argument('--project',required=True);parser.add_argument('--user',required=True);parser.add_argument('--output',required=True)
     parser.add_argument('--instance-config',required=True);parser.add_argument('--python')
-    args=parser.parse_args();files=definitions(args.platform,args.project,args.user,instance_config=args.instance_config,python=args.python)
+    parser.add_argument('--managed-installation',help='Optional private source-slot root; project must be a stable external launcher copy.')
+    args=parser.parse_args();files=definitions(args.platform,args.project,args.user,instance_config=args.instance_config,python=args.python,managed_installation=args.managed_installation)
     out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
     for name,data in files.items():
         with (out/name).open('xb') as stream:stream.write(data)

@@ -1,4 +1,5 @@
-function farmDateText(value) {return value ? new Intl.DateTimeFormat('en-GB',{dateStyle:'medium',timeStyle:'short',timeZone:'Africa/Lagos'}).format(new Date(value))+' (Lagos)' : 'Not recorded';}
+function farmDateText(value) {return value ? new Date(value).toLocaleString()+' ('+Intl.DateTimeFormat().resolvedOptions().timeZone+')' : 'Not recorded';}
+let farmReportingTimezone = null;
 'use strict';
 const farmTypes = {
   birds_opening: 'Opening bird count', birds_arrived: 'Birds arrived', birds_departed: 'Birds departed',
@@ -33,7 +34,7 @@ function resetFarmForm() {
   farmCorrectionTime = null; farmCorrectionEntity = null;
   document.getElementById('farmEntity').disabled = false;
   const now = new Date();
-  document.getElementById('farmObserved').value = new Date(now.getTime() + 3600000).toISOString().slice(0,16);
+  document.getElementById('farmObserved').value = chiefLocalInput(now);
   farmUnit();
 }
 async function loadFarmRecords() {
@@ -93,7 +94,7 @@ async function loadFarmRecords() {
           farmPending = null; resetFarmForm();
           for (const [id, value] of [['farmKind',p.kind],['farmLocation',p.location],['farmQuantity',p.quantity],['farmBasis',p.basis],['farmNotes',p.notes],['farmCorrects',p.event_id]]) document.getElementById(id).value = value;
           const at = new Date(p.observed_at);
-          document.getElementById('farmObserved').value = new Date(at.getTime()+3600000).toISOString().slice(0,16);
+          document.getElementById('farmObserved').value = chiefLocalInput(at);
           document.getElementById('farmHistorical').checked=!!p.historical_before_opening;
           document.getElementById('farmHistorical').disabled=true;
           farmCorrectionTime = p.observed_at; farmCorrectionEntity = p.entity_id || null;
@@ -126,7 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
     button.disabled = true;
     try {
       const value = id => document.getElementById(id).value;
-      const payload = {kind:value('farmKind'),location:value('farmLocation'),quantity:value('farmQuantity'),basis:value('farmBasis'),observed_at:farmCorrectionTime || new Date(value('farmObserved')+'+01:00').toISOString(),notes:value('farmNotes'),corrects:value('farmCorrects') || null,reason:value('farmReason')};
+      const payload = {kind:value('farmKind'),location:value('farmLocation'),quantity:value('farmQuantity'),basis:value('farmBasis'),observed_at:farmCorrectionTime || chiefLocalISO(value('farmObserved')),notes:value('farmNotes'),corrects:value('farmCorrects') || null,reason:value('farmReason')};
       const conversion=farmConvertedQuantity();
       if(conversion){payload.quantity=conversion.base;payload.conversion={unit:value('farmEntryUnit'),quantity:value('farmQuantity'),policy_revision:farmUnitSettings.revision};}
       if(document.getElementById('farmHistorical').checked)payload.historical_before_opening=true;
@@ -161,7 +162,11 @@ function farmOptions(select, items, empty) {
   if ([...select.options].some(o=>o.value===previous)) select.value=previous;
 }
 async function renderFarmSetup(data) {
+  farmReportingTimezone=data.timezone;
   document.getElementById('farmSetupCard').hidden=!data.can_setup;
+  let timezoneNote=document.getElementById('farmTimezoneNotice');
+  if(!timezoneNote){timezoneNote=document.createElement('p');timezoneNote.id='farmTimezoneNotice';document.getElementById('farmSetupCard').prepend(timezoneNote);}
+  timezoneNote.textContent='Farm reporting timezone: '+data.timezone+'. Dates and deadlines keep this timezone when you travel. Entry times use this device’s local timezone.';
   document.getElementById('farmRoleCard').hidden=!data.can_assign;
   farmOptions(document.getElementById('farmEntity'),farmCatalog.filter(e=>e.entity_type!=='HOUSE').map(e=>[e.entity_id,e.name+' ('+e.entity_type.toLowerCase()+', '+e.entity_id.slice(0,8)+')']),'Legacy text location');
   farmOptions(document.getElementById('farmEntityHouse'),farmCatalog.filter(e=>e.entity_type==='HOUSE').map(e=>[e.entity_id,e.name]),'Choose house');
@@ -241,7 +246,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     event.preventDefault();const button=event.target.querySelector('button[type=submit]');button.disabled=true;
     try{
       const v=id=>document.getElementById(id).value;
-      const fields={kind:v('farmMoneyKind'),amount_minor:farmMinorAmount(v('farmMoneyAmount')),currency:v('farmCurrency'),reference:v('farmMoneyReference')||null,counterparty:v('farmCounterparty'),receipt_ref:v('farmReceipt'),observed_at:new Date(v('farmMoneyObserved')+'+01:00').toISOString(),reason:v('farmMoneyReason')};
+      const fields={kind:v('farmMoneyKind'),amount_minor:farmMinorAmount(v('farmMoneyAmount')),currency:v('farmCurrency'),reference:v('farmMoneyReference')||null,counterparty:v('farmCounterparty'),receipt_ref:v('farmReceipt'),observed_at:chiefLocalISO(v('farmMoneyObserved')),reason:v('farmMoneyReason')};
       const details=financeDetails();if(details)fields.details=details;
       const signature=JSON.stringify(fields);
       if(pending&&pending.signature!==signature)throw new Error('Retry the previous values first; their submission outcome is unknown.');
@@ -287,7 +292,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     event.preventDefault();const button=event.target.querySelector('button[type=submit]');button.disabled=true;
     try{
       const v=id=>document.getElementById(id).value,kind=v('farmStaffKind');
-      const fields={kind,reference:null,expected_event:null,assignee:kind==='TASK'?v('farmAssignee'):null,due_at:kind==='TASK'&&v('farmDue')?new Date(v('farmDue')+'+01:00').toISOString():null,text:v('farmStaffText'),severity:v('farmSeverity')};
+      const fields={kind,reference:null,expected_event:null,assignee:kind==='TASK'?v('farmAssignee'):null,due_at:kind==='TASK'&&v('farmDue')?chiefLocalISO(v('farmDue')):null,text:v('farmStaffText'),severity:v('farmSeverity')};
       const signature=JSON.stringify(fields);
       if(pending&&pending.signature!==signature)throw new Error('Retry the same report first; its outcome is unknown.');
       if(!pending)pending={signature,payload:{...fields,event_id:crypto.randomUUID()}};
