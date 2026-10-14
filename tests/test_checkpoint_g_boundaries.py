@@ -47,18 +47,23 @@ def test_no_runtime_vendor_package_or_install_command_is_imported_by_chief_code(
             assert not imports & forbidden, (path,imports & forbidden)
 
 
-def test_update_discovery_has_metadata_transport_but_no_install_or_activation_authority():
+def test_checkpoint_g_update_planning_has_metadata_transport_but_no_install_or_activation_authority():
     update_files=tuple((ROOT/'update_center').rglob('*.py'))
     compatibility_files=tuple((ROOT/'compatibility').rglob('*.py'))
-    # Later manual execution modules are separate from G's pure planning surface.
-    manual={'managed.py','acceptance.py','processes.py','approval.py','coordinator.py'}
-    planning_files=tuple(path for path in update_files if path.name not in manual)
+    # Installation/update closure added explicit execution-layer modules after G.
+    # Keep those out of G's pure planning/discovery surface rather than weakening
+    # the planning boundary now that approved acquisition/runtime installation exists.
+    execution={
+        'managed.py','acceptance.py','processes.py','approval.py',
+        'acquisition.py','runtime_install.py',
+    }
+    planning_files=tuple(path for path in update_files if path.name not in execution)
     text='\n'.join(path.read_text(encoding='utf-8') for path in compatibility_files+planning_files)
     forbidden=('subprocess','requests.','httpx','pip install','npm install','openclaw update','hermes update','shutil.copytree(','os.system(','Popen(','check_call(','check_output(')
     assert all(token not in text for token in forbidden)
 
     network_importers=[]
-    for path in update_files:
+    for path in planning_files:
         tree=ast.parse(path.read_text(encoding='utf-8'))
         for node in ast.walk(tree):
             if isinstance(node,ast.ImportFrom) and node.module=='urllib.request':
@@ -72,17 +77,22 @@ def test_update_discovery_has_metadata_transport_but_no_install_or_activation_au
     assert 'os.replace(temp_name, path)' in discovery
 
 
-def test_manual_update_mechanics_do_not_grant_agents_or_install_dependencies():
+def test_manual_update_authority_is_not_granted_to_agents_or_arbitrary_installers():
     catalogs=default_catalogs()
     assert 'chief.update_source_selection' in catalogs.capabilities.capabilities
     assert catalogs.capabilities.capabilities['chief.update_planning'].side_effects==()
     for agent in catalogs.agents.agents.values():
         assert 'chief.update_source_selection' not in agent.capabilities
+
+    dependency_installers=[]
     for path in (ROOT/'update_center').glob('*.py'):
         text=path.read_text(encoding='utf-8')
-        assert all(command not in text for command in ('pip install','npm install','openclaw update','hermes update','os.system('))
+        assert all(command not in text for command in ('npm install','openclaw update','hermes update','os.system('))
+        if "'pip', 'install'" in text or '"pip", "install"' in text:
+            dependency_installers.append(path.name)
         if 'Popen(' in text:
             assert path.name=='processes.py'
+    assert dependency_installers==['runtime_install.py']
 
 
 def test_docker_payload_contains_g_foundation_packages():
