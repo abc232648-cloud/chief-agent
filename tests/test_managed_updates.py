@@ -87,12 +87,20 @@ def test_interrupted_switch_blocks_every_managed_startup(managed, monkeypatch):
     assert installation.selection(for_stop=True) == target
 
 
-def test_dependency_change_and_source_tampering_blocked(managed):
+def test_dependency_change_stages_but_requires_qualified_runtime(managed):
     installation, previous, candidate = managed
-    data, envelope, keys, target = candidate({'requirements.txt': b'unreviewed==1\n'})
-    with pytest.raises(ValueError, match='Dependency changes'):
-        installation.stage(data, envelope, keys, minimum_sequence=1, now=NOW)
+    data, envelope, keys, target = candidate({'requirements.txt': b'synthetic-new-dependency==1\n'})
+    installation.stage(data, envelope, keys, minimum_sequence=1, now=NOW)
     assert installation.selection() == previous
+    with pytest.raises(PermissionError, match='prepared isolated runtime'):
+        installation.runtime(target)
+    with pytest.raises(PermissionError, match='prepared isolated runtime'):
+        installation._switch(target, expected_current=previous)
+    assert installation.selection() == previous
+
+
+def test_source_tampering_remains_blocked(managed):
+    installation, previous, _ = managed
     source, _ = installation.source(previous)
     (source / 'injected.py').write_text('pass', encoding='utf-8')
     with pytest.raises(ValueError, match='Unlisted'):
@@ -171,6 +179,21 @@ def test_recovery_probe_failure_preserves_startup_block(managed, monkeypatch):
         installation.selection()
 
 
+def test_completed_activation_can_roll_back_exact_source_without_data_restore(managed):
+    installation, previous, candidate = managed
+    data, envelope, keys, target = candidate()
+    installation.stage(data, envelope, keys, minimum_sequence=1, now=NOW)
+    installation._switch(target, expected_current=previous)
+    config = Path(installation.config['instance_config'])
+    before = config.read_bytes()
+    result = installation._rollback_completed(expected_previous=previous, expected_candidate=target)
+    assert result['status'] == 'PREVIOUS_SOURCE_SELECTED_AFTER_START_FAILURE'
+    assert result['data_restored'] is False and installation.selection() == previous
+    assert config.read_bytes() == before
+    with pytest.raises(ValueError):
+        installation._rollback_completed(expected_previous=previous, expected_candidate=target)
+
+
 @pytest.mark.parametrize('component', ['dashboard', 'worker', 'scheduler', 'scheduler-cycle', 'approved-action'])
 def test_stale_managed_startup_releases_lock_without_claiming_ownership(managed, monkeypatch, tmp_path, component):
     from worker.ownership import ComponentOwnership
@@ -179,7 +202,6 @@ def test_stale_managed_startup_releases_lock_without_claiming_ownership(managed,
     monkeypatch.setenv('CHIEF_MANAGED_SOURCE', previous)
     database = tmp_path / 'synthetic.sqlite3'
     owner = ComponentOwnership(database, component)
-    # This process runs outside the selected slot; selection alone is insufficient.
     with pytest.raises(PermissionError, match='selection changed'):
         with owner:
             pytest.fail('Stale process acquired managed ownership')
