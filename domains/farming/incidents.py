@@ -9,7 +9,7 @@ import time
 
 from identity.service import IdentityService
 from operations.time_integrity import aware_utc, utc_now, utc_text
-from . import setup
+from . import setup, scope
 from .journal import bounded_text, identifier
 
 KIND = 'farm_incident_v1'
@@ -25,7 +25,7 @@ def rows(con):
     ).fetchall()
     if len(result) > LIMIT:
         raise ValueError('Incident history capacity requires indexed upgrade; no truncated incident state returned.')
-    return [json.loads(row[0]) for row in result]
+    return scope.filter_records(con, [json.loads(row[0]) for row in result])
 
 
 def _snapshots(history):
@@ -98,7 +98,14 @@ def _validate_create(p):
     p['observed_at'] = utc_text(observed)
 
 
-def overview(store, principal, offset=0):
+def overview(store, principal, offset=0, *, farm_id=None):
+    if scope.current() is not None:
+        return _overview(store, principal, offset)
+    with scope.bind(store, principal, farm_id):
+        return _overview(store, principal, offset)
+
+
+def _overview(store, principal, offset=0):
     if type(offset) is not int or not 0 <= offset <= 1000000:
         raise ValueError('Invalid incident page.')
     with store._connect() as con:
@@ -115,7 +122,14 @@ def overview(store, principal, offset=0):
         }
 
 
-def append(store, principal, payload):
+def append(store, principal, payload, *, farm_id=None):
+    if scope.current() is not None:
+        return _append(store, principal, payload)
+    with scope.bind(store, principal, farm_id):
+        return _append(store, principal, payload)
+
+
+def _append(store, principal, payload):
     if not isinstance(payload, dict):
         raise ValueError('Supply an incident event.')
     p = dict(payload); operation = p.get('operation')
@@ -131,7 +145,7 @@ def append(store, principal, payload):
         raise ValueError('Unknown incident operation.')
 
     from control.notifications import initialize as initialize_notifications
-    initialize_notifications(store)  # Existing accepted schema; operational stores never run DDL here.
+    initialize_notifications(store)
     with store._connect() as con:
         con.execute('BEGIN IMMEDIATE')
         principal = setup.authorize(store, con, principal, 'task')
@@ -158,8 +172,8 @@ def append(store, principal, payload):
                 raise PermissionError('Current Farm role or incident scope does not permit escalation.')
 
         received_at = utc_text(utc_now())
-        record = {'version': 1, 'payload': p, 'actor_id': principal.id,
-                  'session_id': principal.session_id, 'received_at': received_at}
+        record = scope.stamp({'version': 1, 'payload': p, 'actor_id': principal.id,
+                              'session_id': principal.session_id, 'received_at': received_at})
         con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",
                     (KIND, json.dumps(record, sort_keys=True), time.time()))
         IdentityService(store)._event(con, principal, 'FARM_INCIDENT_' + operation, 'farming', p['event_id'], 'RECORDED')
