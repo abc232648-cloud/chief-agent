@@ -1,5 +1,6 @@
 import json
 
+from application.exposure import for_store
 from domains.farming import tasks
 from tests.checkpoint_f_fixture import e_base, f_fixture
 from tests.test_farm_tenant_lineage import _staff, _task, _two_company_fixture
@@ -7,6 +8,10 @@ from tests.test_farm_tenant_lineage import _staff, _task, _two_company_fixture
 
 def test_task_notification_staff_audience_does_not_cross_company_boundary(f_fixture):
     store, owner, yellow_org, green_org, yellow_farm, green_farm, yellow_manager, green_manager = _two_company_fixture(f_fixture)
+    # Use Chief's real module-composition/exposure object. Notification publication
+    # deliberately fails closed without it, so the isolation test must exercise the
+    # same composed interfaces used by the authenticated application runtime.
+    for_store(store)
     yellow_worker_id, _ = _staff(
         store, owner, f_fixture.identity, "yellow-notify-worker", yellow_org, yellow_farm,
         chief_role="Worker", farm_role="WORKER",
