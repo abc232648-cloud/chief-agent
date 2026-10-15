@@ -1,9 +1,12 @@
 """Farm-owned aggregate journal metadata; never quantities or private text."""
 from .journal_queries import ACTIVE
+from . import scope
 from operations.time_integrity import utc_now, utc_text
 
 
 def snapshot(con):
+    if scope.tenant_mode_connection(con):
+        raise PermissionError("External aggregate reporting needs a Farm-scoped integration contract.")
     # Count all revisions separately from effective entries. Corrections do not
     # silently erase history or become additional stock/production quantities.
     row = con.execute("SELECT count(*), coalesce(sum("+ACTIVE+"),0), "

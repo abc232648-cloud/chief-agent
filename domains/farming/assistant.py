@@ -3,6 +3,7 @@
 Built-in explanations are labelled as guidance, never represented as model output.
 No question or answer creates an action, approval, payment or operational fact.
 """
+from . import scope
 from . import setup, staff, journal, bookkeeping
 from .journal import bounded_text
 from identity.service import IdentityService
@@ -10,6 +11,7 @@ import time
 import uuid
 
 
+@scope.entry
 def context(store, principal):
     with store._connect() as con:
         principal = setup.authorize(store, con, principal, 'read')
@@ -33,6 +35,7 @@ def context(store, principal):
     return principal, result
 
 
+@scope.entry
 def overview(store, principal):
     principal, data = context(store, principal)
     from .live_ai import status
@@ -41,6 +44,7 @@ def overview(store, principal):
             'action_authority': 'NONE'}
 
 
+@scope.entry
 def ask(store, principal, payload):
     from operations.correlation import references
     from operations.diagnostics import agent_trace

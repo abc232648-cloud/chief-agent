@@ -87,11 +87,10 @@ def validate(payload):
 
 
 def read_rows(con):
-    rows = con.execute('SELECT data_json FROM domain_records WHERE domain=? AND kind=? ORDER BY id LIMIT ?',
-                       ('farming', KIND, LIMIT + 1)).fetchall()
+    rows = scope.records(con, KIND, limit=LIMIT + 1)
     if len(rows) > LIMIT:
         raise ValueError('Pilot record capacity exceeded; export and upgrade the journal before continuing.')
-    return scope.filter_records(con, [json.loads(row[0]) for row in rows])
+    return rows
 
 
 def effective(rows):
@@ -111,8 +110,6 @@ def _append(store, principal, payload, *, connection=None):
     if payload['kind'] in ADJUSTMENTS:
         raise PermissionError('Stock adjustments require the physical-count approval workflow.')
     selected = scope.current(required=True)
-    if not selected.legacy and payload.get('conversion') is not None:
-        raise PermissionError('Unit conversions are unavailable until conversion policy is Farm-scoped.')
     identity = IdentityService(store)
     with (store._connect() if connection is None else nullcontext(connection)) as con:
         if connection is None:

@@ -113,7 +113,7 @@ class Handler:
     def end_headers(self):pass
 
 
-def test_finance_api_propagates_selection_and_keeps_other_routes_blocked(tenants):
+def test_finance_api_propagates_selection_and_missing_objects_fail_closed(tenants):
     t=tenants
     def dispatch(path,method='GET',body=None,farm=None,principal=None):
         h=Handler(path,farm or t.yf)
@@ -127,5 +127,5 @@ def test_finance_api_propagates_selection_and_keeps_other_routes_blocked(tenants
     assert dispatch('/api/farm/finance',farm=t.gf).payload['record_count']==0
     assert dispatch('/api/farm/receipts/api-receipt','HEAD').wfile.getvalue()==b''
     assert dispatch('/api/farm/receipts/api-receipt').wfile.getvalue()==png()
-    assert dispatch('/api/farm/planning').status==503
-    assert dispatch('/api/farm/photos/private-photo').status==503
+    assert dispatch('/api/farm/planning').status==200
+    with pytest.raises(PermissionError):dispatch('/api/farm/photos/private-photo')

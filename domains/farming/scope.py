@@ -10,6 +10,8 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import wraps
+import json
 
 from domains import ownership, tenancy
 
@@ -52,6 +54,11 @@ def current(*, required=False) -> FarmScope | None:
 
 @contextmanager
 def bind(store, principal, farm_id=None):
+    parent = current()
+    if parent is not None and not parent.legacy:
+        if farm_id is not None and farm_id != parent.farm_id:
+            raise PermissionError("A nested Farm operation cannot change its scope.")
+        farm_id = parent.farm_id
     if not tenant_mode(store):
         selected = FarmScope(legacy=True)
     else:
@@ -67,6 +74,41 @@ def bind(store, principal, farm_id=None):
         yield selected
     finally:
         _CURRENT.reset(token)
+
+
+def entry(function):
+    """Resolve caller authority for a public Farm operation, including nested calls."""
+    @wraps(function)
+    def wrapped(store, principal, *args, farm_id=None, **kwargs):
+        with bind(store, principal, farm_id):
+            return function(store, principal, *args, **kwargs)
+    return wrapped
+
+
+def predicate(con, column="data_json"):
+    """SQL scope predicate for internal constant column names, before LIMIT/count."""
+    if column not in {"data_json", "d.data_json", "c.data_json"}:
+        raise ValueError("Unsupported Farm record column.")
+    selected = require_for_connection(con)
+    if selected.legacy:
+        return f"json_extract({column},'$.scope') IS NULL", ()
+    return (f"json_extract({column},'$.scope.organization_id')=? AND "
+            f"json_extract({column},'$.scope.farm_id')=?",
+            (selected.organization_id, selected.farm_id))
+
+
+def records(con, kind, *, limit=None, metadata_only=False):
+    """Read one Farm's records; other Farms never consume its limit."""
+    where, params = predicate(con)
+    projection = "json_remove(data_json,'$.image_base64')" if metadata_only else "data_json"
+    sql = f"SELECT {projection} FROM domain_records WHERE domain='farming' AND kind=? AND {where} ORDER BY id"
+    args = (kind, *params)
+    if limit is not None:
+        if type(limit) is not int or limit < 1:
+            raise ValueError("Invalid record limit.")
+        sql += ' LIMIT ?'
+        args += (limit,)
+    return [json.loads(row[0]) for row in con.execute(sql, args)]
 
 
 def require_for_connection(con) -> FarmScope:
@@ -110,6 +152,27 @@ def role_for_connection(con, principal):
     if not tenant_mode_connection(con):
         return None
     selected = require_for_connection(con)
-    if selected.tenant_role in {"OWNER", "ADMINISTRATOR"}:
+    # Recheck assignment inside the caller's transaction: a cached request scope
+    # must not retain a revoked role during an AI request or multi-step operation.
+    if principal.role in {"Owner", "Administrator"} and '*' in principal.domains:
         return "OWNER"
-    return selected.tenant_role
+    assigned = [row for row in tenancy._replay(con).values()
+                if row['active'] and row['human_id'] == principal.id
+                and row['farm_id'] == selected.farm_id
+                and row['organization_id'] == selected.organization_id]
+    if len(assigned) != 1:
+        raise PermissionError("Farm access was revoked or needs review.")
+    return assigned[0]['role']
+
+
+def member(con, row):
+    """Filter identity directories without exposing unrelated Farm accounts."""
+    if not tenant_mode_connection(con):
+        return True
+    selected = require_for_connection(con)
+    if row['role'] in {'Owner', 'Administrator'} and '*' in json.loads(row['domains']):
+        return True
+    return any(item['active'] and item['human_id'] == row['id']
+               and item['farm_id'] == selected.farm_id
+               and item['organization_id'] == selected.organization_id
+               for item in tenancy._replay(con).values())

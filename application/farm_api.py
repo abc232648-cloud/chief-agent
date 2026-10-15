@@ -5,22 +5,18 @@ from urllib.parse import urlsplit, parse_qs
 
 
 _PATHS = {'/api/farm/expense-allocations','/api/farm/egg-loss-links','/api/farm/clarifications','/api/farm/worker-reports','/api/farm/tasks','/api/farm/incidents','/api/farm/sops','/api/farm/sops/assigned','/api/farm/planning','/api/farm/planning/preview','/api/farm/health-records','/api/farm/labour','/api/farm/units','/api/farm/costing','/api/farm/costing/policy','/api/farm/financial-permissions','/api/farm/physical-counts','/api/farm/notification-recipients','/api/farm/brief','/api/farm/brief/schedule','/api/farm/finance','/api/farm/journal', '/api/farm/setup', '/api/farm/bookkeeping', '/api/farm/staff', '/api/farm/assistant', '/api/farm/assistant/configure', '/api/farm/photos'}
-_TENANT_SAFE = {'/api/farm/setup', '/api/farm/journal', '/api/farm/tasks', '/api/farm/incidents', '/api/farm/worker-reports', '/api/farm/sops', '/api/farm/sops/assigned', '/api/farm/health-records', '/api/farm/bookkeeping', '/api/farm/finance', '/api/farm/financial-permissions'}
-
-
 def dispatch(handler, store, principal, path, method, body):
     parsed = urlsplit(handler.path)
-    if parsed.path not in _PATHS and not parsed.path.startswith(('/api/farm/photos/','/api/farm/receipts/','/api/farm/finance/history/')):
+    if parsed.path not in _PATHS and not parsed.path.startswith(('/api/farm/photos/', '/api/farm/receipts/', '/api/farm/finance/history/')):
         return False
     require_farm_runtime()
     from domains.farming import scope
     farm_id = handler.headers.get('X-Chief-Farm-ID') or None
-    if scope.tenant_mode(store) and parsed.path not in _TENANT_SAFE and not parsed.path.startswith(('/api/farm/receipts/', '/api/farm/finance/history/')):
-        handler.json({
-            'status': 'TENANT_SCOPE_PENDING',
-            'reason': 'This Farm endpoint is blocked until its records are Farm-scoped.',
-        }, 503)
-        return True
+    with scope.bind(store, principal, farm_id):
+        return _dispatch(handler, store, principal, parsed, method, body, farm_id)
+
+
+def _dispatch(handler, store, principal, parsed, method, body, farm_id):
     if parsed.path == '/api/farm/worker-reports':
         from domains.farming import reports
         if method in {'GET', 'HEAD'}:

@@ -30,13 +30,10 @@ FIELDS = {
 
 
 def rows(con):
-    values = con.execute(
-        "SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id LIMIT ?",
-        (KIND, LIMIT + 1),
-    ).fetchall()
+    values = scope.records(con, KIND, limit=LIMIT + 1)
     if len(values) > LIMIT:
         raise ValueError('Worker-report history capacity requires indexed upgrade; partial history is not returned.')
-    return scope.filter_records(con, [json.loads(row[0]) for row in values])
+    return values
 
 
 def _task_visible(con, principal, task_id):

@@ -19,13 +19,10 @@ SEVERITIES = {'IMPORTANT', 'URGENT', 'CRITICAL'}
 
 
 def rows(con):
-    result = con.execute(
-        "SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id LIMIT ?",
-        (KIND, LIMIT + 1),
-    ).fetchall()
+    result = scope.records(con, KIND, limit=LIMIT + 1)
     if len(result) > LIMIT:
         raise ValueError('Incident history capacity requires indexed upgrade; no truncated incident state returned.')
-    return scope.filter_records(con, [json.loads(row[0]) for row in result])
+    return result
 
 
 def _snapshots(history):

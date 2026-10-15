@@ -1,3 +1,4 @@
+from . import scope
 from contextlib import nullcontext
 """Optional, versioned planning scenarios. Never money/stock events or authority.
 
@@ -100,14 +101,19 @@ def calculate(p, store_or_con=None):
 def _evidence_revision(con):
     # A bounded marker, not a claim of evidence completeness. Corrections/voids
     # append new records and therefore also trigger review of older scenarios.
-    return str(con.execute("SELECT coalesce(max(id),0) FROM domain_records WHERE domain='farming' AND (kind IN ('poultry_journal_v1','farm_bookkeeping_v1') OR (kind='farm_clarification_v1' AND json_extract(data_json,'$.payload.operation')='apply' AND json_extract(data_json,'$.source_kind')!='farm_planning_scenario_v1'))").fetchone()[0])
+    where, args = scope.predicate(con)
+    # Tenant revisions do not reveal another Farm's global row allocation.
+    aggregate = 'coalesce(max(id),0)' if scope.require_for_connection(con).legacy else 'count(*)'
+    return str(con.execute(f"SELECT {aggregate} FROM domain_records WHERE domain='farming' AND {where} AND (kind IN ('poultry_journal_v1','farm_bookkeeping_v1') OR (kind='farm_clarification_v1' AND json_extract(data_json,'$.payload.operation')='apply' AND json_extract(data_json,'$.source_kind')!='farm_planning_scenario_v1'))", args).fetchone()[0])
 
 
 def _latest(con):
-    row = con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id DESC LIMIT 1", (KIND,)).fetchone()
+    where, args = scope.predicate(con)
+    row = con.execute(f"SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? AND {where} ORDER BY id DESC LIMIT 1", (KIND, *args)).fetchone()
     return json.loads(row[0])['payload']['event_id'] if row else None
 
 
+@scope.entry
 def preview(store, principal, p):
     with store._connect() as con:
         con.execute('BEGIN')
@@ -117,6 +123,7 @@ def preview(store, principal, p):
     return result
 
 
+@scope.entry
 def save(store, principal, p, *, connection=None):
     if not isinstance(p, dict) or set(p) != SAVE_FIELDS:
         raise ValueError('Supply a complete reviewed plan and its revision identifiers.')
@@ -132,7 +139,8 @@ def save(store, principal, p, *, connection=None):
             raise ValueError('A caller-owned transaction is required.')
         principal = setup.authorize(store, con, principal, 'approve')
         setup.available(store, con)
-        prior = con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? AND json_extract(data_json,'$.payload.event_id')=?", (KIND, p['event_id'])).fetchone()
+        where, args = scope.predicate(con)
+        prior = con.execute(f"SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? AND {where} AND json_extract(data_json,'$.payload.event_id')=?", (KIND, *args, p['event_id'])).fetchone()
         if prior:
             old = json.loads(prior[0])
             if old['payload'] != p or old['actor_id'] != principal.id:
@@ -145,11 +153,12 @@ def save(store, principal, p, *, connection=None):
         result = calculate({k: p[k] for k in FIELDS}, con)
         row = {'payload': p, 'result': result, 'actor_id': principal.id,
                'received_at': utc_text(utc_now()), 'evidence_revision': _evidence_revision(con)}
-        con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)", (KIND, json.dumps(row, sort_keys=True), time.time()))
+        con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)", (KIND, json.dumps(scope.stamp(row), sort_keys=True), time.time()))
         IdentityService(store)._event(con, principal, 'FARM_PLANNING_SCENARIO', 'farming', p['event_id'], 'RECORDED')
     return {'status': 'RECORDED', 'revision': p['event_id']}
 
 
+@scope.entry
 def overview(store, principal, *, offset=0, revision=None):
     if type(offset) is not int or not 0 <= offset <= 1000000:
         raise ValueError('Invalid planning page.')
@@ -159,19 +168,20 @@ def overview(store, principal, *, offset=0, revision=None):
         con.execute('BEGIN')
         principal = setup.authorize(store, con, principal, 'finance')
         evidence = _evidence_revision(con)
-        query = "SELECT data_json FROM domain_records WHERE domain='farming' AND kind=?"
+        where, args = scope.predicate(con)
+        query = f"SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? AND {where}"
         if revision is not None:
-            rows = con.execute(query+" AND json_extract(data_json,'$.payload.event_id')=? LIMIT 1", (KIND, revision)).fetchall()
+            rows = con.execute(query+" AND json_extract(data_json,'$.payload.event_id')=? LIMIT 1", (KIND, *args, revision)).fetchall()
             if not rows:
                 raise FileNotFoundError('Saved plan not found.')
         else:
-            rows = con.execute(query+' ORDER BY id DESC LIMIT 20 OFFSET ?', (KIND, offset)).fetchall()
+            rows = con.execute(query+' ORDER BY id DESC LIMIT 20 OFFSET ?', (KIND, *args, offset)).fetchall()
         records = []
         for row in rows:
             value = json.loads(row[0])
             value['review_needed'] = value['evidence_revision'] != evidence
             records.append(value)
-        count = con.execute("SELECT count(*) FROM domain_records WHERE domain='farming' AND kind=?", (KIND,)).fetchone()[0]
+        count = con.execute(f"SELECT count(*) FROM domain_records WHERE domain='farming' AND kind=? AND {where}", (KIND, *args)).fetchone()[0]
         return {'records': records, 'revision': _latest(con), 'record_count': count,
                 'next_offset': offset + 20 if revision is None and offset + 20 < count else None,
                 'can_save': principal.role == 'Owner', 'evidence_revision': evidence,

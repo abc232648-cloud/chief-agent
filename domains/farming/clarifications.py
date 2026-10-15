@@ -3,6 +3,7 @@
 All mutations serialize through one transaction. Existing domain validators own
 stock and financial semantics. No requirements document is imported as data.
 """
+from . import scope
 from copy import deepcopy
 from datetime import date
 import hashlib
@@ -63,10 +64,10 @@ def _digest(value):
 
 
 def _rows(con):
-    rows = con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id LIMIT 10001", (KIND,)).fetchall()
-    if len(rows) > 10000:
+    records = scope.records(con, KIND, limit=10001)
+    if len(records) > 10000:
         raise ValueError('Clarification capacity reached; review storage before continuing.')
-    return [json.loads(r[0]) for r in rows]
+    return records
 
 
 def _items(rows):
@@ -122,8 +123,7 @@ def _source(con, ref, *, legacy=False):
     journal.identifier(ref['event_id'])
     if not isinstance(ref['revision'], str) or not re.fullmatch('[0-9a-f]{64}', ref['revision']):
         raise ValueError('Refresh the source revision.')
-    rows = con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id", (ref['kind'],)).fetchall()
-    records = [json.loads(r[0]) for r in rows]
+    records = scope.records(con, ref['kind'])
     original = next((r for r in records if r['payload']['event_id'] == ref['event_id']), None)
     if original is None:
         raise ValueError('Source record is missing.')
@@ -300,6 +300,7 @@ def _apply(store, con, principal, item, source, event_id):
     return effects
 
 
+@scope.entry
 def append(store, principal, payload):
     if not isinstance(payload, dict):
         raise ValueError('A clarification command is required.')
@@ -384,11 +385,12 @@ def append(store, principal, payload):
             record['template_definition'] = _definition(con, p['template'], source)
             sp = source['payload']
             record['source_label'] = ' · '.join(str(v) for v in (sp.get('location', sp.get('name', sp.get('counterparty', 'Farm record'))), sp.get('observed_at', sp.get('start', ''))))
-        con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)", (KIND, json.dumps(record, sort_keys=True), time.time()))
+        con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)", (KIND, json.dumps(scope.stamp(record), sort_keys=True), time.time()))
         IdentityService(store)._event(con, principal, 'FARM_CLARIFICATION_'+operation.upper(), 'farming', p.get('item_id', p['event_id']), state)
-    return {'status': 'RECORDED', 'record': record}
+    return {'status': 'RECORDED', 'record': scope.stamp(record)}
 
 
+@scope.entry
 def overview(store, principal):
     with store._connect() as con:
         con.execute('BEGIN')
@@ -410,7 +412,7 @@ def overview(store, principal):
         for kind in sorted(KINDS):
             if kind != journal.KIND and principal.role != 'Owner':
                 continue
-            records = [json.loads(r[0]) for r in con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id", (kind,))]
+            records = scope.records(con, kind)
             active = journal.effective(records) if kind == journal.KIND else books.active(records) if kind == books.KIND else records[-1:]
             for record in active[-100:]:
                 p = record['payload']

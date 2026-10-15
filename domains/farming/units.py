@@ -1,10 +1,12 @@
 """Explicit Farm unit conversion; stock always stores eggs or kilograms."""
+from . import scope
 from decimal import Decimal
 import re
 from . import costing_policy, setup
 from .journal import identifier
 
 
+@scope.entry
 def overview(store,principal):
     with store._connect() as con:
         setup.authorize(store,con,principal,'read')

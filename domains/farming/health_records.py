@@ -14,9 +14,9 @@ FIELDS={'event_id','kind','entity_id','observed_at','summary','product','quantit
 
 
 def rows(con):
-    values=con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id LIMIT 10001",(KIND,)).fetchall()
+    values = scope.records(con, KIND, limit=10000 + 1)
     if len(values)>10000:raise ValueError('Health history requires indexed upgrade; partial history is not returned.')
-    return scope.filter_records(con,[json.loads(r[0]) for r in values])
+    return values
 
 
 def append(store,principal,payload,*,farm_id=None):

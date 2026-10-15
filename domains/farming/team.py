@@ -4,6 +4,7 @@ This view does not infer attendance or physical presence. Supervisor membership 
 derived only from authoritative task supervision relationships. General Managers
 may see enabled Farm-scoped Staff identities. Workers see only themselves.
 """
+from . import scope
 import json
 
 from operations.time_integrity import aware_utc, utc_now
@@ -20,7 +21,7 @@ def _farm_staff(con):
     result = {}
     for row in _identity_rows(con):
         domains = set(json.loads(row['domains']))
-        if not row['enabled'] or not ({'farming', '*'} & domains):
+        if not row['enabled'] or not ({'farming', '*'} & domains) or not scope.member(con, row):
             continue
         if row['role'] in {'Owner', 'Administrator'}:
             continue
@@ -53,6 +54,7 @@ def _task_stats(all_tasks, user_id, *, supervisor_id=None):
     }
 
 
+@scope.entry
 def overview(store, principal):
     with store._connect() as con:
         principal = setup.authorize(store, con, principal, 'read')

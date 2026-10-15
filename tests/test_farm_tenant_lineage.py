@@ -245,24 +245,13 @@ def test_legacy_assign_role_is_blocked_once_tenant_farms_exist(f_fixture):
         }, farm_id=yellow_farm)
 
 
-def test_unconverted_farm_api_fails_closed_in_tenant_mode(monkeypatch):
-    calls = []
-
-    class Handler:
-        path = "/api/farm/planning"
-        headers = {}
-
-        def json(self, payload, status=200):
-            calls.append((status, payload))
-
-    monkeypatch.setattr(farm_api, "require_farm_runtime", lambda: None)
-    monkeypatch.setattr("domains.farming.scope.tenant_mode", lambda store: True)
-
-    assert farm_api.dispatch(Handler(), object(), object(), "/api/farm/planning", "GET", None) is True
-    assert calls == [(503, {
-        "status": "TENANT_SCOPE_PENDING",
-        "reason": "This Farm endpoint is blocked until its records are Farm-scoped.",
-    })]
+def test_farm_api_requires_explicit_authorized_selection(f_fixture):
+    store, owner, _, _, yf, gf, ym, gm = _two_company_fixture(f_fixture)
+    from tests.test_farm_tenant_finance import Handler
+    with pytest.raises(ValueError, match='Select a Farm'):
+        farm_api.dispatch(Handler('/api/farm/planning', ''), store, owner, '/api/farm/planning', 'GET', None)
+    with pytest.raises(PermissionError):
+        farm_api.dispatch(Handler('/api/farm/planning', gf), store, ym, '/api/farm/planning', 'GET', None)
 
 
 def test_legacy_no_catalog_records_remain_unscoped(f_fixture):

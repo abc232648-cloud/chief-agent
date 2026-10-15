@@ -3,12 +3,13 @@
 Owner schedules take effect tomorrow in the saved Farm timezone. A report satisfies presence, not
 proof that a whole day's work was completed. Corrections remain authoritative.
 """
+from . import scope
 from datetime import date, datetime, time as clock_time, timedelta
 from decimal import Decimal
 import json
 import re
 import time
-from . import setup, journal, journal_queries, staff, finance
+from . import setup, journal, staff, finance
 from identity.service import IdentityService
 from operations.time_integrity import utc_now, utc_text, aware_utc
 from .timezone import unambiguous_deadline
@@ -18,8 +19,8 @@ REPORTS = {'mortality': 'FLOCK', 'eggs_collected': 'FLOCK', 'feed_used': 'FEED_S
 
 
 def schedules(con):
-    return [json.loads(r[0]) for r in con.execute(
-        "SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id", (KIND,))]
+    records = scope.records(con, KIND)
+    return records
 
 
 def schedule_status(con):
@@ -29,6 +30,7 @@ def schedule_status(con):
     return 'CONFIGURED' if current and current[-1]['payload']['requirements'] else 'NOT_CONFIGURED'
 
 
+@scope.entry
 def configure(store, principal, payload):
     if not isinstance(payload, dict) or set(payload) != {'event_id', 'expected_revision', 'requirements'}:
         raise ValueError('Supply the schedule identifier, previous revision and requirements.')
@@ -67,18 +69,19 @@ def configure(store, principal, payload):
             if key in seen:
                 raise ValueError('Only one daily requirement per location and report type.')
             seen.add(key)
-            target = con.execute('SELECT enabled,domains FROM human_identities WHERE id=?', (r['assignee'],)).fetchone()
-            if not target or not target['enabled'] or not {'farming', '*'} & set(json.loads(target['domains'])):
+            target = con.execute('SELECT id,role,enabled,domains FROM human_identities WHERE id=?', (r['assignee'],)).fetchone()
+            if not target or not target['enabled'] or not {'farming', '*'} & set(json.loads(target['domains'])) or not scope.member(con, target):
                 raise ValueError('Choose an enabled Farm account as the responsible person.')
         now = utc_now()
         record = {'payload': payload, 'actor_id': principal.id, 'session_id': principal.session_id,
                   'received_at': utc_text(now), 'effective_on': (now.astimezone(setup.farm_zone(con)).date()+timedelta(days=1)).isoformat()}
         con.execute('INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES(?,?,?,?)',
-                    ('farming', KIND, json.dumps(record, sort_keys=True), time.time()))
+                    ('farming', KIND, json.dumps(scope.stamp(record), sort_keys=True), time.time()))
         IdentityService(store)._event(con, principal, 'FARM_REPORTING_SCHEDULE', 'farming', payload['event_id'], 'RECORDED')
     return {'status': 'RECORDED', 'effective_on': record['effective_on']}
 
 
+@scope.entry
 def overview(store, principal, day=''):
     now = utc_now(); report_zone = setup.farm_zone(store); today = now.astimezone(report_zone).date()
     try:
@@ -102,8 +105,10 @@ def overview(store, principal, day=''):
         requirements = schedule['payload']['requirements'] if schedule else []
         # Stream effective records. Never truncate a day's totals to the UI history page.
         metrics = {}; reported = {}; last_received = None
-        for row in con.execute("SELECT data_json FROM domain_records d WHERE d.domain='farming' AND d.kind='poultry_journal_v1' AND "+journal_queries.ACTIVE):
-            record = json.loads(row[0]); p = record['payload']
+        journal_history = journal.read_rows(con)
+        journal_by_id = {r['payload']['event_id']: r for r in journal_history}
+        for record in journal.effective(journal_history):
+            p = record['payload']
             if aware_utc(p['observed_at']).astimezone(setup.farm_zone(con)).date() != selected:
                 continue
             key = (p.get('entity_id'), p['kind'])
@@ -114,7 +119,7 @@ def overview(store, principal, day=''):
                 if parent in visited:
                     raise ValueError('Journal correction chain needs reconciliation.')
                 visited.add(parent)
-                original = journal_queries.prior(con, parent)
+                original = journal_by_id.get(parent)
                 if original is None:
                     raise ValueError('Journal correction history is incomplete.')
             reported.setdefault(key, []).append(original['received_at'])
@@ -140,14 +145,14 @@ def overview(store, principal, day=''):
         work = [item for item in staff.projection(staff.rows(con)).values()
                 if item['state'] != 'RESOLVED' and (manager or principal.id in {item['reporter'], item['assignee']})]
         work = [{k: item[k] for k in ('id','kind','text','state','due_at','severity','overdue')} for item in work]
-        balances = journal_queries.overview(con, principal, manager, 0, 1)['balances'] if manager else []
+        balances = journal.overview(store, principal, limit=1)['balances'] if manager else []
         latest = history[-1] if history else None
         settings = {'can_configure': role == 'OWNER'}
         if role == 'OWNER':
             settings.update(revision=latest['payload']['event_id'] if latest else None,
                             requirements=latest['payload']['requirements'] if latest else [],
                             effective_on=latest['effective_on'] if latest else None,
-                            assignees=[{'id':r['id'],'username':r['username']} for r in con.execute('SELECT id,username,domains FROM human_identities WHERE enabled=1') if {'farming','*'} & set(json.loads(r['domains']))])
+                            assignees=[{'id':r['id'],'username':r['username']} for r in con.execute('SELECT id,role,username,domains FROM human_identities WHERE enabled=1') if {'farming','*'} & set(json.loads(r['domains'])) and scope.member(con,r)])
     result = {'date': day, 'timezone':report_zone.key, 'generated_at':utc_text(now), 'farm_role':role,
               'scope':'FARM' if manager else 'OWN_REPORTS_AND_ASSIGNED_WORK', 'metrics':list(metrics.values()),
               'last_report_received_at':last_received, 'reporting':checks,

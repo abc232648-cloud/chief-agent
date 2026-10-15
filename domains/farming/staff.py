@@ -1,4 +1,5 @@
 """Human staff work. Append-only history; no automatic dispatch or notifications."""
+from . import scope
 import json
 import time
 from . import setup
@@ -14,8 +15,8 @@ STATES = {'TASK': 'OPEN', 'INCIDENT': 'OPEN', 'ACKNOWLEDGE': 'ACKNOWLEDGED',
 
 
 def rows(con):
-    return [json.loads(r[0]) for r in con.execute(
-        'SELECT data_json FROM domain_records WHERE domain=? AND kind=? ORDER BY id', ('farming', KIND))]
+    records = scope.records(con, KIND)
+    return records
 
 
 def projection(history):
@@ -34,6 +35,7 @@ def projection(history):
     return result
 
 
+@scope.entry
 def append(store, principal, payload):
     if not isinstance(payload, dict) or set(payload) != FIELDS:
         raise ValueError('Supply exactly the staff-work fields.')
@@ -66,8 +68,8 @@ def append(store, principal, payload):
             if p['reference'] is not None or p['expected_event'] is not None:
                 raise ValueError('New work does not reference earlier work.')
             if p['kind'] == 'TASK':
-                target = con.execute('SELECT domains,enabled FROM human_identities WHERE id=?', (p['assignee'],)).fetchone()
-                if not target or not target['enabled'] or not ({'farming', '*'} & set(json.loads(target['domains']))):
+                target = con.execute('SELECT id,role,domains,enabled FROM human_identities WHERE id=?', (p['assignee'],)).fetchone()
+                if not target or not target['enabled'] or not ({'farming', '*'} & set(json.loads(target['domains']))) or not scope.member(con, target):
                     raise ValueError('Choose an enabled Farm assignee.')
                 if p['due_at'] is None:
                     raise ValueError('A task needs an explicit deadline.')
@@ -89,11 +91,12 @@ def append(store, principal, payload):
         record = {'version': 1, 'payload': p, 'actor_id': principal.id, 'session_id': principal.session_id,
                   'received_at': utc_text(utc_now())}
         con.execute('INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES(?,?,?,?)',
-                    ('farming', KIND, json.dumps(record, sort_keys=True), time.time()))
+                    ('farming', KIND, json.dumps(scope.stamp(record), sort_keys=True), time.time()))
         IdentityService(store)._event(con, principal, 'FARM_STAFF_' + p['kind'], 'farming', p['event_id'], 'RECORDED')
-    return {'status': 'RECORDED', 'record': record}
+    return {'status': 'RECORDED', 'record': scope.stamp(record)}
 
 
+@scope.entry
 def overview(store, principal):
     with store._connect() as con:
         principal = setup.authorize(store, con, principal, 'read')

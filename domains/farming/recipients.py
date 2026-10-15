@@ -1,4 +1,5 @@
 """Owner-managed Farm recipients. No external delivery integration is installed."""
+from . import scope
 import hashlib
 import json
 import os
@@ -14,19 +15,24 @@ DELIVERY = 'farm_notification_delivery_v1'
 
 
 def rows(con, kind):
-    return [json.loads(r[0]) for r in con.execute(
-        'SELECT data_json FROM domain_records WHERE domain=? AND kind=? ORDER BY id', ('farming', kind))]
+    return scope.records(con, kind)
 
 
 def eligible(con):
     assignments = {r['payload']['human_id']: r['payload']['role'] for r in setup.rows(con)
                    if r['payload']['operation'] == 'assign_role'}
+    if scope.tenant_mode_connection(con):
+        from domains import tenancy
+        selected = scope.require_for_connection(con)
+        assignments = {r['human_id']: r['role'] for r in tenancy._replay(con).values()
+                       if r['active'] and r['farm_id'] == selected.farm_id}
     return {r['id']: {'id': r['id'], 'username': r['username'], 'role': r['role']}
             for r in con.execute('SELECT id,username,role,domains FROM human_identities WHERE enabled=1')
-            if {'farming', '*'} & set(json.loads(r['domains']))
+            if {'farming', '*'} & set(json.loads(r['domains'])) and scope.member(con,r)
             and (r['role'] == 'Owner' or (r['role'] == 'Manager' and assignments.get(r['id'], 'GENERAL_MANAGER') == 'GENERAL_MANAGER'))}
 
 
+@scope.entry
 def overview(store, principal):
     with store._connect() as con:
         principal = setup.authorize(store, con, principal, 'read')
@@ -42,6 +48,7 @@ def overview(store, principal):
                 'notice': 'Owners receive operational and sensitive financial notices. Selected managers receive operational notices only. Email, SMS and push delivery are not configured.'}
 
 
+@scope.entry
 def configure(store, principal, payload):
     if not isinstance(payload, dict) or set(payload) != {'event_id', 'expected_revision', 'manager_ids'}:
         raise ValueError('Supply exactly the recipient settings.')
@@ -72,11 +79,12 @@ def configure(store, principal, payload):
             raise ValueError('Choose enabled Farm General Managers only.')
         record = {'payload': payload, 'actor_id': principal.id, 'received_at': utc_text(utc_now())}
         con.execute('INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES(?,?,?,?)',
-                    ('farming', CONFIG, json.dumps(record, sort_keys=True), time.time()))
+                    ('farming', CONFIG, json.dumps(scope.stamp(record), sort_keys=True), time.time()))
         IdentityService(store)._event(con, principal, 'FARM_RECIPIENTS_CONFIGURED', 'farming', payload['event_id'], 'RECORDED')
     return {'status': 'RECORDED', 'effective_at': record['received_at']}
 
 
+@scope.entry
 def plan(store, principal, event):
     """Internal metadata-only plan; never a delivery or permission grant."""
     if not isinstance(event, dict) or set(event) != {'id', 'category', 'observed_at', 'historical'}:
@@ -100,6 +108,7 @@ def plan(store, principal, event):
                 if user['role'] == 'Owner' or (event['category'] == 'OPERATIONAL' and h in selected)]
 
 
+@scope.entry
 def synthetic_delivery(store, principal, event, *, fail=False):
     """Exercise states without calling a network adapter. Test instances only."""
     if os.environ.get('CHIEF_INSTANCE_MODE') != 'test':
@@ -121,6 +130,6 @@ def synthetic_delivery(store, principal, event, *, fail=False):
             for state in ('PENDING', 'FAILED' if fail else 'SENT'):
                 record = {'id': key, **target, 'status': state, 'adapter': 'SYNTHETIC', 'received_at': utc_text(utc_now())}
                 con.execute('INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES(?,?,?,?)',
-                            ('farming', DELIVERY, json.dumps(record, sort_keys=True), time.time()))
+                            ('farming', DELIVERY, json.dumps(scope.stamp(record), sort_keys=True), time.time()))
             results.append({'id': key, 'status': state})
     return results

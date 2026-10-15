@@ -1,4 +1,5 @@
 """Reported temporary labour, with explicit links to existing expenses; no payroll."""
+from . import scope
 import json
 import re
 import time
@@ -13,9 +14,10 @@ WORK={'event_id','operation','person','task','time_basis','work_date','started_a
 
 
 def rows(con):
-    result=con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id LIMIT 10001",(KIND,)).fetchall()
-    if len(result)>10000:raise ValueError('Labour history capacity requires indexed upgrade; no truncated totals returned.')
-    return [json.loads(r[0]) for r in result]
+    records = scope.records(con, KIND, limit=10001)
+    if len(records) > 10000:
+        raise ValueError('Labour history capacity requires indexed upgrade; no truncated totals returned.')
+    return records
 
 
 def active_links(history):
@@ -23,6 +25,7 @@ def active_links(history):
     return [r['payload'] for r in history if r['payload']['operation']=='LINK_EXPENSE' and r['payload']['event_id'] not in removed]
 
 
+@scope.entry
 def append(store,principal,payload):
     if not isinstance(payload,dict):raise ValueError('Supply a labour record.')
     p=dict(payload);identifier(p.get('event_id'));operation=p.get('operation')
@@ -72,11 +75,12 @@ def append(store,principal,payload):
             if work['agreed_total_minor'] is None or expense['amount_minor']!=work['agreed_total_minor'] or expense['currency']!=work['currency'] or expense['counterparty']!=work['person']:raise ValueError('Expense must match the known agreed total, currency and person/team.')
             if any(r['work_id']==p['work_id'] or r['expense_id']==p['expense_id'] for r in links):raise ValueError('Work or expense is already linked; no duplicate cost is created.')
         value={'payload':p,'actor_id':principal.id,'received_at':utc_text(utc_now())}
-        con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",(KIND,json.dumps(value,sort_keys=True),time.time()))
+        con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",(KIND,json.dumps(scope.stamp(value),sort_keys=True),time.time()))
         IdentityService(store)._event(con,principal,'FARM_LABOUR_'+operation,'farming',p['event_id'],'RECORDED')
     return {'status':'RECORDED'}
 
 
+@scope.entry
 def overview(store,principal,offset=0):
     if type(offset)is not int or offset<0:raise ValueError('Invalid page.')
     with store._connect() as con:
