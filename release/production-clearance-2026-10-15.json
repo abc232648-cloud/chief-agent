@@ -1,0 +1,66 @@
+{
+  "format_version": 1,
+  "audit_date": "2026-10-15",
+  "release_set": "chief-install-closure-2026-10-14",
+  "backend_contract": "chief-install-closure-v1",
+  "release_tag": "chief-install-closure-2026-10-14",
+  "publishing_mode": "annotated_git_tag",
+  "github_release_object_present": false,
+  "release_identity": {
+    "backend": {
+      "repository": "abc232648-cloud/chief-agent",
+      "tested_commit": "1cdac6178fe9964ac7fbb80fd9c02fb42740dbb9",
+      "published_tag_target": "0d96fdf979b9eba0f3deb0024278f5c2557a5319"
+    },
+    "owner": {
+      "repository": "abc232648-cloud/chief-owner-pwa",
+      "tested_commit": "d0d924a507778be8497f827bf5471c81678a2934",
+      "published_tag_target": "b8d139b0789918f3c937e640cc618e66194c966b"
+    },
+    "staff": {
+      "repository": "abc232648-cloud/chief-staff-pwa",
+      "tested_commit": "d46b1c18b6fc6ce5f1ad0be6887235fca14dfb30",
+      "published_tag_target": "4f88eb79f2382406c55b85675e939405d70f0c98"
+    },
+    "jobs": {
+      "repository": "abc232648-cloud/Job-agent-pwa",
+      "tested_commit": "3435ca0ffb4b04116a59268e48e8529fa377acac",
+      "published_tag_target": "90eb0cfa2155c4d5f6a4ca8bf510a5d01e1f7db9"
+    }
+  },
+  "corrected_report_errors": {
+    "staff_reported_invalid_sha": "4f88eb7a7e800a7b457dc5b49ae61beaf2479e39",
+    "staff_correct_sha": "4f88eb79f2382406c55b85675e939405d70f0c98",
+    "jobs_reported_invalid_sha": "90eb0cfec2cb8498877bc9ec3315a4d0482260e0",
+    "jobs_correct_sha": "90eb0cfa2155c4d5f6a4ca8bf510a5d01e1f7db9",
+    "farm_staff_reported_run_id": 38653259015,
+    "farm_staff_correct_run_id": 38653259014,
+    "graph_update_reported_run_id": 38653259030,
+    "graph_update_correct_run_id": 38653272540
+  },
+  "ci": {
+    "backend": [
+      {"name": "Job Agent PWA Backend CI", "run_number": 114, "run_id": 38653259010, "conclusion": "success"},
+      {"name": "Agent Manifest, Registry, Interface, Capability & Staff CI", "run_number": 73, "run_id": 38653259064, "conclusion": "success"},
+      {"name": "Module Lifecycle CI", "run_number": 68, "run_id": 38653259025, "conclusion": "success"},
+      {"name": "Farm Staff CI", "run_number": 80, "run_id": 38653259014, "conclusion": "success"},
+      {"name": "Graph Update", "run_number": 4, "run_id": 38653272540, "conclusion": "success"}
+    ],
+    "companions": [
+      {"name": "Owner PWA CI", "run_number": 50, "run_id": 38660863093, "commit": "b8d139b0789918f3c937e640cc618e66194c966b", "conclusion": "success"},
+      {"name": "Staff PWA CI", "run_number": 78, "run_id": 38660874688, "commit": "4f88eb79f2382406c55b85675e939405d70f0c98", "conclusion": "success"},
+      {"name": "Job Agent PWA CI", "run_number": 53, "run_id": 38660882446, "commit": "90eb0cfa2155c4d5f6a4ca8bf510a5d01e1f7db9", "conclusion": "success"}
+    ]
+  },
+  "gates": {
+    "post_merge_ci": "PASS",
+    "production_bundle_digest_and_manifest": "PENDING_EXTERNAL_ARTIFACT_EVIDENCE",
+    "folio_live_acceptance": "PENDING_LIVE_ACCEPTANCE",
+    "automated_client_qualification": "PASS",
+    "physical_android_iphone_acceptance": "PENDING_PHYSICAL_DEVICE_ACCEPTANCE",
+    "security_model_qualification": "PASS_CONDITIONAL_ON_EXACT_BUNDLE_MATCH"
+  },
+  "production_decision": "HOLD",
+  "hold_reason": "Code and CI are qualified, but the exact production ZIP, live Folio acceptance, and physical Android/iPhone acceptance are not independently evidenced in GitHub.",
+  "rebuild_required": false
+}
