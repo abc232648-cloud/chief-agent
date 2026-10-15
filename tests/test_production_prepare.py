@@ -1,5 +1,6 @@
 import hashlib
 import json
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 
@@ -26,9 +27,10 @@ def test_prepare_production_promotes_verified_isolated_snapshot(tmp_path,monkeyp
     def fake_isolated(root,source_root_arg,source_manifest_arg,username,password):
         root=Path(root);root.mkdir(mode=0o700)
         db=root/'preview.sqlite3'
-        with sqlite3.connect(db) as con:
+        with closing(sqlite3.connect(db)) as con:
             con.execute('CREATE TABLE fixture(id INTEGER PRIMARY KEY,value TEXT)')
             con.execute("INSERT INTO fixture(value) VALUES('ready')")
+            con.commit()
         calls.append((root,Path(source_root_arg),Path(source_manifest_arg),username,password))
         return {'status':'PREVIEW_PREPARED','database':str(db),'schema_sha256':'a'*64,'owner_id':'owner-1'}
 
@@ -54,7 +56,7 @@ def test_prepare_production_promotes_verified_isolated_snapshot(tmp_path,monkeyp
     assert data['trusted_tls_proxy']=='127.0.0.1'
     assert data['public_host']=='chief.example.test'
     assert data['browser_runtime']==str(browser)
-    with sqlite3.connect(root/'state.sqlite3') as con:
+    with closing(sqlite3.connect(root/'state.sqlite3')) as con:
         assert con.execute('SELECT value FROM fixture').fetchone()[0]=='ready'
     assert calls and calls[0][3:]==('owner','secret-password')
     assert len(checks)==2
