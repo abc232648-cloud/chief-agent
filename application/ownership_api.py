@@ -1,4 +1,4 @@
-"""Authenticated Chief organization/farm identity API."""
+"""Authenticated Chief ownership and organization/farm tenancy APIs."""
 from urllib.parse import urlsplit
 
 from domains import ownership
@@ -6,6 +6,9 @@ from domains import ownership
 
 def dispatch(handler, store, principal, path, method, body):
     parsed = urlsplit(handler.path)
+    if parsed.path == "/api/tenancy":
+        from .tenancy_api import dispatch as tenancy_dispatch
+        return tenancy_dispatch(handler, store, principal, path, method, body)
     if parsed.path != "/api/ownership":
         return False
     if parsed.query:
