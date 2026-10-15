@@ -1,37 +1,9 @@
 """Explicit local preparation/preflight and managed installation commands."""
 import argparse
 import getpass
-import importlib
 import json
 import os
 from pathlib import Path
-
-
-def prepare_isolated(root,source_root,source_manifest,username,password):
-    from database.store import Store
-    from domains.storage import initialize
-    from control.agents import AgentControls
-    from control.notifications import initialize as notifications
-    from application.composition import default_registry
-    from browser.site_access import SiteAccess
-    from operations.backup import create_backup,restore_isolated
-    from identity.service import IdentityService
-    from .schema import fingerprint
-    root=Path(root).absolute()
-    if root.exists():raise ValueError('Preparation requires a new isolated directory.')
-    os.umask(0o077);root.mkdir(parents=True,mode=0o700)
-    (root/'.chief-isolated-development.json').write_text(json.dumps({'purpose':'ISOLATED_DEVELOPMENT'}))
-    (root/'.chief-preview.json').write_text(json.dumps({'mode':'PREVIEW'}))
-    store=Store(root/'preview.sqlite3');initialize(store);AgentControls(store,default_registry());notifications(store);SiteAccess(store)
-    for name in ('migrations','evidence_migrations','execution_migrations','identity_migrations','farm_indexes'):
-        backup=root/('backup-before-'+name);restore=root/('restore-before-'+name)
-        receipt=create_backup(store.path,backup,source_root=source_root,source_manifest=source_manifest,private_storage_confirmed=True,writers_quiesced=True)
-        pins=dict(manifest_sha256=receipt['manifest_sha256'],expected_source=receipt['source_tree_sha256'],expected_schema=receipt['schema_sha256'])
-        restore_isolated(backup,restore,**pins,private_storage_confirmed=True)
-        importlib.import_module('database.'+name).migrate_isolated(store,isolated_root=root,backup_directory=backup,restore_directory=restore,**pins)
-    owner=IdentityService(store).bootstrap(username,password)
-    with store._connect() as con:schema=fingerprint(con)
-    return {'status':'PREVIEW_PREPARED','database':str(store.path),'schema_sha256':schema,'owner_id':owner,'worker_enabled':False,'restores_promoted':False}
 
 
 def main():
@@ -71,8 +43,20 @@ def main():
     bootstrap.add_argument('--schema-sha256',required=True)
     bootstrap.add_argument('--confirm-private-storage',action='store_true')
 
-    prepare=commands.add_parser('prepare-preview')
-    prepare.add_argument('--directory',required=True);prepare.add_argument('--source-root',required=True);prepare.add_argument('--source-manifest',required=True);prepare.add_argument('--username',required=True)
+    preview=commands.add_parser('prepare-preview')
+    preview.add_argument('--directory',required=True);preview.add_argument('--source-root',required=True);preview.add_argument('--source-manifest',required=True);preview.add_argument('--username',required=True)
+
+    production=commands.add_parser('prepare-production')
+    production.add_argument('--directory',required=True)
+    production.add_argument('--config',required=True)
+    production.add_argument('--source-root',required=True)
+    production.add_argument('--source-manifest',required=True)
+    production.add_argument('--username',required=True)
+    production.add_argument('--public-host',required=True)
+    production.add_argument('--browser-runtime',required=True)
+    production.add_argument('--dashboard-port',type=int,default=8765)
+    production.add_argument('--trusted-tls-proxy',default='127.0.0.1')
+    production.add_argument('--farm-operations',choices=['DISABLED','ENABLED'],default='DISABLED')
     args=parser.parse_args()
 
     if args.command=='preflight':
@@ -102,9 +86,18 @@ def main():
             expected_source=args.expected_source,python=args.python,instance_config=args.config,
             schema_sha256=args.schema_sha256,private_storage_confirmed=args.confirm_private_storage)
         print(json.dumps(result,sort_keys=True))
+    elif args.command=='prepare-production':
+        password=getpass.getpass('Production Owner password: ')
+        if password!=getpass.getpass('Repeat password: '):raise ValueError('Passwords did not match.')
+        from .prepare_instance import prepare_production
+        result=prepare_production(args.directory,args.config,args.source_root,args.source_manifest,args.username,password,
+            public_host=args.public_host,browser_runtime=args.browser_runtime,dashboard_port=args.dashboard_port,
+            trusted_tls_proxy=args.trusted_tls_proxy,farm_operations=args.farm_operations)
+        print(json.dumps(result,sort_keys=True))
     else:
         password=getpass.getpass('Preview Owner password: ')
         if password!=getpass.getpass('Repeat password: '):raise ValueError('Passwords did not match.')
+        from .prepare_instance import prepare_isolated
         print(json.dumps(prepare_isolated(args.directory,args.source_root,args.source_manifest,args.username,password),sort_keys=True))
 
 
