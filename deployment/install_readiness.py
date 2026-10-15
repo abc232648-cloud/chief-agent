@@ -32,12 +32,14 @@ def _absolute(label,value):
 
 def installation_readiness(config, *, source_root, source_manifest, backup_directory,
                            manifest_sha256, expected_source, expected_schema, platform,
-                           project, user, python=None):
+                           project, user, python=None, managed_installation=None):
     """Return metadata-only readiness evidence; no deployment action is performed."""
     config=_absolute('Production config',config)
     source_root=_absolute('Source root',source_root)
     source_manifest=_absolute('Source manifest',source_manifest)
     backup_directory=_absolute('Backup directory',backup_directory)
+    if managed_installation is not None:
+        managed_installation=str(_absolute('Managed installation',managed_installation))
     before={key:os.environ.get(key) for key in _ENV_KEYS}
     try:
         from deployment.launch import configure
@@ -60,9 +62,6 @@ def installation_readiness(config, *, source_root, source_manifest, backup_direc
         if actual_source!=expected_source:
             raise ValueError('Installed source tree does not match the pinned backup source identity.')
 
-        # Existing desktop/global runtime profiles are never discovered or imported.
-        # Each pinned candidate gets one reserved path below Chief private state. An
-        # unmarked pre-existing path is a conflict, not something readiness may reuse.
         from deployment.runtime_profiles import plans_from_source
         runtime_profiles=plans_from_source(instance.state_root,source_root)
 
@@ -70,7 +69,8 @@ def installation_readiness(config, *, source_root, source_manifest, backup_direc
                                expected_source=expected_source,expected_schema=expected_schema)
 
         from deployment.service_files import definitions
-        files=definitions(platform,project,user,instance_config=str(config),python=python)
+        files=definitions(platform,project,user,instance_config=str(config),python=python,
+                          managed_installation=managed_installation)
         expected_names={
             'windows':{'chief-agent-dashboard.xml','chief-agent-worker.xml','chief-agent-scheduler.xml'},
             'linux':{'chief-agent-dashboard.service','chief-agent-worker.service','chief-agent-scheduler.service'},
@@ -90,6 +90,7 @@ def installation_readiness(config, *, source_root, source_manifest, backup_direc
             'schema_sha256':instance.schema_sha256,
             'storage_scope':storage['scope'],
             'browser_sandbox_required':True,
+            'managed_installation':managed_installation,
             'runtime_profiles':[{'candidate_id':item['candidate_id'],'status':item['status']} for item in runtime_profiles],
             'backup_id':manifest['backup_id'],
             'backup_coverage':manifest['coverage'],
