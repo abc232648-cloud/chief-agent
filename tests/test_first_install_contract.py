@@ -1,10 +1,14 @@
 from pathlib import Path
+import shutil
+import subprocess
 
 
 def test_first_install_launcher_and_implementation_are_wired_for_clean_host():
     root=Path(__file__).resolve().parents[1]
-    launcher=(root/'deployment/install_chief.sh').read_text(encoding='utf-8')
-    implementation=(root/'deployment/install_chief_xubuntu.sh').read_text(encoding='utf-8')
+    launcher_path=root/'deployment/install_chief.sh'
+    implementation_path=root/'deployment/install_chief_xubuntu.sh'
+    launcher=launcher_path.read_text(encoding='utf-8')
+    implementation=implementation_path.read_text(encoding='utf-8')
 
     assert 'PLAYWRIGHT_BROWSERS_PATH="$HOME/.local/share/chief/browsers"' in launcher
     assert 'PYTHONPATH="$HOME/.local/share/chief/tooling' in launcher
@@ -26,6 +30,11 @@ def test_first_install_launcher_and_implementation_are_wired_for_clean_host():
     assert 'install-readiness' in implementation
     assert 'chief-tls-proxy.service' in implementation
     assert 'INSTALLATION_COMPLETE' in implementation
+
+    bash=shutil.which('bash')
+    if bash:
+        subprocess.run([bash,'-n',str(launcher_path)],check=True)
+        subprocess.run([bash,'-n',str(implementation_path)],check=True)
 
 
 def test_first_install_does_not_reuse_old_runtime_as_bootstrap_prerequisite():
