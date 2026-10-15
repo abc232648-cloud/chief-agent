@@ -117,6 +117,8 @@ def intercept(handler,store):
         guard(store, service, principal, method, path, body)
         from notifications.device_push import route as notification_route
         if notification_route(handler,store,principal,path,method,body):return True
+        from .ownership_api import dispatch as ownership_dispatch
+        if ownership_dispatch(handler,store,principal,path,method,body):return True
         from .farm_api import dispatch as farm_dispatch
         if farm_dispatch(handler,store,principal,path,method,body):return True
         from .ui_api import dispatch as ui_dispatch
