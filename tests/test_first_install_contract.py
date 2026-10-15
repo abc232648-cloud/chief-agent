@@ -12,6 +12,7 @@ def test_first_install_launcher_and_implementation_are_wired_for_clean_host():
 
     assert 'PLAYWRIGHT_BROWSERS_PATH="$HOME/.local/share/chief/browsers"' in launcher
     assert 'PYTHONPATH="$HOME/.local/share/chief/tooling' in launcher
+    assert 'sudo loginctl enable-linger "$(id -un)"' in launcher
     assert 'export PATH="$NODE_ROOT/bin:$PATH"' in launcher
     assert "text.replace(anchor,'UMask=0077\\n',1)" in launcher
 
