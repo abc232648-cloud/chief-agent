@@ -46,6 +46,13 @@ def main():
     manifest.add_argument('--output',required=True)
     manifest.add_argument('--expected-git-commit')
 
+    install_backup=commands.add_parser('create-install-backup')
+    install_backup.add_argument('--config',required=True)
+    install_backup.add_argument('--destination',required=True)
+    install_backup.add_argument('--source-root',required=True)
+    install_backup.add_argument('--source-manifest',required=True)
+    install_backup.add_argument('--confirm-private-storage',action='store_true')
+
     ready=commands.add_parser('install-readiness')
     ready.add_argument('--config',required=True);ready.add_argument('--source-root',required=True);ready.add_argument('--source-manifest',required=True)
     ready.add_argument('--backup-directory',required=True);ready.add_argument('--manifest-sha256',required=True)
@@ -74,6 +81,11 @@ def main():
     elif args.command=='build-source-manifest':
         from .source_manifest import build_source_manifest
         result=build_source_manifest(args.source_root,args.output,expected_git_commit=args.expected_git_commit)
+        print(json.dumps(result,sort_keys=True))
+    elif args.command=='create-install-backup':
+        from .install_backup import create_install_backup
+        result=create_install_backup(args.config,args.destination,source_root=args.source_root,
+            source_manifest=args.source_manifest,private_storage_confirmed=args.confirm_private_storage)
         print(json.dumps(result,sort_keys=True))
     elif args.command=='install-readiness':
         from .install_readiness import installation_readiness
