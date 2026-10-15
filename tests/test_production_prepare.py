@@ -24,15 +24,16 @@ def test_prepare_production_promotes_verified_isolated_snapshot(tmp_path,monkeyp
     browser=_browser_runtime(tmp_path)
     calls=[]
 
-    def fake_isolated(root,source_root_arg,source_manifest_arg,username,password):
+    def fake_isolated(root,source_root_arg,source_manifest_arg,username,password,*,organization_name=None,farm_name=None):
         root=Path(root);root.mkdir(mode=0o700)
         db=root/'preview.sqlite3'
         with closing(sqlite3.connect(db)) as con:
             con.execute('CREATE TABLE fixture(id INTEGER PRIMARY KEY,value TEXT)')
             con.execute("INSERT INTO fixture(value) VALUES('ready')")
             con.commit()
-        calls.append((root,Path(source_root_arg),Path(source_manifest_arg),username,password))
-        return {'status':'PREVIEW_PREPARED','database':str(db),'schema_sha256':'a'*64,'owner_id':'owner-1'}
+        calls.append((root,Path(source_root_arg),Path(source_manifest_arg),username,password,organization_name,farm_name))
+        return {'status':'PREVIEW_PREPARED','database':str(db),'schema_sha256':'a'*64,'owner_id':'owner-1',
+                'organization_id':'org-1','organization_name':organization_name,'farm_id':'farm-1','farm_name':farm_name}
 
     checks=[]
     monkeypatch.setattr(prepare_instance,'prepare_isolated',fake_isolated)
@@ -42,10 +43,12 @@ def test_prepare_production_promotes_verified_isolated_snapshot(tmp_path,monkeyp
     config=tmp_path/'config'/'production-instance.json'
     result=prepare_instance.prepare_production(
         root,config,source_root,source_manifest,'owner','secret-password',
-        public_host='chief.example.test',browser_runtime=browser,farm_operations='ENABLED')
+        public_host='chief.example.test',browser_runtime=browser,farm_operations='ENABLED',
+        organization_name='Yellow Farm Ltd',farm_name='Yellow Farm')
 
     assert result['status']=='PRODUCTION_PREPARED'
     assert result['migrations_on_production'] is False and result['services_started'] is False
+    assert result['organization_id']=='org-1' and result['farm_id']=='farm-1'
     assert json.loads((root/'.chief-production.json').read_text())=={'mode':'PRODUCTION'}
     data=json.loads(config.read_text())
     assert data['mode']=='PRODUCTION'
@@ -58,9 +61,17 @@ def test_prepare_production_promotes_verified_isolated_snapshot(tmp_path,monkeyp
     assert data['browser_runtime']==str(browser)
     with closing(sqlite3.connect(root/'state.sqlite3')) as con:
         assert con.execute('SELECT value FROM fixture').fetchone()[0]=='ready'
-    assert calls and calls[0][3:]==('owner','secret-password')
+    assert calls and calls[0][3:]==('owner','secret-password','Yellow Farm Ltd','Yellow Farm')
     assert len(checks)==2
     assert not calls[0][0].exists(), 'successful isolated preparation workspace must be removed'
+
+
+def test_enabled_farm_operations_require_initial_company_and_farm(tmp_path):
+    browser=_browser_runtime(tmp_path)
+    with pytest.raises(ValueError,match='initial organization and farm name'):
+        prepare_instance.prepare_production(
+            tmp_path/'production',tmp_path/'instance.json',tmp_path,tmp_path/'manifest','owner','pw',
+            public_host='chief.example.test',browser_runtime=browser,farm_operations='ENABLED')
 
 
 def test_prepare_production_refuses_existing_state_or_config(tmp_path):
