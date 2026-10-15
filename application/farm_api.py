@@ -5,7 +5,7 @@ from urllib.parse import urlsplit, parse_qs
 
 
 _PATHS = {'/api/farm/expense-allocations','/api/farm/egg-loss-links','/api/farm/clarifications','/api/farm/worker-reports','/api/farm/tasks','/api/farm/incidents','/api/farm/sops','/api/farm/sops/assigned','/api/farm/planning','/api/farm/planning/preview','/api/farm/health-records','/api/farm/labour','/api/farm/units','/api/farm/costing','/api/farm/costing/policy','/api/farm/financial-permissions','/api/farm/physical-counts','/api/farm/notification-recipients','/api/farm/brief','/api/farm/brief/schedule','/api/farm/finance','/api/farm/journal', '/api/farm/setup', '/api/farm/bookkeeping', '/api/farm/staff', '/api/farm/assistant', '/api/farm/assistant/configure', '/api/farm/photos'}
-_TENANT_SAFE = {'/api/farm/setup', '/api/farm/journal', '/api/farm/tasks', '/api/farm/incidents', '/api/farm/worker-reports', '/api/farm/sops', '/api/farm/sops/assigned', '/api/farm/health-records'}
+_TENANT_SAFE = {'/api/farm/setup', '/api/farm/journal', '/api/farm/tasks', '/api/farm/incidents', '/api/farm/worker-reports', '/api/farm/sops', '/api/farm/sops/assigned', '/api/farm/health-records', '/api/farm/bookkeeping', '/api/farm/finance', '/api/farm/financial-permissions'}
 
 
 def dispatch(handler, store, principal, path, method, body):
@@ -15,7 +15,7 @@ def dispatch(handler, store, principal, path, method, body):
     require_farm_runtime()
     from domains.farming import scope
     farm_id = handler.headers.get('X-Chief-Farm-ID') or None
-    if scope.tenant_mode(store) and parsed.path not in _TENANT_SAFE:
+    if scope.tenant_mode(store) and parsed.path not in _TENANT_SAFE and not parsed.path.startswith(('/api/farm/receipts/', '/api/farm/finance/history/')):
         handler.json({
             'status': 'TENANT_SCOPE_PENDING',
             'reason': 'This Farm endpoint is blocked until its records are Farm-scoped.',
@@ -120,8 +120,8 @@ def dispatch(handler, store, principal, path, method, body):
         return True
     if parsed.path == '/api/farm/financial-permissions':
         from domains.farming import financial_permissions
-        if method in {'GET','HEAD'}: handler.json(financial_permissions.overview(store,principal))
-        elif method == 'POST': handler.json(financial_permissions.configure(store,principal,body))
+        if method in {'GET','HEAD'}: handler.json(financial_permissions.overview(store,principal,farm_id=farm_id))
+        elif method == 'POST': handler.json(financial_permissions.configure(store,principal,body,farm_id=farm_id))
         else: handler.json({'status':'METHOD_NOT_ALLOWED'},405)
         return True
     if parsed.path == '/api/farm/physical-counts':
@@ -143,20 +143,20 @@ def dispatch(handler, store, principal, path, method, body):
         return True
     if parsed.path.startswith('/api/farm/finance/history/'):
         from domains.farming import finance
-        if method in {'GET','HEAD'}: handler.json(finance.linked_history(store,principal,parsed.path.rsplit('/',1)[-1]))
+        if method in {'GET','HEAD'}: handler.json(finance.linked_history(store,principal,parsed.path.rsplit('/',1)[-1],farm_id=farm_id))
         else: handler.json({'status':'METHOD_NOT_ALLOWED'},405)
         return True
     if parsed.path == '/api/farm/finance':
         from domains.farming import finance
         if method in {'GET','HEAD'}:
-            q=parse_qs(parsed.query);handler.json(finance.report(store,principal,start=q.get('start',[''])[0],end=q.get('end',[''])[0],query=q.get('q',[''])[0],contact_id=q.get('contact',[''])[0],offset=int(q.get('offset',['0'])[0])))
-        elif method == 'POST': handler.json(finance.append(store,principal,body))
+            q=parse_qs(parsed.query);handler.json(finance.report(store,principal,start=q.get('start',[''])[0],end=q.get('end',[''])[0],query=q.get('q',[''])[0],contact_id=q.get('contact',[''])[0],offset=int(q.get('offset',['0'])[0]),farm_id=farm_id))
+        elif method == 'POST': handler.json(finance.append(store,principal,body,farm_id=farm_id))
         else: handler.json({'status':'METHOD_NOT_ALLOWED'},405)
         return True
     if parsed.path.startswith('/api/farm/receipts/'):
         from domains.farming import finance
         if method not in {'GET','HEAD'}: handler.json({'status':'METHOD_NOT_ALLOWED'},405);return True
-        raw=finance.receipt(store,principal,parsed.path.rsplit('/',1)[-1])
+        raw=finance.receipt(store,principal,parsed.path.rsplit('/',1)[-1],farm_id=farm_id)
         handler.send_response(200);handler.send_header('Content-Type','image/png');handler.send_header('Cache-Control','no-store');handler.send_header('X-Content-Type-Options','nosniff');handler.send_header('Content-Length',str(len(raw)));handler.end_headers()
         if method != 'HEAD': handler.wfile.write(raw)
         return True
@@ -184,8 +184,9 @@ def dispatch(handler, store, principal, path, method, body):
         return True
     if parsed.path in {'/api/farm/bookkeeping','/api/farm/staff'}:
         module=staff if parsed.path.endswith('/staff') else bookkeeping
-        if method in {'GET','HEAD'}: handler.json(module.overview(store,principal))
-        elif method == 'POST': handler.json(module.append(store,principal,body))
+        options={'farm_id':farm_id} if module is bookkeeping else {}
+        if method in {'GET','HEAD'}: handler.json(module.overview(store,principal,**options))
+        elif method == 'POST': handler.json(module.append(store,principal,body,**options))
         else: handler.json({'status':'METHOD_NOT_ALLOWED'},405)
         return True
     if method in {'GET','HEAD'}:

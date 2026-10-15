@@ -17,8 +17,10 @@ CATEGORIES={'FEED':'Feed','BIRDS':'Birds','VETERINARY':'Veterinary care','WAGES'
             'EGG_SALES':'Egg sales','BIRD_SALES':'Bird sales','OTHER':'Other'}
 
 
-def records(con,kind):
-    values=[json.loads(r[0]) for r in con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id",(kind,))]
+def records(con,kind,*,metadata_only=False):
+    # Reports must not load every stored image into memory.
+    projection="json_remove(data_json,'$.image_base64')" if metadata_only else "data_json"
+    values=[json.loads(r[0]) for r in con.execute(f"SELECT {projection} FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id",(kind,))]
     return scope.filter_records(con,values)
 
 
@@ -172,7 +174,7 @@ def _report(store,principal,*,start='',end='',query='',contact_id='',offset=0,in
     if type(offset)is not int or not 0<=offset<=1000000:raise ValueError('Invalid page offset.')
     with store._connect() as con:
         con.execute('BEGIN');setup.authorize(store,con,principal,'finance')
-        history=books.rows(con);contacts=records(con,CONTACTS);receipt_records=records(con,RECEIPTS)
+        history=books.rows(con);contacts=records(con,CONTACTS);receipt_records=records(con,RECEIPTS,metadata_only=True)
         can_approve=setup.role(con,principal)=='OWNER'
         active={r['payload']['event_id']:r for r in books.active(history)}
         disputes=books.disputed({key:value['payload'] for key,value in active.items()})
@@ -196,7 +198,7 @@ def _report(store,principal,*,start='',end='',query='',contact_id='',offset=0,in
                 paid=sum(v['amount_minor'] for v in payments.get(p['event_id'],[]) if v['event_id'] in confirmed)
                 owed=p['amount_minor']-paid;t['receivable' if incoming else 'payable']+=owed
                 due=p.get('details',{}).get('due_on')
-                balances.append({'reference':p['event_id'],'counterparty':p['counterparty'],'currency':p['currency'],'kind':p['kind'],'outstanding_minor':str(owed),'disputed':p['event_id'] in disputes,'due_on':due,'overdue':bool(due and owed and due<utc_now().astimezone(setup.farm_zone(con)).date().isoformat())})
+                balances.append({'id':p['event_id'],'counterparty':p['counterparty'],'currency':p['currency'],'kind':p['kind'],'outstanding_minor':str(owed),'disputed':p['event_id'] in disputes,'due_on':due,'overdue':bool(due and owed and due<utc_now().astimezone(setup.farm_zone(con)).date().isoformat())})
             if p['kind']=='PAYMENT_CLAIM':
                 parent=active.get(p['reference'],{}).get('payload',{})
                 if contact_id and parent.get('details',{}).get('contact_id')!=contact_id:continue
@@ -208,6 +210,6 @@ def _report(store,principal,*,start='',end='',query='',contact_id='',offset=0,in
         attachments=[{'event_id':r['event_id'],'reference':r['reference'],'sha256':r['sha256']} for r in receipt_records if r.get('reference') in page_ids]
         return {'revision':revision,'categories':CATEGORIES,'contacts':contacts,
                 'summaries':{c:{k:str(v) for k,v in t.items()} for c,t in totals.items()},
-                'balances':balances if include_all_balances else [b for b in balances if b['reference'] in page_ids],
+                'balances':balances if include_all_balances else [b for b in balances if b['id'] in page_ids],
                 'records':page,'record_count':len(selected),'offset':offset,'receipts':attachments,
                 'can_approve':can_approve,'notice':'Current non-voided records for the selected Farm; confirmations as of now. Period cash totals use the reported payment date. Outstanding amounts relate to the selected sales, expenses and opening debts. Opening debts and attached invoices are not new sales or expenses. These are not bank balances or formal profit statements.'}

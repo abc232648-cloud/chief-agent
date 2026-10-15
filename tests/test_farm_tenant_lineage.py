@@ -249,7 +249,7 @@ def test_unconverted_farm_api_fails_closed_in_tenant_mode(monkeypatch):
     calls = []
 
     class Handler:
-        path = "/api/farm/finance"
+        path = "/api/farm/planning"
         headers = {}
 
         def json(self, payload, status=200):
@@ -258,7 +258,7 @@ def test_unconverted_farm_api_fails_closed_in_tenant_mode(monkeypatch):
     monkeypatch.setattr(farm_api, "require_farm_runtime", lambda: None)
     monkeypatch.setattr("domains.farming.scope.tenant_mode", lambda store: True)
 
-    assert farm_api.dispatch(Handler(), object(), object(), "/api/farm/finance", "GET", None) is True
+    assert farm_api.dispatch(Handler(), object(), object(), "/api/farm/planning", "GET", None) is True
     assert calls == [(503, {
         "status": "TENANT_SCOPE_PENDING",
         "reason": "This Farm endpoint is blocked until its records are Farm-scoped.",

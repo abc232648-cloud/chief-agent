@@ -6,6 +6,10 @@ on:
     paths:
       - 'application/farm_api.py'
       - 'domains/farming/scope.py'
+      - 'domains/farming/bookkeeping.py'
+      - 'domains/farming/finance.py'
+      - 'domains/farming/financial_permissions.py'
+      - 'tests/test_farm_tenant_finance.py'
       - 'domains/farming/setup.py'
       - 'domains/farming/journal.py'
       - 'domains/farming/tasks.py'
@@ -53,6 +57,7 @@ jobs:
       - name: Run tenant lineage and ownership scope tests
         run: >-
           python -m pytest -q
+          tests/test_farm_tenant_finance.py
           tests/test_farm_tenant_lineage.py
           tests/test_farm_tenant_sops.py
           tests/test_farm_tenant_health.py
