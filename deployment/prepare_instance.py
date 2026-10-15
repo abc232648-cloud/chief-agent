@@ -8,7 +8,7 @@ import sqlite3
 import uuid
 
 
-def prepare_isolated(root,source_root,source_manifest,username,password):
+def prepare_isolated(root,source_root,source_manifest,username,password,*,organization_name=None,farm_name=None):
     from database.store import Store
     from domains.storage import initialize
     from control.agents import AgentControls
@@ -32,8 +32,16 @@ def prepare_isolated(root,source_root,source_manifest,username,password):
         import importlib
         importlib.import_module('database.'+name).migrate_isolated(store,isolated_root=root,backup_directory=backup,restore_directory=restore,**pins)
     owner=IdentityService(store).bootstrap(username,password)
+    if farm_name is not None and organization_name is None:
+        raise ValueError('An initial farm requires an organization name.')
+    ownership_result=None
+    if organization_name is not None:
+        from .ownership_bootstrap import bootstrap_initial
+        ownership_result=bootstrap_initial(store,owner,organization_name,farm_name)
     with store._connect() as con:schema=fingerprint(con)
-    return {'status':'PREVIEW_PREPARED','database':str(store.path),'schema_sha256':schema,'owner_id':owner,'worker_enabled':False,'restores_promoted':False}
+    result={'status':'PREVIEW_PREPARED','database':str(store.path),'schema_sha256':schema,'owner_id':owner,'worker_enabled':False,'restores_promoted':False}
+    if ownership_result is not None:result.update(ownership_result)
+    return result
 
 
 def _new_absolute(path,label):
@@ -56,13 +64,14 @@ def _write_new_json(path,data,mode=0o600):
 
 def prepare_production(root,config,source_root,source_manifest,username,password,*,
                        public_host,browser_runtime,dashboard_port=8765,
-                       trusted_tls_proxy='127.0.0.1',farm_operations='DISABLED'):
+                       trusted_tls_proxy='127.0.0.1',farm_operations='DISABLED',
+                       organization_name=None,farm_name=None):
     """Create a new production instance without ever running migrations on production state.
 
-    All schema work and Owner bootstrap happen in a disposable isolated fixture. A clean
-    SQLite snapshot is then verified, copied to a new production candidate, marked, and
-    atomically promoted into the requested state-root path. Existing production state is
-    never adopted, overwritten, or migrated.
+    All schema work, Owner bootstrap and optional initial organization/farm bootstrap happen
+    in a disposable isolated fixture. A clean SQLite snapshot is then verified, copied to a
+    new production candidate, marked, and atomically promoted into the requested state-root
+    path. Existing production state is never adopted, overwritten, or migrated.
     """
     from .https_policy import contract as https_contract
     from .schema import preflight
@@ -78,6 +87,10 @@ def prepare_production(root,config,source_root,source_manifest,username,password
     https=https_contract(public_host,dashboard_port,trusted_tls_proxy)
     if farm_operations not in {'DISABLED','ENABLED'}:
         raise ValueError('farm_operations must be explicitly DISABLED or ENABLED.')
+    if farm_name is not None and organization_name is None:
+        raise ValueError('An initial farm requires an organization name.')
+    if farm_operations=='ENABLED' and (organization_name is None or farm_name is None):
+        raise ValueError('Enabled Farm operations require an initial organization and farm name.')
 
     os.umask(0o077)
     root.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
@@ -87,7 +100,8 @@ def prepare_production(root,config,source_root,source_manifest,username,password
     candidate=root.parent/('.'+root.name+'.candidate-'+token)
     if work.exists() or candidate.exists():raise FileExistsError('Preparation workspace collision.')
 
-    prepared=prepare_isolated(work,source_root,source_manifest,username,password)
+    prepared=prepare_isolated(work,source_root,source_manifest,username,password,
+                              organization_name=organization_name,farm_name=farm_name)
     schema=prepared['schema_sha256'];source_db=Path(prepared['database'])
     candidate.mkdir(mode=0o700)
     target_db=candidate/'state.sqlite3'
@@ -115,7 +129,7 @@ def prepare_production(root,config,source_root,source_manifest,username,password
     }
     _write_new_json(config,data)
     shutil.rmtree(work)
-    return {
+    result={
         'status':'PRODUCTION_PREPARED',
         'config':str(config),
         'state_root':str(root),
@@ -126,3 +140,6 @@ def prepare_production(root,config,source_root,source_manifest,username,password
         'migrations_on_production':False,
         'services_started':False,
     }
+    for key in ('organization_id','organization_name','farm_id','farm_name'):
+        if key in prepared:result[key]=prepared[key]
+    return result

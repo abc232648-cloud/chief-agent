@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import shutil
 import subprocess
 
@@ -40,6 +41,14 @@ def test_first_install_launcher_and_implementation_are_wired_for_clean_host():
     assert 'deployment.installation_identity' in implementation
     assert 'installation-identity.json' in implementation
 
+    # Farm-enabled installation asks business/farm identity and forwards it to
+    # prepare-production instead of treating a hostname as the farm identity.
+    assert 'Farm-owning organisation/company [${CHIEF_OWNER_NAME}]' in launcher
+    assert 'First farm name: ' in launcher
+    assert '--organization-name "$FARM_ORGANIZATION_NAME"' in launcher
+    assert '--farm-name "$FIRST_FARM_NAME"' in launcher
+    assert '"${OWNERSHIP_ARGS[@]}"' in launcher
+
     # Local-network naming/discovery and first-device trust material are installer-owned.
     assert 'avahi-daemon avahi-utils libnss-mdns iproute2' in implementation
     assert '/etc/avahi/avahi-daemon.conf' in implementation
@@ -53,6 +62,10 @@ def test_first_install_launcher_and_implementation_are_wired_for_clean_host():
     if bash:
         subprocess.run([bash,'-n',str(launcher_path)],check=True)
         subprocess.run([bash,'-n',str(implementation_path)],check=True)
+        # The launcher targets Xubuntu. Execute the generated installer only on POSIX;
+        # Windows Git Bash must fail closed at the platform guard by design.
+        if os.name != 'nt':
+            subprocess.run([bash,str(launcher_path)],input='n\n',text=True,check=True,cwd=root)
 
 
 def test_first_install_does_not_reuse_old_runtime_as_bootstrap_prerequisite():

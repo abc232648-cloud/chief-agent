@@ -57,6 +57,8 @@ def main():
     production.add_argument('--dashboard-port',type=int,default=8765)
     production.add_argument('--trusted-tls-proxy',default='127.0.0.1')
     production.add_argument('--farm-operations',choices=['DISABLED','ENABLED'],default='DISABLED')
+    production.add_argument('--organization-name')
+    production.add_argument('--farm-name')
     args=parser.parse_args()
 
     if args.command=='preflight':
@@ -92,7 +94,8 @@ def main():
         from .prepare_instance import prepare_production
         result=prepare_production(args.directory,args.config,args.source_root,args.source_manifest,args.username,password,
             public_host=args.public_host,browser_runtime=args.browser_runtime,dashboard_port=args.dashboard_port,
-            trusted_tls_proxy=args.trusted_tls_proxy,farm_operations=args.farm_operations)
+            trusted_tls_proxy=args.trusted_tls_proxy,farm_operations=args.farm_operations,
+            organization_name=args.organization_name,farm_name=args.farm_name)
         print(json.dumps(result,sort_keys=True))
     else:
         password=getpass.getpass('Preview Owner password: ')
