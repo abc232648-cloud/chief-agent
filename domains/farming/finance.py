@@ -5,7 +5,7 @@ import json
 import re
 import time
 from datetime import date
-from . import setup, bookkeeping as books, photos
+from . import setup, bookkeeping as books, photos, scope
 from .journal import bounded_text, identifier
 from identity.service import IdentityService
 from operations.time_integrity import utc_now, utc_text, aware_utc
@@ -18,7 +18,8 @@ CATEGORIES={'FEED':'Feed','BIRDS':'Birds','VETERINARY':'Veterinary care','WAGES'
 
 
 def records(con,kind):
-    return [json.loads(r[0]) for r in con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id",(kind,))]
+    values=[json.loads(r[0]) for r in con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id",(kind,))]
+    return scope.filter_records(con,values)
 
 
 def day(value):
@@ -54,7 +55,12 @@ def validate_contact(con,p):
     if p['counterparty']!=contact['name']:raise ValueError('Contact name differs from the selected contact.')
 
 
-def append(store,principal,payload):
+def append(store,principal,payload,*,farm_id=None):
+    if scope.current() is not None:return _append(store,principal,payload)
+    with scope.bind(store,principal,farm_id):return _append(store,principal,payload)
+
+
+def _append(store,principal,payload):
     if not isinstance(payload,dict):raise ValueError('A financial record is required.')
     operation=payload.get('operation')
     if operation=='contact':
@@ -76,47 +82,52 @@ def append(store,principal,payload):
     else:raise ValueError('Unknown financial operation.')
     with store._connect() as con:
         con.execute('BEGIN IMMEDIATE');principal=setup.authorize(store,con,principal,'finance');setup.available(store,con)
-        # Receipts are bounded/scoped; never materialize all attachment bytes.
-        existing=con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? AND json_extract(data_json,'$.event_id')=?",(kind,value['event_id'])).fetchone()
+        current_kind=records(con,kind)
+        existing=next((item for item in current_kind if item.get('event_id')==value['event_id']),None)
         if existing:
-            prior=json.loads(existing[0])
-            if prior['actor_id']!=principal.id or any(prior.get(k)!=v for k,v in value.items()):raise ValueError('Submission identifier conflict.')
+            if existing['actor_id']!=principal.id or any(existing.get(k)!=v for k,v in value.items()):raise ValueError('Submission identifier conflict.')
             return {'status':'ALREADY_RECORDED','id':value['event_id']}
         if operation=='contact':
             if any(r['name'].casefold()==value['name'].casefold() for r in records(con,CONTACTS)):raise ValueError('A contact with this name already exists. Use the existing contact.')
         else:
             current={r['payload']['event_id']:r['payload'] for r in books.active(books.rows(con))}
-            if value['reference'] not in current:raise ValueError('Receipt needs an existing, non-voided financial record.')
-            count=con.execute("SELECT count(*) FROM domain_records WHERE domain='farming' AND kind=? AND json_extract(data_json,'$.reference')=?",(kind,value['reference'])).fetchone()[0]
+            if value['reference'] not in current:raise ValueError('Receipt needs an existing, non-voided financial record in this Farm.')
+            count=sum(r.get('reference')==value['reference'] for r in records(con,RECEIPTS))
             if count>=5:raise ValueError('At most5 receipts per financial record.')
         value.update(actor_id=principal.id,received_at=utc_text(utc_now()))
-        con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",(kind,json.dumps(value),time.time()))
+        value=scope.stamp(value)
+        con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",(kind,json.dumps(value,sort_keys=True),time.time()))
         IdentityService(store)._event(con,principal,'FARM_FINANCE_'+operation.upper(),'farming',value['event_id'],'RECORDED')
     return {'status':'RECORDED','id':value['event_id']}
 
 
-def receipt(store,principal,identity):
-    identifier(identity)
-    with store._connect() as con:
-        con.execute('BEGIN')
-        setup.authorize(store,con,principal,'finance')
-        row=con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? AND json_extract(data_json,'$.event_id')=?",(RECEIPTS,identity)).fetchone()
-        if not row:raise FileNotFoundError('Receipt not found.')
-        return base64.b64decode(json.loads(row[0])['image_base64'])
+def receipt(store,principal,identity,*,farm_id=None):
+    if scope.current() is not None:return _receipt(store,principal,identity)
+    with scope.bind(store,principal,farm_id):return _receipt(store,principal,identity)
 
 
-def linked_history(store,principal,identity):
-    """Read a bounded financial reference chain, including voided originals."""
+def _receipt(store,principal,identity):
     identifier(identity)
     with store._connect() as con:
-        con.execute('BEGIN')
-        setup.authorize(store,con,principal,'finance')
-        history=books.rows(con)
-        by_id={r['payload']['event_id']:r for r in history}
+        con.execute('BEGIN');setup.authorize(store,con,principal,'finance')
+        item=next((r for r in records(con,RECEIPTS) if r.get('event_id')==identity),None)
+        if not item:raise FileNotFoundError('Receipt not found.')
+        return base64.b64decode(item['image_base64'])
+
+
+def linked_history(store,principal,identity,*,farm_id=None):
+    if scope.current() is not None:return _linked_history(store,principal,identity)
+    with scope.bind(store,principal,farm_id):return _linked_history(store,principal,identity)
+
+
+def _linked_history(store,principal,identity):
+    identifier(identity)
+    with store._connect() as con:
+        con.execute('BEGIN');setup.authorize(store,con,principal,'finance')
+        history=books.rows(con);by_id={r['payload']['event_id']:r for r in history}
         if identity not in by_id:raise FileNotFoundError('Financial record not found.')
         children={}
-        for row in history:
-            children.setdefault(row['payload']['reference'],[]).append(row['payload']['event_id'])
+        for row in history:children.setdefault(row['payload']['reference'],[]).append(row['payload']['event_id'])
         pending=[identity];seen=set()
         while pending and len(seen)<1000:
             key=pending.pop()
@@ -125,18 +136,34 @@ def linked_history(store,principal,identity):
             if parent and parent not in seen:pending.append(parent)
             pending.extend(k for k in children.get(key,[]) if k not in seen)
         current={r['payload']['event_id'] for r in books.active(history)}
-        records=[]
+        output=[]
         for row in history:
             p=row['payload']
             if p['event_id'] not in seen:continue
             actor=con.execute('SELECT username FROM human_identities WHERE id=?',(row['actor_id'],)).fetchone()
-            records.append({'payload':p,'actor':actor[0] if actor else 'Former account',
-                            'received_at':row['received_at'],'is_current':p['event_id'] in current})
-    return {'records':records,'truncated':any(k not in seen for k in pending),
-            'notice':'Linked reported records and decisions, including voided originals. This history does not prove bank settlement.'}
+            output.append({'payload':p,'actor':actor[0] if actor else 'Former account','received_at':row['received_at'],'is_current':p['event_id'] in current})
+    return {'records':output,'truncated':any(k not in seen for k in pending),
+            'notice':'Linked reported records and decisions for this Farm, including voided originals. This history does not prove bank settlement.'}
 
 
-def report(store,principal,*,start='',end='',query='',contact_id='',offset=0,include_all_balances=False):
+def _revision(history,contacts,receipts):
+    digest=hashlib.sha256()
+    values=[]
+    values.extend(('bookkeeping',row) for row in history)
+    values.extend(('contact',row) for row in contacts)
+    values.extend(('receipt',{k:v for k,v in row.items() if k!='image_base64'}) for row in receipts)
+    for kind,value in values:
+        encoded=json.dumps((kind,value),sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()
+        digest.update(str(len(encoded)).encode()+b':'+encoded)
+    return digest.hexdigest()
+
+
+def report(store,principal,*,start='',end='',query='',contact_id='',offset=0,include_all_balances=False,farm_id=None):
+    if scope.current() is not None:return _report(store,principal,start=start,end=end,query=query,contact_id=contact_id,offset=offset,include_all_balances=include_all_balances)
+    with scope.bind(store,principal,farm_id):return _report(store,principal,start=start,end=end,query=query,contact_id=contact_id,offset=offset,include_all_balances=include_all_balances)
+
+
+def _report(store,principal,*,start='',end='',query='',contact_id='',offset=0,include_all_balances=False):
     if start:day(start)
     if end:day(end)
     if start and end and start>end:raise ValueError('Start date must not follow end date.')
@@ -144,9 +171,8 @@ def report(store,principal,*,start='',end='',query='',contact_id='',offset=0,inc
     if contact_id:identifier(contact_id)
     if type(offset)is not int or not 0<=offset<=1000000:raise ValueError('Invalid page offset.')
     with store._connect() as con:
-        con.execute('BEGIN')
-        setup.authorize(store,con,principal,'finance')
-        history=books.rows(con);contacts=records(con,CONTACTS)
+        con.execute('BEGIN');setup.authorize(store,con,principal,'finance')
+        history=books.rows(con);contacts=records(con,CONTACTS);receipt_records=records(con,RECEIPTS)
         can_approve=setup.role(con,principal)=='OWNER'
         active={r['payload']['event_id']:r for r in books.active(history)}
         disputes=books.disputed({key:value['payload'] for key,value in active.items()})
@@ -170,25 +196,16 @@ def report(store,principal,*,start='',end='',query='',contact_id='',offset=0,inc
                 paid=sum(v['amount_minor'] for v in payments.get(p['event_id'],[]) if v['event_id'] in confirmed)
                 owed=p['amount_minor']-paid;t['receivable' if incoming else 'payable']+=owed
                 due=p.get('details',{}).get('due_on')
-                balances.append({'id':p['event_id'],'counterparty':p['counterparty'],'currency':p['currency'],'kind':p['kind'],'outstanding_minor':str(owed),'disputed':p['event_id'] in disputes,'due_on':due,'overdue':bool(due and owed and due<utc_now().astimezone(setup.farm_zone(con)).date().isoformat())})
+                balances.append({'reference':p['event_id'],'counterparty':p['counterparty'],'currency':p['currency'],'kind':p['kind'],'outstanding_minor':str(owed),'disputed':p['event_id'] in disputes,'due_on':due,'overdue':bool(due and owed and due<utc_now().astimezone(setup.farm_zone(con)).date().isoformat())})
             if p['kind']=='PAYMENT_CLAIM':
                 parent=active.get(p['reference'],{}).get('payload',{})
                 if contact_id and parent.get('details',{}).get('contact_id')!=contact_id:continue
                 if p['event_id'] in confirmed:t['received' if parent.get('kind') in books.RECEIVABLES else 'paid']+=p['amount_minor']
                 else:t['unconfirmed']+=p['amount_minor']
             if p['kind']=='PURCHASE_REQUEST' and p['event_id'] not in decided:t['pending_approvals']+=1
-        # Money strings preserve exact totals even beyond JavaScript's safe integer range.
-        digest=hashlib.sha256()
-        for row in con.execute("SELECT kind,json_remove(data_json,'$.image_base64') FROM domain_records WHERE domain='farming' AND kind IN (?,?,?) ORDER BY id",(books.KIND,CONTACTS,RECEIPTS)):
-            encoded=json.dumps(tuple(row),ensure_ascii=False).encode()
-            digest.update(str(len(encoded)).encode()+b':'+encoded)
-        revision=digest.hexdigest()
-        page=list(reversed(selected))[offset:offset+100]
-        page_ids={r['payload']['event_id'] for r in page}
-        attachments=[]
-        if page_ids:
-            sql="SELECT json_extract(data_json,'$.event_id'),json_extract(data_json,'$.reference'),json_extract(data_json,'$.sha256') FROM domain_records WHERE domain='farming' AND kind=? AND json_extract(data_json,'$.reference') IN ("+','.join('?' for _ in page_ids)+')'
-            attachments=[dict(zip(('event_id','reference','sha256'),row)) for row in con.execute(sql,(RECEIPTS,*sorted(page_ids)))]
+        revision=_revision(history,contacts,receipt_records)
+        page=list(reversed(selected))[offset:offset+100];page_ids={r['payload']['event_id'] for r in page}
+        attachments=[{'event_id':r['event_id'],'reference':r['reference'],'sha256':r['sha256']} for r in receipt_records if r.get('reference') in page_ids]
         return {'revision':revision,'categories':CATEGORIES,'contacts':contacts,'summaries':{c:{k:str(v) for k,v in t.items()} for c,t in totals.items()},'balances':balances if include_all_balances else [b for b in balances if b['id'] in page_ids],
-                'records':page,'record_count':len(selected),'offset':offset,'receipts':[{k:r[k] for k in ('event_id','reference','sha256')} for r in attachments],
-                'can_approve':can_approve,'notice':'Current non-voided records; confirmations as of now. Period cash totals use the reported payment date. Outstanding amounts relate to the selected sales, expenses and opening debts. Opening debts and attached invoices are not new sales or expenses. These are not bank balances or formal profit statements.'}
+                'records':page,'record_count':len(selected),'offset':offset,'receipts':attachments,
+                'can_approve':can_approve,'notice':'Current non-voided records for the selected Farm; confirmations as of now. Period cash totals use the reported payment date. Outstanding amounts relate to the selected sales, expenses and opening debts. Opening debts and attached invoices are not new sales or expenses. These are not bank balances or formal profit statements.'}
