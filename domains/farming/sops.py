@@ -10,7 +10,7 @@ import time
 
 from identity.service import IdentityService
 from operations.time_integrity import utc_now, utc_text
-from . import setup, tasks
+from . import setup, tasks, scope
 from .journal import bounded_text, identifier
 
 KIND = 'farm_sop_v1'
@@ -42,7 +42,7 @@ def rows(con):
     ).fetchall()
     if len(result) > LIMIT:
         raise ValueError('SOP catalog capacity requires indexed upgrade; no truncated catalog returned.')
-    return [json.loads(row[0]) for row in result]
+    return scope.filter_records(con, [json.loads(row[0]) for row in result])
 
 
 def catalog(history):
@@ -68,7 +68,14 @@ def _text_list(value, *, limit, item_limit, name):
     return [bounded_text(item, item_limit) for item in value]
 
 
-def publish(store, principal, payload):
+def publish(store, principal, payload, *, farm_id=None):
+    if scope.current() is not None:
+        return _publish(store, principal, payload)
+    with scope.bind(store, principal, farm_id):
+        return _publish(store, principal, payload)
+
+
+def _publish(store, principal, payload):
     if not isinstance(payload, dict):
         raise ValueError('Supply an SOP publication.')
     p = dict(payload)
@@ -98,15 +105,22 @@ def publish(store, principal, payload):
         if prior_version:
             raise ValueError('Published SOP versions are immutable; publish a new version instead.')
         received_at = utc_text(utc_now())
-        record = {'version': 1, 'payload': p, 'actor_id': principal.id,
-                  'session_id': principal.session_id, 'received_at': received_at}
+        record = scope.stamp({'version': 1, 'payload': p, 'actor_id': principal.id,
+                              'session_id': principal.session_id, 'received_at': received_at})
         con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",
                     (KIND, json.dumps(record, sort_keys=True), time.time()))
         IdentityService(store)._event(con, principal, 'FARM_SOP_PUBLISHED', 'farming', p['event_id'], 'RECORDED')
     return {'status': 'RECORDED', 'sop_ref': reference(p['sop_id'], p['version']), 'updated_at': received_at}
 
 
-def overview(store, principal):
+def overview(store, principal, *, farm_id=None):
+    if scope.current() is not None:
+        return _overview(store, principal)
+    with scope.bind(store, principal, farm_id):
+        return _overview(store, principal)
+
+
+def _overview(store, principal):
     """Management catalog. The Staff application uses ``assigned`` instead."""
     with store._connect() as con:
         principal = setup.authorize(store, con, principal, 'setup')
@@ -116,9 +130,14 @@ def overview(store, principal):
             'notice': 'Published SOP versions are immutable. Assign tasks using an exact sop_id@version reference.'}
 
 
-def assigned(store, principal):
-    # Ask the authoritative task projection what this principal can see; this
-    # preserves Worker/Supervisor/Manager organizational scoping in one place.
+def assigned(store, principal, *, farm_id=None):
+    if scope.current() is not None:
+        return _assigned(store, principal)
+    with scope.bind(store, principal, farm_id):
+        return _assigned(store, principal)
+
+
+def _assigned(store, principal):
     task_view = tasks.overview(store, principal)
     refs = []
     invalid_refs = []
