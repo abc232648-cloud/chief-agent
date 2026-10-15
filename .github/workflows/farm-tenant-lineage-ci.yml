@@ -12,11 +12,13 @@ on:
       - 'domains/farming/incidents.py'
       - 'domains/farming/reports.py'
       - 'domains/farming/sops.py'
+      - 'domains/farming/health_records.py'
       - 'domains/farming/notification_events.py'
       - 'domains/tenancy.py'
       - 'domains/ownership.py'
       - 'tests/test_farm_tenant_lineage.py'
       - 'tests/test_farm_tenant_sops.py'
+      - 'tests/test_farm_tenant_health.py'
       - '.github/workflows/farm-tenant-lineage-ci.yml'
   workflow_dispatch:
 
@@ -52,6 +54,7 @@ jobs:
           python -m pytest -q
           tests/test_farm_tenant_lineage.py
           tests/test_farm_tenant_sops.py
+          tests/test_farm_tenant_health.py
           tests/test_tenancy_scope.py
           tests/test_ownership_catalog.py
           tests/test_ownership_http.py
