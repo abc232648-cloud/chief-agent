@@ -26,13 +26,13 @@ _PREFIX = "chief-"
 def display_name(value: str) -> str:
     if not isinstance(value, str):
         raise ValueError("Chief owner/organisation name is required.")
+    if any(ord(char) < 32 or ord(char) == 127 for char in value):
+        raise ValueError("Chief owner/organisation name contains unsupported control characters.")
     name = " ".join(value.split())
     if not name:
         raise ValueError("Chief owner/organisation name is required.")
     if len(name) > MAX_DISPLAY_NAME:
         raise ValueError(f"Chief owner/organisation name must be at most {MAX_DISPLAY_NAME} characters.")
-    if any(ord(char) < 32 or ord(char) == 127 for char in name):
-        raise ValueError("Chief owner/organisation name contains unsupported control characters.")
     return name
 
 
