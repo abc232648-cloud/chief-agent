@@ -26,6 +26,12 @@ anchor='sudo -v\n'
 if text.count(anchor)!=1:raise SystemExit('Installer sudo anchor changed; review launcher integration.')
 if 'sudo loginctl enable-linger "$(id -un)"' not in text:
     text=text.replace(anchor,anchor+'sudo loginctl enable-linger "$(id -un)"\n',1)
+anchor='if [[ "${farm_answer:-N}" =~ ^[Yy]$ ]]; then FARM_OPERATIONS=ENABLED; else FARM_OPERATIONS=DISABLED; fi\n'
+if text.count(anchor)!=1:raise SystemExit('Installer Farm prompt anchor changed; review ownership bootstrap integration.')
+text=text.replace(anchor,anchor+'''OWNERSHIP_ARGS=()\nif [[ "$FARM_OPERATIONS" == ENABLED ]]; then\n  read -r -p "Farm-owning organisation/company [${CHIEF_OWNER_NAME}]: " FARM_ORGANIZATION_NAME\n  FARM_ORGANIZATION_NAME="${FARM_ORGANIZATION_NAME:-$CHIEF_OWNER_NAME}"\n  while :; do\n    read -r -p "First farm name: " FIRST_FARM_NAME\n    [[ -n "${FIRST_FARM_NAME//[[:space:]]/}" ]] && break\n    echo "Enter the farm name Chief should use."\n  done\n  OWNERSHIP_ARGS=(--organization-name "$FARM_ORGANIZATION_NAME" --farm-name "$FIRST_FARM_NAME")\nfi\n''',1)
+anchor='  --farm-operations "$FARM_OPERATIONS"\n'
+if text.count(anchor)!=1:raise SystemExit('Installer prepare-production Farm argument anchor changed; review ownership bootstrap integration.')
+text=text.replace(anchor,'  --farm-operations "$FARM_OPERATIONS" \\\n  "${OWNERSHIP_ARGS[@]}"\n',1)
 anchor='NODE="$NODE_ROOT/bin/node"; NPM="$NODE_ROOT/bin/npm"\n'
 if text.count(anchor)!=1:raise SystemExit('Installer Node anchor changed; review launcher integration.')
 text=text.replace(anchor,anchor+'export PATH="$NODE_ROOT/bin:$PATH"\n',1)
