@@ -13,6 +13,7 @@ import time
 
 from identity.service import IdentityService
 from operations.time_integrity import utc_now, utc_text, aware_utc
+from . import scope
 
 
 KIND = 'poultry_journal_v1'
@@ -59,7 +60,6 @@ def validate(payload):
     if out['basis'] not in ('MEASURED', 'ESTIMATED'):
         raise ValueError('State whether this value was measured or estimated.')
     value = out['quantity']
-    # Decimal strings avoid float rounding, booleans, exponent abuse and NaN.
     if not isinstance(value, str) or not re.fullmatch(r'\d{1,9}(?:\.\d{1,3})?', value):
         raise ValueError('Use a non-negative decimal quantity with at most three decimal places.')
     try:
@@ -91,7 +91,7 @@ def read_rows(con):
                        ('farming', KIND, LIMIT + 1)).fetchall()
     if len(rows) > LIMIT:
         raise ValueError('Pilot record capacity exceeded; export and upgrade the journal before continuing.')
-    return [json.loads(row[0]) for row in rows]
+    return scope.filter_records(con, [json.loads(row[0]) for row in rows])
 
 
 def effective(rows):
@@ -99,10 +99,20 @@ def effective(rows):
     return [r for r in rows if r['payload']['event_id'] not in replaced]
 
 
-def append(store, principal, payload, *, connection=None):
+def append(store, principal, payload, *, connection=None, farm_id=None):
+    if scope.current() is not None:
+        return _append(store, principal, payload, connection=connection)
+    with scope.bind(store, principal, farm_id):
+        return _append(store, principal, payload, connection=connection)
+
+
+def _append(store, principal, payload, *, connection=None):
     payload = validate(payload)
     if payload['kind'] in ADJUSTMENTS:
         raise PermissionError('Stock adjustments require the physical-count approval workflow.')
+    selected = scope.current(required=True)
+    if not selected.legacy and payload.get('conversion') is not None:
+        raise PermissionError('Unit conversions are unavailable until conversion policy is Farm-scoped.')
     identity = IdentityService(store)
     with (store._connect() if connection is None else nullcontext(connection)) as con:
         if connection is None:
@@ -115,7 +125,7 @@ def append(store, principal, payload, *, connection=None):
         setup.available(store, con)
         from database.farm_indexes import schema_ready
         from . import journal_queries
-        indexed = schema_ready(con)
+        indexed = schema_ready(con) and selected.legacy
         rows = journal_queries.stock_rows(con, payload) if indexed else read_rows(con)
         prior = journal_queries.prior(con, payload['event_id']) if indexed else next((r for r in rows if r['payload']['event_id'] == payload['event_id']), None)
         if prior:
@@ -169,9 +179,9 @@ def append(store, principal, payload, *, connection=None):
             if not historical and opening and payload['observed_at'] < opening['observed_at']:
                 raise ValueError('Movement predates the opening balance.')
         username = con.execute('SELECT username FROM human_identities WHERE id=?', (principal.id,)).fetchone()[0]
-        record = {'version': 1, 'payload': payload, 'actor_id': principal.id, 'actor_name': username,
-                  'session_id': principal.session_id, 'received_at': utc_text(utc_now()),
-                  'evidence_status': 'USER_REPORTED'}
+        record = scope.stamp({'version': 1, 'payload': payload, 'actor_id': principal.id, 'actor_name': username,
+                              'session_id': principal.session_id, 'received_at': utc_text(utc_now()),
+                              'evidence_status': 'USER_REPORTED'})
         con.execute('INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES(?,?,?,?)',
                     ('farming', KIND, json.dumps(record, sort_keys=True), time.time()))
         identity._event(con, principal, 'FARM_RECORD_CORRECTED' if payload['corrects'] else 'FARM_RECORD_CREATED',
@@ -183,7 +193,14 @@ def stock_key(payload):
     return ('entity', payload['entity_id']) if 'entity_id' in payload else ('legacy', payload['location'])
 
 
-def overview(store, principal, *, offset=0, limit=100):
+def overview(store, principal, *, offset=0, limit=100, farm_id=None):
+    if scope.current() is not None:
+        return _overview(store, principal, offset=offset, limit=limit)
+    with scope.bind(store, principal, farm_id):
+        return _overview(store, principal, offset=offset, limit=limit)
+
+
+def _overview(store, principal, *, offset=0, limit=100):
     if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 100:
         raise ValueError('Invalid history page.')
     IdentityService(store).authorize(principal, 'work.read', 'farming', sensitive=False)
@@ -192,7 +209,8 @@ def overview(store, principal, *, offset=0, limit=100):
         principal = IdentityService(store).refresh(principal)
         manager = setup.role(con, principal) in {'OWNER','GENERAL_MANAGER','SUPERVISOR'}
         from database.farm_indexes import schema_ready
-        if schema_ready(con):
+        selected = scope.require_for_connection(con)
+        if schema_ready(con) and selected.legacy:
             from .journal_queries import overview as indexed_overview
             return indexed_overview(con, principal, manager, offset, limit)
         catalog = setup.entities(con)
