@@ -59,6 +59,7 @@ def main():
     ready.add_argument('--expected-source',required=True);ready.add_argument('--expected-schema',required=True)
     ready.add_argument('--platform',choices=['linux','windows','macos'],required=True)
     ready.add_argument('--project',required=True);ready.add_argument('--user',required=True);ready.add_argument('--python')
+    ready.add_argument('--managed-installation')
 
     bootstrap=commands.add_parser('bootstrap-install')
     bootstrap.add_argument('--directory',required=True)
@@ -92,7 +93,8 @@ def main():
         result=installation_readiness(args.config,source_root=args.source_root,source_manifest=args.source_manifest,
             backup_directory=args.backup_directory,manifest_sha256=args.manifest_sha256,
             expected_source=args.expected_source,expected_schema=args.expected_schema,
-            platform=args.platform,project=args.project,user=args.user,python=args.python)
+            platform=args.platform,project=args.project,user=args.user,python=args.python,
+            managed_installation=args.managed_installation)
         print(json.dumps(result,sort_keys=True))
     elif args.command=='bootstrap-install':
         from .bootstrap_install import bootstrap_installation
