@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import shutil
 import subprocess
 
@@ -61,9 +62,10 @@ def test_first_install_launcher_and_implementation_are_wired_for_clean_host():
     if bash:
         subprocess.run([bash,'-n',str(launcher_path)],check=True)
         subprocess.run([bash,'-n',str(implementation_path)],check=True)
-        # The launcher must also execute its embedded transformation cleanly. A
-        # negative answer exits the generated installer before any host changes.
-        subprocess.run([bash,str(launcher_path)],input='n\n',text=True,check=True,cwd=root)
+        # The launcher targets Xubuntu. Execute the generated installer only on POSIX;
+        # Windows Git Bash must fail closed at the platform guard by design.
+        if os.name != 'nt':
+            subprocess.run([bash,str(launcher_path)],input='n\n',text=True,check=True,cwd=root)
 
 
 def test_first_install_does_not_reuse_old_runtime_as_bootstrap_prerequisite():
