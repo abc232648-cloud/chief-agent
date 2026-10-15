@@ -5,7 +5,7 @@ from urllib.parse import urlsplit, parse_qs
 
 
 _PATHS = {'/api/farm/expense-allocations','/api/farm/egg-loss-links','/api/farm/clarifications','/api/farm/worker-reports','/api/farm/tasks','/api/farm/incidents','/api/farm/sops','/api/farm/sops/assigned','/api/farm/planning','/api/farm/planning/preview','/api/farm/health-records','/api/farm/labour','/api/farm/units','/api/farm/costing','/api/farm/costing/policy','/api/farm/financial-permissions','/api/farm/physical-counts','/api/farm/notification-recipients','/api/farm/brief','/api/farm/brief/schedule','/api/farm/finance','/api/farm/journal', '/api/farm/setup', '/api/farm/bookkeeping', '/api/farm/staff', '/api/farm/assistant', '/api/farm/assistant/configure', '/api/farm/photos'}
-_TENANT_SAFE = {'/api/farm/setup', '/api/farm/journal'}
+_TENANT_SAFE = {'/api/farm/setup', '/api/farm/journal', '/api/farm/tasks', '/api/farm/incidents', '/api/farm/worker-reports'}
 
 
 def dispatch(handler, store, principal, path, method, body):
@@ -25,9 +25,9 @@ def dispatch(handler, store, principal, path, method, body):
         from domains.farming import reports
         if method in {'GET', 'HEAD'}:
             q = parse_qs(parsed.query)
-            handler.json(reports.overview(store, principal, offset=int(q.get('offset', ['0'])[0])))
+            handler.json(reports.overview(store, principal, offset=int(q.get('offset', ['0'])[0]), farm_id=farm_id))
         elif method == 'POST':
-            handler.json(reports.append(store, principal, body))
+            handler.json(reports.append(store, principal, body, farm_id=farm_id))
         else:
             handler.json({'status': 'METHOD_NOT_ALLOWED'}, 405)
         return True
@@ -35,9 +35,9 @@ def dispatch(handler, store, principal, path, method, body):
         from domains.farming import tasks
         if method in {'GET', 'HEAD'}:
             q = parse_qs(parsed.query)
-            handler.json(tasks.overview(store, principal, offset=int(q.get('offset', ['0'])[0])))
+            handler.json(tasks.overview(store, principal, offset=int(q.get('offset', ['0'])[0]), farm_id=farm_id))
         elif method == 'POST':
-            handler.json(tasks.append(store, principal, body))
+            handler.json(tasks.append(store, principal, body, farm_id=farm_id))
         else:
             handler.json({'status': 'METHOD_NOT_ALLOWED'}, 405)
         return True
@@ -45,9 +45,9 @@ def dispatch(handler, store, principal, path, method, body):
         from domains.farming import incidents
         if method in {'GET', 'HEAD'}:
             q = parse_qs(parsed.query)
-            handler.json(incidents.overview(store, principal, offset=int(q.get('offset', ['0'])[0])))
+            handler.json(incidents.overview(store, principal, offset=int(q.get('offset', ['0'])[0]), farm_id=farm_id))
         elif method == 'POST':
-            handler.json(incidents.append(store, principal, body))
+            handler.json(incidents.append(store, principal, body, farm_id=farm_id))
         else:
             handler.json({'status': 'METHOD_NOT_ALLOWED'}, 405)
         return True
