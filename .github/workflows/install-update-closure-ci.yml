@@ -29,6 +29,7 @@ on:
       - 'tests/test_first_install_contract.py'
       - 'tests/test_installation_identity.py'
       - 'tests/test_ownership_bootstrap.py'
+      - 'tests/test_install_readiness.py'
       - 'tests/test_install_backup.py'
       - 'tests/test_linux_service_control.py'
       - 'tests/test_managed_updates.py'
@@ -77,6 +78,7 @@ jobs:
           tests/test_first_install_contract.py
           tests/test_installation_identity.py
           tests/test_ownership_bootstrap.py
+          tests/test_install_readiness.py
           tests/test_install_backup.py
           tests/test_managed_updates.py
           tests/test_production_prepare.py
