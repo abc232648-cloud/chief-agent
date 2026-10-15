@@ -12,7 +12,7 @@ import time
 
 from identity.service import IdentityService
 from operations.time_integrity import aware_utc, utc_now, utc_text
-from . import setup, tasks
+from . import setup, tasks, scope
 from .journal import bounded_text, identifier
 
 KIND = 'farm_worker_report_v1'
@@ -36,7 +36,7 @@ def rows(con):
     ).fetchall()
     if len(values) > LIMIT:
         raise ValueError('Worker-report history capacity requires indexed upgrade; partial history is not returned.')
-    return [json.loads(row[0]) for row in values]
+    return scope.filter_records(con, [json.loads(row[0]) for row in values])
 
 
 def _task_visible(con, principal, task_id):
@@ -105,7 +105,14 @@ def _validate(con, principal, payload):
     return p
 
 
-def append(store, principal, payload):
+def append(store, principal, payload, *, farm_id=None):
+    if scope.current() is not None:
+        return _append(store, principal, payload)
+    with scope.bind(store, principal, farm_id):
+        return _append(store, principal, payload)
+
+
+def _append(store, principal, payload):
     identity = IdentityService(store)
     with store._connect() as con:
         con.execute('BEGIN IMMEDIATE')
@@ -123,14 +130,14 @@ def append(store, principal, payload):
                 'received_at': prior['received_at'],
                 'evidence_status': prior['evidence_status'],
             }
-        record = {
+        record = scope.stamp({
             'version': 1,
             'payload': p,
             'actor_id': principal.id,
             'session_id': principal.session_id,
             'received_at': utc_text(utc_now()),
             'evidence_status': 'HUMAN_REPORTED',
-        }
+        })
         con.execute(
             "INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",
             (KIND, json.dumps(record, sort_keys=True), time.time()),
@@ -144,7 +151,14 @@ def append(store, principal, payload):
     }
 
 
-def overview(store, principal, offset=0):
+def overview(store, principal, offset=0, *, farm_id=None):
+    if scope.current() is not None:
+        return _overview(store, principal, offset)
+    with scope.bind(store, principal, farm_id):
+        return _overview(store, principal, offset)
+
+
+def _overview(store, principal, offset=0):
     if type(offset) is not int or not 0 <= offset <= 1000000:
         raise ValueError('Invalid worker-report page.')
     with store._connect() as con:
