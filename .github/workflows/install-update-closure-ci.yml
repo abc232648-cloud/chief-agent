@@ -12,6 +12,7 @@ on:
       - 'deployment/install_backup.py'
       - 'deployment/install_chief.sh'
       - 'deployment/install_chief_xubuntu.sh'
+      - 'deployment/installation_identity.py'
       - 'deployment/install_readiness.py'
       - 'deployment/linux_service_control.py'
       - 'deployment/managed_launch.py'
@@ -25,6 +26,7 @@ on:
       - 'update_center/runtime_install.py'
       - 'tests/test_deployment_bootstrap.py'
       - 'tests/test_first_install_contract.py'
+      - 'tests/test_installation_identity.py'
       - 'tests/test_install_backup.py'
       - 'tests/test_linux_service_control.py'
       - 'tests/test_managed_updates.py'
@@ -71,6 +73,7 @@ jobs:
           python -m pytest -q
           tests/test_deployment_bootstrap.py
           tests/test_first_install_contract.py
+          tests/test_installation_identity.py
           tests/test_install_backup.py
           tests/test_managed_updates.py
           tests/test_production_prepare.py

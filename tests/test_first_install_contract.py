@@ -32,6 +32,23 @@ def test_first_install_launcher_and_implementation_are_wired_for_clean_host():
     assert 'chief-tls-proxy.service' in implementation
     assert 'INSTALLATION_COMPLETE' in implementation
 
+    # Normal users provide identity, not DNS/TLS infrastructure details.
+    assert 'Who is this Chief for? (your name or organisation name): ' in implementation
+    assert 'Hostname devices will use for Chief' not in implementation
+    assert 'Use a publicly trusted certificate for this hostname?' not in implementation
+    assert 'CHIEF_PUBLIC_HOST' in implementation  # explicit administrator-only public-DNS override
+    assert 'deployment.installation_identity' in implementation
+    assert 'installation-identity.json' in implementation
+
+    # Local-network naming/discovery and first-device trust material are installer-owned.
+    assert 'avahi-daemon avahi-utils libnss-mdns iproute2' in implementation
+    assert '/etc/avahi/avahi-daemon.conf' in implementation
+    assert 'Chief local hostname was not advertised by this machine.' in implementation
+    assert 'Chief_Device_Setup' in implementation
+    assert 'Chief-Local-CA.crt' in implementation
+    assert 'Certificate Trust Settings' in implementation
+    assert '--cacert "$CA_ROOT" --resolve "${PUBLIC_HOST}:443:127.0.0.1"' in implementation
+
     bash=shutil.which('bash')
     if bash:
         subprocess.run([bash,'-n',str(launcher_path)],check=True)

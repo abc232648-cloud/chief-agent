@@ -24,6 +24,7 @@ PRODUCTION="$ROOT/production"
 CADDY_ROOT="$ROOT/caddy"
 CONFIG_ROOT="$HOME/.config/chief"
 CONFIG="$CONFIG_ROOT/production-instance.json"
+IDENTITY_CONFIG="$CONFIG_ROOT/installation-identity.json"
 BROWSER_CONFIG="$CONFIG_ROOT/browser-runtime.json"
 CADDYFILE="$CONFIG_ROOT/Caddyfile"
 STATE="$HOME/.local/state/chief"
@@ -43,28 +44,30 @@ command -v apt-get >/dev/null || die "This installer currently requires an apt-b
 
 printf '\nChief first installation\n========================\n'
 echo "This run will archive previous Chief deployments, install required system packages,"
-echo "create a fresh private runtime and database, build the three PWAs, install the TLS proxy,"
+echo "create a fresh private runtime and database, build the three PWAs, install local discovery/TLS,"
 echo "install user services, and start Chief."
 printf '\n'
 read -r -p "Continue with a fresh Chief installation? [Y/n] " answer
 [[ "${answer:-Y}" =~ ^[Yy]$ ]] || { echo "Cancelled."; exit 0; }
 
+while :; do
+  read -r -p "Who is this Chief for? (your name or organisation name): " CHIEF_OWNER_NAME
+  [[ -n "${CHIEF_OWNER_NAME//[[:space:]]/}" ]] && break
+  echo "Enter the person or organisation Chief belongs to."
+done
 read -r -p "Owner username [owner]: " OWNER_USERNAME
 OWNER_USERNAME="${OWNER_USERNAME:-owner}"
-while :; do
-  read -r -p "Hostname devices will use for Chief (example: chief.example.com): " PUBLIC_HOST
-  [[ "$PUBLIC_HOST" == *.* && "$PUBLIC_HOST" != "localhost" ]] && break
-  echo "Enter a DNS-style hostname containing a dot; localhost is not accepted for production."
-done
 read -r -p "Enable production Farm operations now? [y/N] " farm_answer
 if [[ "${farm_answer:-N}" =~ ^[Yy]$ ]]; then FARM_OPERATIONS=ENABLED; else FARM_OPERATIONS=DISABLED; fi
-read -r -p "Use a publicly trusted certificate for this hostname? [y/N] " tls_answer
-if [[ "${tls_answer:-N}" =~ ^[Yy]$ ]]; then TLS_MODE=PUBLIC; else TLS_MODE=LOCAL; fi
+
+# Normal first-run installations are local and require no DNS knowledge. Public DNS
+# remains an administrator-only override for deployments that already control DNS.
+if [[ -n "${CHIEF_PUBLIC_HOST:-}" ]]; then TLS_MODE=PUBLIC; else TLS_MODE=LOCAL; fi
 
 STAMP="$(date +%Y%m%d_%H%M%S)"
 ARCHIVE_BASE="$HOME/Chief_Previous_Installations"
 ARCHIVE="$ARCHIVE_BASE/$STAMP"
-mkdir -p "$ARCHIVE"/{home,state,share,config,systemd,logs,repositories,inventory}
+mkdir -p "$ARCHIVE"/{home,state,share,config,systemd,system,logs,repositories,inventory}
 chmod 700 "$ARCHIVE_BASE" "$ARCHIVE"
 
 echo "Stopping any previous Chief user services..."
@@ -111,9 +114,11 @@ echo "Previous Chief material archived under: $ARCHIVE"
 
 echo "Requesting one administrator authorization for operating-system dependencies..."
 sudo -v
+sudo loginctl enable-linger "$(id -un)" >/dev/null
 sudo apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  git curl ca-certificates python3 python3-venv python3-pip xz-utils libcap2-bin
+  git curl ca-certificates python3 python3-venv python3-pip xz-utils libcap2-bin \
+  avahi-daemon avahi-utils libnss-mdns iproute2
 
 mkdir -p "$ROOT" "$CONFIG_ROOT" "$STATE" "$META" "$UNIT_DEST"
 chmod 700 "$ROOT" "$CONFIG_ROOT" "$STATE" "$META" "$UNIT_DEST"
@@ -124,6 +129,75 @@ git -C "$TOOLING" fetch --tags origin
 git -C "$TOOLING" worktree add --detach "$RELEASE_SOURCE" "$RELEASE_REF"
 [[ "$(git -C "$RELEASE_SOURCE" rev-parse HEAD)" == "$RELEASE_COMMIT" ]] || die "Release tag resolved to an unexpected commit."
 [[ -z "$(git -C "$RELEASE_SOURCE" status --porcelain --untracked-files=no)" ]] || die "Release source is not clean."
+
+if [[ "$TLS_MODE" == LOCAL ]]; then
+  BASE_LABEL="$(PYTHONPATH="$TOOLING${PYTHONPATH:+:$PYTHONPATH}" python3 -c 'import sys;from deployment.installation_identity import local_host_label;print(local_host_label(sys.argv[1]))' "$CHIEF_OWNER_NAME")"
+  LOCAL_LABEL="$BASE_LABEL"
+  collision=2
+  while :; do
+    RESOLVED_IP="$(getent ahostsv4 "${LOCAL_LABEL}.local" 2>/dev/null | awk 'NR==1{print $1}')"
+    [[ -z "$RESOLVED_IP" ]] && break
+    if ip -o -4 addr show | awk '{print $4}' | cut -d/ -f1 | grep -Fxq "$RESOLVED_IP"; then break; fi
+    suffix="-${collision}"
+    max_stem=$((63-${#suffix}))
+    stem="${BASE_LABEL:0:${max_stem}}"; stem="${stem%-}"
+    LOCAL_LABEL="${stem}${suffix}"
+    collision=$((collision+1))
+  done
+  PUBLIC_HOST="${LOCAL_LABEL}.local"
+
+  if [[ -f /etc/avahi/avahi-daemon.conf ]]; then
+    sudo cp -a /etc/avahi/avahi-daemon.conf "$ARCHIVE/system/avahi-daemon.conf.before-chief"
+  fi
+  sudo python3 - "$LOCAL_LABEL" <<'PY'
+from pathlib import Path
+import os,sys,tempfile
+label=sys.argv[1]
+path=Path('/etc/avahi/avahi-daemon.conf')
+text=path.read_text(encoding='utf-8') if path.exists() else ''
+lines=text.splitlines(keepends=True)
+out=[]; in_server=False; inserted=False; seen_server=False
+for line in lines:
+    stripped=line.strip()
+    if stripped.startswith('[') and stripped.endswith(']'):
+        if in_server and not inserted:
+            out.append(f'host-name={label}\n'); inserted=True
+        in_server=stripped.lower()=='[server]'
+        seen_server=seen_server or in_server
+    if in_server and stripped.lower().startswith('host-name='):
+        if not inserted:out.append(f'host-name={label}\n');inserted=True
+        continue
+    out.append(line)
+if in_server and not inserted:
+    out.append(f'host-name={label}\n');inserted=True
+if not seen_server:
+    out=['[server]\n',f'host-name={label}\n','\n']+out
+payload=''.join(out)
+fd,tmp=tempfile.mkstemp(prefix='.avahi-daemon.conf.',dir=str(path.parent))
+try:
+    with os.fdopen(fd,'w',encoding='utf-8') as handle:handle.write(payload)
+    if path.exists():os.chmod(tmp,path.stat().st_mode & 0o777)
+    else:os.chmod(tmp,0o644)
+    os.replace(tmp,path)
+finally:
+    if os.path.exists(tmp):os.unlink(tmp)
+PY
+  sudo systemctl enable avahi-daemon >/dev/null
+  sudo systemctl restart avahi-daemon
+
+  resolved_local=0
+  for _ in {1..10}; do
+    RESOLVED_IP="$(getent ahostsv4 "$PUBLIC_HOST" 2>/dev/null | awk 'NR==1{print $1}')"
+    if [[ -n "$RESOLVED_IP" ]] && ip -o -4 addr show | awk '{print $4}' | cut -d/ -f1 | grep -Fxq "$RESOLVED_IP"; then resolved_local=1; break; fi
+    sleep 1
+  done
+  [[ "$resolved_local" == 1 ]] || die "Chief local hostname was not advertised by this machine."
+  PUBLIC_HOST="$(PYTHONPATH="$TOOLING${PYTHONPATH:+:$PYTHONPATH}" python3 -m deployment.installation_identity --owner-name "$CHIEF_OWNER_NAME" --output "$IDENTITY_CONFIG" --local-host "$PUBLIC_HOST")"
+else
+  PUBLIC_HOST="$(PYTHONPATH="$TOOLING${PYTHONPATH:+:$PYTHONPATH}" python3 -m deployment.installation_identity --owner-name "$CHIEF_OWNER_NAME" --output "$IDENTITY_CONFIG" --public-host "$CHIEF_PUBLIC_HOST")"
+fi
+
+echo "Chief address selected automatically: https://${PUBLIC_HOST}/"
 
 python3 -m venv "$RUNTIME"
 "$PYTHON" -m pip install --upgrade pip setuptools wheel
@@ -301,15 +375,43 @@ systemctl --user is-active --quiet chief-agent-worker.service
 systemctl --user is-active --quiet chief-agent-scheduler.service
 systemctl --user is-active --quiet chief-tls-proxy.service
 
+if [[ "$TLS_MODE" == LOCAL ]]; then
+  CA_ROOT="$CADDY_ROOT/data/caddy/pki/authorities/local/root.crt"
+  for _ in {1..20}; do [[ -f "$CA_ROOT" ]] && break; sleep 1; done
+  [[ -f "$CA_ROOT" ]] || die "Caddy local CA was not created."
+  curl --cacert "$CA_ROOT" --resolve "${PUBLIC_HOST}:443:127.0.0.1" -fsS "https://${PUBLIC_HOST}/api/health" >/dev/null
+  DEVICE_SETUP="$HOME/Chief_Device_Setup"
+  mkdir -p "$DEVICE_SETUP"; chmod 700 "$DEVICE_SETUP"
+  install -m 644 "$CA_ROOT" "$DEVICE_SETUP/Chief-Local-CA.crt"
+  cat > "$DEVICE_SETUP/README.txt" <<EOF
+Chief device setup for ${CHIEF_OWNER_NAME}
+
+Chief address: https://${PUBLIC_HOST}/owner/
+Certificate: Chief-Local-CA.crt
+
+On iPhone/iPad:
+1. Transfer and open Chief-Local-CA.crt.
+2. Install the downloaded profile in Settings > General > VPN & Device Management.
+3. Go to Settings > General > About > Certificate Trust Settings.
+4. Enable full trust for the Chief local CA.
+5. Open the Chief address above in Safari.
+
+Only the public CA certificate is exported here. No private TLS key is copied.
+EOF
+  chmod 600 "$DEVICE_SETUP/README.txt"
+fi
+
 printf '\nINSTALLATION_COMPLETE\n'
+echo "Chief owner: $CHIEF_OWNER_NAME"
 echo "Owner PWA: https://${PUBLIC_HOST}/owner/"
 echo "Staff PWA: https://${PUBLIC_HOST}/staff/"
 echo "Job PWA:   https://${PUBLIC_HOST}/jobs/"
 echo "Archive:   $ARCHIVE"
 echo "Log:       $LOG"
 if [[ "$TLS_MODE" == LOCAL ]]; then
-  echo "TLS mode: LOCAL. Phone/browser trust of Caddy's local CA is the remaining device setup step."
-  echo "Caddy CA will be stored below: $CADDY_ROOT/data/caddy/pki/authorities/local/"
+  echo "Local discovery: automatic mDNS (${PUBLIC_HOST})."
+  echo "Phone setup certificate: $HOME/Chief_Device_Setup/Chief-Local-CA.crt"
+  echo "Phone instructions: $HOME/Chief_Device_Setup/README.txt"
 else
-  echo "TLS mode: PUBLIC. Caddy will obtain a public certificate if DNS and inbound validation reach this Folio."
+  echo "TLS mode: PUBLIC. The administrator-supplied CHIEF_PUBLIC_HOST must already have working DNS/inbound validation."
 fi
