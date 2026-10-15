@@ -10,9 +10,12 @@ on:
       - 'deployment/__main__.py'
       - 'deployment/bootstrap_install.py'
       - 'deployment/install_backup.py'
+      - 'deployment/install_chief.sh'
+      - 'deployment/install_chief_xubuntu.sh'
       - 'deployment/install_readiness.py'
       - 'deployment/linux_service_control.py'
       - 'deployment/managed_launch.py'
+      - 'deployment/prepare_instance.py'
       - 'deployment/release_set.py'
       - 'deployment/service_files.py'
       - 'deployment/source_manifest.py'
@@ -21,9 +24,11 @@ on:
       - 'update_center/managed.py'
       - 'update_center/runtime_install.py'
       - 'tests/test_deployment_bootstrap.py'
+      - 'tests/test_first_install_contract.py'
       - 'tests/test_install_backup.py'
       - 'tests/test_linux_service_control.py'
       - 'tests/test_managed_updates.py'
+      - 'tests/test_production_prepare.py'
       - 'tests/test_release_set.py'
       - 'tests/test_update_acquisition.py'
       - 'tests/test_update_acceptance.py'
@@ -65,8 +70,10 @@ jobs:
         run: >-
           python -m pytest -q
           tests/test_deployment_bootstrap.py
+          tests/test_first_install_contract.py
           tests/test_install_backup.py
           tests/test_managed_updates.py
+          tests/test_production_prepare.py
           tests/test_update_runtime_install.py
           tests/test_update_acquisition.py
           tests/test_linux_service_control.py
