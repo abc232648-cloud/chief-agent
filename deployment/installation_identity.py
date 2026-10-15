@@ -60,10 +60,23 @@ def local_hostname(owner_name: str) -> str:
     return public_hostname(local_host_label(owner_name) + ".local")
 
 
-def new_identity(owner_name: str, *, hostname: str | None = None) -> dict:
+def new_identity(
+    owner_name: str,
+    *,
+    hostname: str | None = None,
+    local_managed: bool | None = None,
+) -> dict:
     owner = display_name(owner_name)
-    managed = hostname is None
-    host = local_hostname(owner) if managed else public_hostname(hostname)
+    if local_managed is None:
+        local_managed = hostname is None
+    if hostname is None:
+        if not local_managed:
+            raise ValueError("A public hostname is required when Chief does not manage local naming.")
+        host = local_hostname(owner)
+    else:
+        host = public_hostname(hostname)
+        if local_managed and not host.endswith(".local"):
+            raise ValueError("A Chief-managed local hostname must use the .local mDNS domain.")
     return {
         "schema": SCHEMA,
         "chief_id": uuid.uuid4().hex,
@@ -71,8 +84,8 @@ def new_identity(owner_name: str, *, hostname: str | None = None) -> dict:
         "owner_display_name": owner,
         "network": {
             "hostname": host,
-            "mode": "LOCAL_MDNS" if managed else "PUBLIC_DNS",
-            "managed_from_owner_name": managed,
+            "mode": "LOCAL_MDNS" if local_managed else "PUBLIC_DNS",
+            "managed_from_owner_name": bool(local_managed),
         },
     }
 
@@ -114,9 +127,14 @@ def _cli(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Derive and persist Chief installation identity.")
     parser.add_argument("--owner-name", required=True)
     parser.add_argument("--output")
-    parser.add_argument("--public-host")
+    names = parser.add_mutually_exclusive_group()
+    names.add_argument("--public-host")
+    names.add_argument("--local-host")
     args = parser.parse_args(argv)
-    identity = new_identity(args.owner_name, hostname=args.public_host)
+    if args.local_host:
+        identity = new_identity(args.owner_name, hostname=args.local_host, local_managed=True)
+    else:
+        identity = new_identity(args.owner_name, hostname=args.public_host)
     if args.output:
         write_identity(args.output, identity)
     print(identity["network"]["hostname"])
