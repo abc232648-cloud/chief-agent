@@ -10,7 +10,7 @@ from tests.test_farm_bookkeeping import entry
 
 
 @pytest.mark.parametrize('size',[100,1000,10000])
-def test_report_full_totals_and_measured_resources(dashboard,size):
+def test_report_full_totals_and_measured_resources(dashboard,size,monkeypatch):
     d=dashboard;owner=d.credentials['principal']
     with d.store._connect() as con:
         for index in range(size):
@@ -19,9 +19,18 @@ def test_report_full_totals_and_measured_resources(dashboard,size):
             con.execute('INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES(?,?,?,?)',('farming',books.KIND,json.dumps(row),time.time()))
             receipt={'operation':'receipt','event_id':f'growth-receipt-{index:08d}','reference':p['event_id'],'image_base64':'synthetic-placeholder','sha256':'0'*64,'actor_id':owner.id,'received_at':'2026-01-01T00:00:00Z'}
             con.execute('INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES(?,?,?,?)',('farming',finance.RECEIPTS,json.dumps(receipt),time.time()))
+    # A report must not rescan ownership/timezone history once per ledger row.
+    # The timezone is stable within this read transaction, including overdue dates.
+    zone_reads=[]
+    original_zone=finance.setup.farm_zone
+    def counted_zone(con):
+        zone_reads.append(1)
+        return original_zone(con)
+    monkeypatch.setattr(finance.setup,'farm_zone',counted_zone)
     tracemalloc.start();start=time.perf_counter()
     result=finance.report(d.store,owner)
     elapsed=time.perf_counter()-start;_,peak=tracemalloc.get_traced_memory();tracemalloc.stop()
+    assert len(zone_reads)==1
     assert result['summaries']['NGN']['sales']==result['summaries']['NGN']['receivable']==str(size*12345)
     assert result['record_count']==size and len(result['records'])==100
     assert len(result['balances'])==len(result['receipts'])==100

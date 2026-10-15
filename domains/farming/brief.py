@@ -109,7 +109,7 @@ def overview(store, principal, day=''):
         journal_by_id = {r['payload']['event_id']: r for r in journal_history}
         for record in journal.effective(journal_history):
             p = record['payload']
-            if aware_utc(p['observed_at']).astimezone(setup.farm_zone(con)).date() != selected:
+            if aware_utc(p['observed_at']).astimezone(report_zone).date() != selected:
                 continue
             key = (p.get('entity_id'), p['kind'])
             # A correction submitted later must not make an on-time original late.

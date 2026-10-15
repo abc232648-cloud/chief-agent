@@ -174,13 +174,15 @@ def _report(store,principal,*,start='',end='',query='',contact_id='',offset=0,in
     if type(offset)is not int or not 0<=offset<=1000000:raise ValueError('Invalid page offset.')
     with store._connect() as con:
         con.execute('BEGIN');setup.authorize(store,con,principal,'finance')
+        report_zone=setup.farm_zone(con)
+        report_day=utc_now().astimezone(report_zone).date().isoformat()
         history=books.rows(con);contacts=records(con,CONTACTS);receipt_records=records(con,RECEIPTS,metadata_only=True)
         can_approve=setup.role(con,principal)=='OWNER'
         active={r['payload']['event_id']:r for r in books.active(history)}
         disputes=books.disputed({key:value['payload'] for key,value in active.items()})
         confirmed={r['payload']['reference'] for r in active.values() if r['payload']['kind']=='CONFIRM_PAYMENT'}
         def matches(r):
-            p=r['payload'];at=aware_utc(p['observed_at']).astimezone(setup.farm_zone(con)).date().isoformat()
+            p=r['payload'];at=aware_utc(p['observed_at']).astimezone(report_zone).date().isoformat()
             contact=p.get('details',{}).get('contact_id')
             if p['kind'] in {'PAYMENT_CLAIM','DEBT_DOCUMENT'}:contact=active.get(p['reference'],{}).get('payload',{}).get('details',{}).get('contact_id')
             return (not start or at>=start) and (not end or at<=end) and (not query or query.casefold() in (p['counterparty']+' '+p['reason']+' '+p['receipt_ref']+' '+p['event_id']).casefold()) and (not contact_id or contact==contact_id)
@@ -198,7 +200,7 @@ def _report(store,principal,*,start='',end='',query='',contact_id='',offset=0,in
                 paid=sum(v['amount_minor'] for v in payments.get(p['event_id'],[]) if v['event_id'] in confirmed)
                 owed=p['amount_minor']-paid;t['receivable' if incoming else 'payable']+=owed
                 due=p.get('details',{}).get('due_on')
-                balances.append({'id':p['event_id'],'counterparty':p['counterparty'],'currency':p['currency'],'kind':p['kind'],'outstanding_minor':str(owed),'disputed':p['event_id'] in disputes,'due_on':due,'overdue':bool(due and owed and due<utc_now().astimezone(setup.farm_zone(con)).date().isoformat())})
+                balances.append({'id':p['event_id'],'counterparty':p['counterparty'],'currency':p['currency'],'kind':p['kind'],'outstanding_minor':str(owed),'disputed':p['event_id'] in disputes,'due_on':due,'overdue':bool(due and owed and due<report_day)})
             if p['kind']=='PAYMENT_CLAIM':
                 parent=active.get(p['reference'],{}).get('payload',{})
                 if contact_id and parent.get('details',{}).get('contact_id')!=contact_id:continue
