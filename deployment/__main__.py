@@ -1,4 +1,4 @@
-"""Explicit local preparation/preflight. No production migration or restore promotion."""
+"""Explicit local preparation/preflight and managed installation commands."""
 import argparse
 import getpass
 import importlib
@@ -35,20 +35,46 @@ def prepare_isolated(root,source_root,source_manifest,username,password):
 
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);commands=parser.add_subparsers(dest='command',required=True)
-    check=commands.add_parser('preflight');check.add_argument('--config',required=True)
+    parser=argparse.ArgumentParser(description=__doc__)
+    commands=parser.add_subparsers(dest='command',required=True)
+
+    check=commands.add_parser('preflight')
+    check.add_argument('--config',required=True)
+
+    manifest=commands.add_parser('build-source-manifest')
+    manifest.add_argument('--source-root',required=True)
+    manifest.add_argument('--output',required=True)
+    manifest.add_argument('--expected-git-commit')
+
     ready=commands.add_parser('install-readiness')
     ready.add_argument('--config',required=True);ready.add_argument('--source-root',required=True);ready.add_argument('--source-manifest',required=True)
     ready.add_argument('--backup-directory',required=True);ready.add_argument('--manifest-sha256',required=True)
     ready.add_argument('--expected-source',required=True);ready.add_argument('--expected-schema',required=True)
     ready.add_argument('--platform',choices=['linux','windows','macos'],required=True)
     ready.add_argument('--project',required=True);ready.add_argument('--user',required=True);ready.add_argument('--python')
-    prepare=commands.add_parser('prepare-preview');prepare.add_argument('--directory',required=True);prepare.add_argument('--source-root',required=True);prepare.add_argument('--source-manifest',required=True);prepare.add_argument('--username',required=True)
+
+    bootstrap=commands.add_parser('bootstrap-install')
+    bootstrap.add_argument('--directory',required=True)
+    bootstrap.add_argument('--source-root',required=True)
+    bootstrap.add_argument('--source-manifest',required=True)
+    bootstrap.add_argument('--expected-source',required=True)
+    bootstrap.add_argument('--python',required=True)
+    bootstrap.add_argument('--config',required=True)
+    bootstrap.add_argument('--schema-sha256',required=True)
+    bootstrap.add_argument('--confirm-private-storage',action='store_true')
+
+    prepare=commands.add_parser('prepare-preview')
+    prepare.add_argument('--directory',required=True);prepare.add_argument('--source-root',required=True);prepare.add_argument('--source-manifest',required=True);prepare.add_argument('--username',required=True)
     args=parser.parse_args()
+
     if args.command=='preflight':
         os.environ['CHIEF_INSTANCE_MODE']='production';os.environ['CHIEF_INSTANCE_CONFIG']=str(Path(args.config).absolute())
         from .instance import load_instance
-        instance=load_instance();print(json.dumps({'status':'READY','mode':instance.mode,'schema_sha256':instance.schema_sha256,'schema_migration':False}))
+        instance=load_instance();print(json.dumps({'status':'READY','mode':instance.mode,'schema_sha256':instance.schema_sha256,'schema_migration':False},sort_keys=True))
+    elif args.command=='build-source-manifest':
+        from .source_manifest import build_source_manifest
+        result=build_source_manifest(args.source_root,args.output,expected_git_commit=args.expected_git_commit)
+        print(json.dumps(result,sort_keys=True))
     elif args.command=='install-readiness':
         from .install_readiness import installation_readiness
         result=installation_readiness(args.config,source_root=args.source_root,source_manifest=args.source_manifest,
@@ -56,10 +82,16 @@ def main():
             expected_source=args.expected_source,expected_schema=args.expected_schema,
             platform=args.platform,project=args.project,user=args.user,python=args.python)
         print(json.dumps(result,sort_keys=True))
+    elif args.command=='bootstrap-install':
+        from .bootstrap_install import bootstrap_installation
+        result=bootstrap_installation(args.directory,source_root=args.source_root,source_manifest=args.source_manifest,
+            expected_source=args.expected_source,python=args.python,instance_config=args.config,
+            schema_sha256=args.schema_sha256,private_storage_confirmed=args.confirm_private_storage)
+        print(json.dumps(result,sort_keys=True))
     else:
         password=getpass.getpass('Preview Owner password: ')
         if password!=getpass.getpass('Repeat password: '):raise ValueError('Passwords did not match.')
-        print(json.dumps(prepare_isolated(args.directory,args.source_root,args.source_manifest,args.username,password)))
+        print(json.dumps(prepare_isolated(args.directory,args.source_root,args.source_manifest,args.username,password),sort_keys=True))
 
 
 if __name__=='__main__':main()
