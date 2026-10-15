@@ -1,7 +1,7 @@
 import pytest
 
 from domains import ownership
-from tests.checkpoint_f_fixture import PASSWORD
+from tests.checkpoint_f_fixture import PASSWORD, e_base, f_fixture
 
 
 def org(event, organization_id, name):
