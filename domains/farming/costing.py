@@ -1,13 +1,14 @@
 """Read-only whole-farm costing. Estimates never create payment authority."""
+from . import scope
 import hashlib
 import json
 from decimal import Decimal, ROUND_HALF_UP
 from . import bookkeeping as books, finance, setup, egg_loss_links, journal, expense_allocations
-from .journal_queries import ACTIVE
 from operations.time_integrity import aware_utc
 
 
 
+@scope.entry
 def report(store, principal, *, start, end, currency, feed_minor_per_kg=None):
     finance.day(start); finance.day(end)
     if start > end:
@@ -24,8 +25,8 @@ def report(store, principal, *, start, end, currency, feed_minor_per_kg=None):
         con.execute('BEGIN')
         setup.authorize(store, con, principal, 'finance')
         movements = []
-        for row in con.execute("SELECT data_json FROM domain_records d WHERE d.domain='farming' AND d.kind='poultry_journal_v1' AND " + ACTIVE + ' ORDER BY id'):
-            payload = json.loads(row[0])['payload']
+        for record in journal.effective(scope.records(con, journal.KIND)):
+            payload = record['payload']
             if in_period(payload) and payload['kind'] in {'feed_used', 'eggs_collected', 'eggs_lost'}:
                 movements.append(payload)
         egg_sources, link_history, loss_links = egg_loss_links.projection(con)

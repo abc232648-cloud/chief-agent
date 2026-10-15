@@ -1,4 +1,5 @@
 """Explicit loss attribution; never writes stock or financial movements."""
+from . import scope
 import json
 import time
 from decimal import Decimal
@@ -13,8 +14,7 @@ def snapshot(con):
     records = journal.effective(journal.read_rows(con))
     eggs = {r['payload']['event_id']: r['payload'] for r in records
             if r['payload']['kind'] in {'eggs_collected', 'eggs_lost'}}
-    history = [json.loads(r[0]) for r in con.execute(
-        "SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id", (KIND,))]
+    history = scope.records(con, KIND)
     latest = {}
     for r in history:
         latest[r['payload']['loss_id']] = r
@@ -36,6 +36,7 @@ def valid(eggs, p):
     return total <= int(Decimal(loss['quantity']))
 
 
+@scope.entry
 def append(store, principal, payload):
     if not isinstance(payload, dict) or set(payload) != {'event_id','loss_id','expected_revision','allocations','reason'}:
         raise ValueError('Supply a loss, explicit collection links and a reason.')
@@ -73,7 +74,7 @@ def append(store, principal, payload):
             if totals.get(a['collection_id'],0) + a['eggs'] > int(Decimal(eggs[a['collection_id']]['quantity'])):
                 raise ValueError('Loss links exceed the eggs in this collection.')
         value = {'payload':p,'actor_id':principal.id,'received_at':utc_text(utc_now())}
-        con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",(KIND,json.dumps(value,sort_keys=True),time.time()))
+        con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",(KIND,json.dumps(scope.stamp(value),sort_keys=True),time.time()))
         IdentityService(store)._event(con,principal,'FARM_EGG_LOSS_LINKS','farming',p['loss_id'],'RECORDED')
     return {'status':'RECORDED'}
 
@@ -95,6 +96,7 @@ def projection(con):
     return eggs, history, items
 
 
+@scope.entry
 def overview(store, principal):
     with store._connect() as con:
         con.execute('BEGIN'); principal = setup.authorize(store,con,principal,'finance')

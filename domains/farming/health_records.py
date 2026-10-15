@@ -3,7 +3,7 @@ import json
 import re
 import time
 from decimal import Decimal
-from . import setup,finance
+from . import setup,finance,scope
 from .journal import identifier,bounded_text
 from operations.time_integrity import utc_now,utc_text,aware_utc
 from identity.service import IdentityService
@@ -14,12 +14,17 @@ FIELDS={'event_id','kind','entity_id','observed_at','summary','product','quantit
 
 
 def rows(con):
-    values=con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id LIMIT 10001",(KIND,)).fetchall()
+    values = scope.records(con, KIND, limit=10000 + 1)
     if len(values)>10000:raise ValueError('Health history requires indexed upgrade; partial history is not returned.')
-    return [json.loads(r[0]) for r in values]
+    return values
 
 
-def append(store,principal,payload):
+def append(store,principal,payload,*,farm_id=None):
+    if scope.current() is not None:return _append(store,principal,payload)
+    with scope.bind(store,principal,farm_id):return _append(store,principal,payload)
+
+
+def _append(store,principal,payload):
     if not isinstance(payload,dict) or set(payload)!=FIELDS:raise ValueError('Supply exactly the health record fields.')
     p=dict(payload);identifier(p['event_id']);identifier(p['entity_id'])
     if not isinstance(p['kind'],str) or p['kind'] not in KINDS:raise ValueError('Choose a health record type.')
@@ -53,13 +58,18 @@ def append(store,principal,payload):
             original=next((r['payload'] for r in history if r['payload']['event_id']==p['corrects'] and p['corrects'] not in replaced),None)
             if not original:raise ValueError('Record missing or already corrected.')
             if any(p[k]!=original[k] for k in ('kind','entity_id','observed_at')):raise ValueError('Corrections retain flock, record type and observation time.')
-        record={'payload':p,'actor_id':principal.id,'received_at':utc_text(utc_now()),'evidence_status':'HUMAN_REPORTED'}
+        record=scope.stamp({'payload':p,'actor_id':principal.id,'received_at':utc_text(utc_now()),'evidence_status':'HUMAN_REPORTED'})
         con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",(KIND,json.dumps(record,sort_keys=True),time.time()))
         IdentityService(store)._event(con,principal,'FARM_HEALTH_RECORDED','farming',p['event_id'],'RECORDED')
     return {'status':'RECORDED'}
 
 
-def overview(store,principal,offset=0):
+def overview(store,principal,offset=0,*,farm_id=None):
+    if scope.current() is not None:return _overview(store,principal,offset)
+    with scope.bind(store,principal,farm_id):return _overview(store,principal,offset)
+
+
+def _overview(store,principal,offset=0):
     if type(offset)is not int or offset<0:raise ValueError('Invalid history page.')
     with store._connect() as con:
         principal=setup.authorize(store,con,principal,'read');manager=setup.role(con,principal) in {'OWNER','GENERAL_MANAGER','SUPERVISOR'}

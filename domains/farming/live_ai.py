@@ -4,6 +4,7 @@ Configuration contains references only. Imported credentials stay OS-encrypted
 outside the source tree. A successful synthetic qualification is required before
 activation; neither qualification nor a model response grants action authority.
 """
+from . import scope
 import json
 import os
 import re
@@ -40,8 +41,8 @@ def configuration(store, con=None):
     if con is None:
         with store._connect() as connection:
             return configuration(store, connection)
-    row = con.execute('SELECT data_json FROM domain_records WHERE domain=? AND kind=? ORDER BY id DESC LIMIT 1', ('farming', KIND)).fetchone()
-    return json.loads(row[0]) if row else None
+    rows = scope.records(con, KIND)
+    return rows[-1] if rows else None
 
 
 def owner(store, principal):
@@ -128,6 +129,7 @@ class Transport:
             raise ProviderUnavailable('Farm AI connection failed; no fallback was used.') from None
 
 
+@scope.entry
 def configure(store, principal, body):
     principal = owner(store, principal)
     old = configuration(store)
@@ -156,12 +158,16 @@ def configure(store, principal, body):
         owner(store, principal)
         if configuration(store, con) != old:
             raise ValueError('Farm AI configuration changed during the check; review and retry.')
+        setup.pin_timezone(con)
         config.update(id=uuid.uuid4().hex, actor=principal.id, received_at=utc_text(utc_now()))
-        con.execute('INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES(?,?,?,?)', ('farming', KIND, json.dumps(config), time.time()))
+        # A disabled configuration may have been copied from a stored record.
+        config.pop('scope', None)
+        con.execute('INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES(?,?,?,?)', ('farming', KIND, json.dumps(scope.stamp(config)), time.time()))
         IdentityService(store)._event(con, principal, 'FARM_AI_CONFIGURED', 'farming', config['id'], config['status'])
     return {'status': config['status'], 'model': config.get('model'), 'action_authority': 'NONE'}
 
 
+@scope.entry
 def status(store, principal):
     with store._connect() as con:
         principal = setup.authorize(store, con, principal, 'read')
@@ -178,6 +184,7 @@ def status(store, principal):
             'notice': 'Qwen answers are guidance, not verified facts or permission to act. Questions and permitted context are sent to Groq.' if active else 'Built-in guidance only. The Owner must qualify a private Qwen connection.'}
 
 
+@scope.entry
 def answer(store, principal, question, data):
     config = configuration(store)
     if not config or config['status'] != 'ACTIVE':

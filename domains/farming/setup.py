@@ -6,6 +6,7 @@ import time
 from identity.service import IdentityService
 from operations.time_integrity import utc_now, utc_text
 from .journal import bounded_text, identifier
+from . import scope
 
 KIND = 'farm_setup_v1'
 ROLES = ('GENERAL_MANAGER', 'SUPERVISOR', 'WORKER')
@@ -13,12 +14,16 @@ from .timezone import zone as farm_zone, pin as pin_timezone, setting as timezon
 
 
 def rows(con):
-    return [json.loads(r[0]) for r in con.execute(
+    records = [json.loads(r[0]) for r in con.execute(
         'SELECT data_json FROM domain_records WHERE domain=? AND kind=? ORDER BY id',
         ('farming', KIND))]
+    return scope.filter_records(con, records)
 
 
 def role(con, principal):
+    scoped_role = scope.role_for_connection(con, principal)
+    if scoped_role is not None:
+        return scoped_role
     if principal.role == 'Owner':
         return 'OWNER'
     assignments = [r for r in rows(con) if r['payload']['operation'] == 'assign_role'
@@ -67,6 +72,8 @@ def entities(con):
         if p['operation'] == 'create_entity':
             catalog[p['entity_id']] = dict(p, revision=p['event_id'])
         elif p['operation'] == 'update_entity':
+            if p['entity_id'] not in catalog:
+                raise ValueError('Farm setup history updates a missing entity in this Farm scope.')
             catalog[p['entity_id']].update(name=p['name'], opened_on=p['opened_on'], revision=p['event_id'])
     return catalog
 
@@ -80,7 +87,12 @@ def opening_date(value, store):
         raise ValueError('An opening date cannot be in the future.')
 
 
-def append(store, principal, payload):
+def append(store, principal, payload, *, farm_id=None):
+    with scope.bind(store, principal, farm_id):
+        return _append(store, principal, payload)
+
+
+def _append(store, principal, payload):
     if not isinstance(payload, dict):
         raise ValueError('A setup record is required.')
     p = dict(payload)
@@ -107,6 +119,8 @@ def append(store, principal, payload):
         opening_date(p['opened_on'], store)
         action = 'setup'
     elif operation == 'assign_role':
+        if scope.current(required=True).legacy is False:
+            raise PermissionError('Farm roles are managed through Chief tenancy when Farm identities are enabled.')
         if set(p) != common | {'human_id', 'role', 'reason'} or p['role'] not in ROLES:
             raise ValueError('Supply a known Farm role and identity.')
         identifier(p['human_id'])
@@ -141,8 +155,11 @@ def append(store, principal, payload):
                 raise ValueError('Location changed or is missing; refresh before saving.')
             if p['opened_on'] != current['opened_on'] and p['opened_on'] is not None:
                 from operations.time_integrity import aware_utc
-                for row in con.execute('SELECT data_json FROM domain_records WHERE domain=? AND kind IN (?,?)', ('farming', 'poultry_journal_v1', 'farm_physical_count_v1')):
-                    entry = json.loads(row[0])['payload']
+                records = [json.loads(row[0]) for row in con.execute(
+                    'SELECT data_json FROM domain_records WHERE domain=? AND kind IN (?,?)',
+                    ('farming', 'poultry_journal_v1', 'farm_physical_count_v1'))]
+                for record in scope.filter_records(con, records):
+                    entry = record['payload']
                     if entry.get('entity_id') == p['entity_id'] and aware_utc(entry['observed_at']).astimezone(farm_zone(con)).date().isoformat() < p['opened_on']:
                         raise ValueError('Opening date would contradict existing observation history.')
             parent = catalog.get(current['house_id'])
@@ -158,21 +175,27 @@ def append(store, principal, payload):
                 raise ValueError('Choose a Manager-level account for a General manager assignment; no account privileges are changed automatically.')
             if target['role'] in {'Owner', 'Administrator'}:
                 raise PermissionError('Farm assignment cannot alter privileged Chief identities.')
-        record = {'version': 1, 'payload': p, 'actor_id': principal.id,
-                  'session_id': principal.session_id, 'received_at': utc_text(utc_now())}
+        record = scope.stamp({'version': 1, 'payload': p, 'actor_id': principal.id,
+                              'session_id': principal.session_id, 'received_at': utc_text(utc_now())})
         con.execute('INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES(?,?,?,?)',
                     ('farming', KIND, json.dumps(record, sort_keys=True), time.time()))
         IdentityService(store)._event(con, principal, 'FARM_SETUP_RECORDED', 'farming', p['event_id'], 'RECORDED')
     return {'status': 'RECORDED', 'record': record}
 
 
-def overview(store, principal):
+def overview(store, principal, *, farm_id=None):
+    with scope.bind(store, principal, farm_id):
+        return _overview(store, principal)
+
+
+def _overview(store, principal):
     with store._connect() as con:
         principal = authorize(store, con, principal, 'read')
         current = role(con, principal)
+        tenant = scope.tenant_mode_connection(con)
         result = {'timezone': timezone_setting(con)['timezone'], 'timezone_basis': timezone_setting(con)['basis'], 'entities': list(entities(con).values()), 'farm_role': current,
                   'can_manage': current in {'OWNER', 'GENERAL_MANAGER', 'SUPERVISOR'},
-                  'can_setup': current in {'OWNER', 'GENERAL_MANAGER'}, 'can_assign': current == 'OWNER'}
+                  'can_setup': current in {'OWNER', 'GENERAL_MANAGER'}, 'can_assign': current == 'OWNER' and not tenant}
         from .financial_permissions import effective, DEFAULTS
         result['financial_permissions'] = dict(DEFAULTS) if current == 'OWNER' else effective(con, principal.id)
         result['can_finance'] = result['can_setup'] and result['financial_permissions']['access']
@@ -180,7 +203,10 @@ def overview(store, principal):
             history = [r for r in rows(con) if r['payload']['operation'] in {'create_entity', 'update_entity'}]
             result['entity_history_count'] = len(history)
             result['entity_history'] = [{'payload': r['payload'], 'actor_id': r['actor_id'], 'received_at': r['received_at']} for r in reversed(history[-100:])]
-        if current == 'OWNER':
+        if current == 'OWNER' and not tenant:
             result['assignable_users']=[{'id':r['id'],'username':r['username'],'role':r['role']} for r in con.execute('SELECT id,username,role,domains FROM human_identities WHERE enabled=1') if r['role'] not in {'Owner','Administrator'} and {'farming','*'} & set(json.loads(r['domains']))]
             result['assignments'] = [r for r in rows(con) if r['payload']['operation'] == 'assign_role']
+        elif current == 'OWNER':
+            result['assignable_users'] = []
+            result['assignments'] = []
         return result

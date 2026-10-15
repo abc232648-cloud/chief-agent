@@ -60,6 +60,7 @@ def test_install_readiness_requires_all_gates_and_restores_environment(tmp_path,
         'services_started':False,'restore_promoted':False,'network_checks_performed':False,
         'mode':'production','source_tree_sha256':SOURCE,'schema_sha256':SCHEMA,
         'storage_scope':'STARTUP_PROBE_ONLY','browser_sandbox_required':True,
+        'managed_installation':None,
         'runtime_profiles':[
             {'candidate_id':'runtime-execution','status':'CREATE_REQUIRED'},
             {'candidate_id':'runtime-research','status':'CHIEF_OWNED'},

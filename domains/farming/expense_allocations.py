@@ -1,4 +1,5 @@
 """Explicit expense attribution, with no additional financial or stock movement."""
+from . import scope
 import json
 import time
 from . import bookkeeping as books, journal, setup
@@ -12,8 +13,7 @@ def snapshot(con):
     expenses = {r['payload']['event_id']: r['payload'] for r in books.active(books.rows(con))
                 if r['payload']['kind'] == 'EXPENSE_CLAIM'}
     flocks = {key: value for key, value in setup.entities(con).items() if value['entity_type'] == 'FLOCK'}
-    history = [json.loads(row[0]) for row in con.execute(
-        "SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id", (KIND,))]
+    history = scope.records(con, KIND)
     latest = {r['payload']['expense_id']: r for r in history}
     return expenses, flocks, history, latest
 
@@ -24,6 +24,7 @@ def valid(expenses, flocks, payload):
                 and sum(a['amount_minor'] for a in payload['allocations']) <= expense['amount_minor'])
 
 
+@scope.entry
 def append(store, principal, payload):
     if not isinstance(payload, dict) or set(payload) != {'event_id', 'expense_id', 'expected_revision', 'allocations', 'reason'}:
         raise ValueError('Supply an expense, explicit flock amounts and a reason.')
@@ -58,7 +59,7 @@ def append(store, principal, payload):
             raise ValueError('Choose a current expense and registered flocks; shares cannot exceed the expense.')
         value = {'payload': p, 'actor_id': principal.id, 'received_at': utc_text(utc_now())}
         con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",
-                    (KIND, json.dumps(value, sort_keys=True), time.time()))
+                    (KIND, json.dumps(scope.stamp(value), sort_keys=True), time.time()))
         IdentityService(store)._event(con, principal, 'FARM_EXPENSE_ALLOCATION', 'farming', p['expense_id'], 'RECORDED')
     return {'status': 'RECORDED'}
 
@@ -77,6 +78,7 @@ def projection(con):
     return flocks, history, items
 
 
+@scope.entry
 def overview(store, principal):
     with store._connect() as con:
         con.execute('BEGIN')

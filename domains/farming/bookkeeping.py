@@ -6,7 +6,7 @@ Currency is explicit and amounts use integer minor units; no currency conversion
 """
 import json
 import time
-from . import setup
+from . import setup, scope
 from .journal import bounded_text, identifier
 from identity.service import IdentityService
 from operations.time_integrity import utc_now, utc_text, aware_utc
@@ -17,15 +17,15 @@ TYPES = {'PURCHASE_REQUEST', 'APPROVE_REQUEST', 'REJECT_REQUEST', 'EXPENSE_CLAIM
          'OPENING_RECEIVABLE', 'OPENING_PAYABLE', 'DEBT_DOCUMENT', 'DISPUTE_DEBT', 'RESOLVE_DEBT_DISPUTE'}
 OBLIGATIONS = {'SALE', 'EXPENSE_CLAIM', 'OPENING_RECEIVABLE', 'OPENING_PAYABLE'}
 RECEIVABLES = {'SALE', 'OPENING_RECEIVABLE'}
-# Explicit supported minor-unit scale, not an inferred exchange rate.
 CURRENCIES = {'NGN': 2, 'USD': 2, 'GBP': 2, 'EUR': 2}
 FIELDS = {'event_id', 'kind', 'amount_minor', 'currency', 'reference', 'counterparty',
           'receipt_ref', 'observed_at', 'reason'}
 
 
 def rows(con):
-    return [json.loads(r[0]) for r in con.execute(
+    values=[json.loads(r[0]) for r in con.execute(
         'SELECT data_json FROM domain_records WHERE domain=? AND kind=? ORDER BY id', ('farming', KIND))]
+    return scope.filter_records(con,values)
 
 
 def active(records):
@@ -65,7 +65,14 @@ def validate(payload):
     return p
 
 
-def append(store, principal, payload, *, connection=None):
+def append(store, principal, payload, *, connection=None, farm_id=None):
+    if scope.current() is not None:
+        return _append(store,principal,payload,connection=connection)
+    with scope.bind(store,principal,farm_id):
+        return _append(store,principal,payload,connection=connection)
+
+
+def _append(store, principal, payload, *, connection=None):
     p = validate(payload)
     owner_only = p['kind'] in {'APPROVE_REQUEST', 'REJECT_REQUEST', 'CONFIRM_PAYMENT', 'VOID', 'DEBT_DOCUMENT', 'RESOLVE_DEBT_DISPUTE'}
     with (store._connect() if connection is None else nullcontext(connection)) as con:
@@ -80,7 +87,7 @@ def append(store, principal, payload, *, connection=None):
                           'report_payments' if p['kind'] == 'PAYMENT_CLAIM' else
                           'record_debts' if p['kind'] in OBLIGATIONS else None)
             if permission and not effective(con, principal.id)[permission]:
-                raise PermissionError('The Owner has disabled this financial permission.')
+                raise PermissionError('The Owner has disabled this financial permission for this Farm.')
         setup.available(store, con)
         from .finance import validate_contact
         validate_contact(con,p)
@@ -147,15 +154,20 @@ def append(store, principal, payload, *, connection=None):
                 raise ValueError('Resolve dependent records before voiding their parent.')
         if ref and ref['currency'] != p['currency']:
             raise ValueError('Related records must use the same currency.')
-        record = {'version': 1, 'payload': p, 'actor_id': principal.id, 'session_id': principal.session_id,
-                  'received_at': utc_text(utc_now()), 'status': 'HUMAN_REPORTED'}
+        record = scope.stamp({'version': 1, 'payload': p, 'actor_id': principal.id, 'session_id': principal.session_id,
+                              'received_at': utc_text(utc_now()), 'status': 'HUMAN_REPORTED'})
         con.execute('INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES(?,?,?,?)',
                     ('farming', KIND, json.dumps(record, sort_keys=True), time.time()))
         IdentityService(store)._event(con, principal, 'FARM_FINANCE_' + kind, 'farming', p['event_id'], 'RECORDED')
     return {'status': 'RECORDED', 'record': record}
 
 
-def overview(store, principal):
+def overview(store, principal, *, farm_id=None):
+    if scope.current() is not None:return _overview(store,principal)
+    with scope.bind(store,principal,farm_id):return _overview(store,principal)
+
+
+def _overview(store, principal):
     with store._connect() as con:
         principal = setup.authorize(store, con, principal, 'finance')
         history = rows(con)
@@ -178,4 +190,4 @@ def overview(store, principal):
                              'unconfirmed_payment_minor': sum(r['amount_minor'] for r in payments) - confirmed})
         return {'records': list(reversed(history)), 'balances': balances,
                 'can_approve': setup.role(con, principal) == 'OWNER',
-                'notice': 'Reported operational bookkeeping; no payment execution or statutory accounting.'}
+                'notice': 'Reported operational bookkeeping for the selected Farm; no payment execution or statutory accounting.'}

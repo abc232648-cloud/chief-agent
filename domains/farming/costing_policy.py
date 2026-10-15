@@ -1,4 +1,5 @@
 """Versioned Owner costing settings; not valuation inferred from cash purchases."""
+from . import scope
 import json
 import re
 import time
@@ -13,9 +14,11 @@ FIELDS={'event_id','expected_revision','currency','feed_minor_per_kg','eggs_per_
 
 
 def rows(con):
-    return [json.loads(r[0]) for r in con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id",(KIND,))]
+    records = scope.records(con, KIND)
+    return records
 
 
+@scope.entry
 def configure(store,principal,p):
     if not isinstance(p,dict) or set(p) not in (FIELDS, FIELDS | {'price_basis','price_source'}):raise ValueError('Supply exactly the costing settings.')
     identifier(p['event_id'])
@@ -43,17 +46,19 @@ def configure(store,principal,p):
             return {'status':'ALREADY_RECORDED','revision':p['event_id']}
         if p['expected_revision']!=(history[-1]['payload']['event_id'] if history else None):raise ValueError('Costing settings changed; refresh before saving.')
         value={'payload':p,'actor_id':principal.id,'received_at':utc_text(utc_now())}
-        con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",(KIND,json.dumps(value,sort_keys=True),time.time()))
+        con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",(KIND,json.dumps(scope.stamp(value),sort_keys=True),time.time()))
         IdentityService(store)._event(con,principal,'FARM_COSTING_POLICY','farming',p['event_id'],'RECORDED')
     return {'status':'RECORDED','revision':p['event_id']}
 
 
+@scope.entry
 def overview(store,principal):
     with store._connect() as con:
         principal=setup.authorize(store,con,principal,'finance');history=rows(con)
         return {'policies':history,'revision':history[-1]['payload']['event_id'] if history else None,'can_configure':principal.role=='Owner'}
 
 
+@scope.entry
 def report(store,principal,*,start,end,revision=None):
     from . import costing
     with store._connect() as con:

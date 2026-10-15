@@ -1,3 +1,4 @@
+from . import scope
 from contextlib import nullcontext
 """Human physical counts and Owner-approved, append-only stock adjustments."""
 from decimal import Decimal
@@ -6,22 +7,24 @@ import json
 import time
 from identity.service import IdentityService
 from operations.time_integrity import aware_utc, utc_now, utc_text
-from . import setup, journal, journal_queries
+from . import setup, journal
 
 KIND = 'farm_physical_count_v1'
 PREFIX = {'birds':'birds', 'eggs':'eggs', 'kg':'feed'}
 
 
 def rows(con):
-    return [json.loads(r[0]) for r in con.execute('SELECT data_json FROM domain_records WHERE domain=? AND kind=? ORDER BY id',('farming',KIND))]
+    records = scope.records(con, KIND)
+    return records
 
 
 def stock(con, entity_id, unit, observed_at):
     digest=hashlib.sha256();total=Decimal(0);opening=False
-    for row in con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? AND json_extract(data_json,'$.payload.entity_id')=? ORDER BY id",(journal.KIND,entity_id)):
-        encoded=row[0].encode();digest.update(str(len(encoded)).encode()+b':'+encoded)
-    for row in con.execute("SELECT data_json FROM domain_records d WHERE d.domain='farming' AND d.kind=? AND json_extract(d.data_json,'$.payload.entity_id')=? AND "+journal_queries.ACTIVE,(journal.KIND,entity_id)):
-        p=json.loads(row[0])['payload']
+    history = [r for r in scope.records(con, journal.KIND) if r['payload'].get('entity_id') == entity_id]
+    for record in history:
+        encoded=json.dumps(record,sort_keys=True).encode();digest.update(str(len(encoded)).encode()+b':'+encoded)
+    for record in journal.effective(history):
+        p=record['payload']
         if p.get('historical_before_opening'):continue
         if journal.TYPES[p['kind']][0]!=unit or aware_utc(p['observed_at'])>aware_utc(observed_at):continue
         total+=Decimal(p['quantity'])*journal.TYPES[p['kind']][1]
@@ -29,6 +32,7 @@ def stock(con, entity_id, unit, observed_at):
     return digest.hexdigest(), format(total,'f') if opening else None
 
 
+@scope.entry
 def append(store, principal, payload, *, connection=None):
     if not isinstance(payload,dict):raise ValueError('A physical count or decision is required.')
     p=dict(payload);operation=p.get('operation');journal.identifier(p.get('event_id'))
@@ -84,13 +88,14 @@ def append(store, principal, payload, *, connection=None):
                         'entity_id':count['entity_id'],'location':entity['name'],'quantity':format(abs(delta),'f'),'basis':'MEASURED','observed_at':count['observed_at'],
                         'notes':'Owner-approved physical count '+p['reference']+'; '+p['reason'],'corrects':None,'reason':''})
                     change={'version':1,'payload':adjustment,'actor_id':principal.id,'actor_name':con.execute('SELECT username FROM human_identities WHERE id=?',(principal.id,)).fetchone()[0],'session_id':principal.session_id,'received_at':record['received_at'],'evidence_status':'USER_REPORTED'}
-                    con.execute('INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES(?,?,?,?)',('farming',journal.KIND,json.dumps(change,sort_keys=True),time.time()))
+                    con.execute('INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES(?,?,?,?)',('farming',journal.KIND,json.dumps(scope.stamp(change),sort_keys=True),time.time()))
                     record['adjustment_id']=adjustment['event_id']
-        con.execute('INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES(?,?,?,?)',('farming',KIND,json.dumps(record,sort_keys=True),time.time()))
+        con.execute('INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES(?,?,?,?)',('farming',KIND,json.dumps(scope.stamp(record),sort_keys=True),time.time()))
         IdentityService(store)._event(con,principal,'FARM_PHYSICAL_COUNT_'+operation,'farming',p['event_id'],'RECORDED')
-    return {'status':'RECORDED','record':record}
+    return {'status':'RECORDED','record':scope.stamp(record)}
 
 
+@scope.entry
 def overview(store,principal):
     with store._connect() as con:
         principal=setup.authorize(store,con,principal,'read');role=setup.role(con,principal)

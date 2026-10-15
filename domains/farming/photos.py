@@ -4,6 +4,7 @@ Bytes live in the existing private database, so its consistent backup includes
 attachments. Only simple RGB/RGBA PNGs are accepted; metadata is not retained.
 Both legacy Staff work and the authoritative field-task ledger are supported.
 """
+from . import scope
 import base64
 import binascii
 import hashlib
@@ -99,13 +100,15 @@ def records(con, *, work_id=None, photo_id=None, metadata_only=False):
     field='work_id' if work_id is not None else 'id'
     value=work_id if work_id is not None else photo_id
     selection="json_remove(data_json,'$.image_base64')" if metadata_only else 'data_json'
-    return [json.loads(r[0]) for r in con.execute('SELECT '+selection+" FROM domain_records WHERE domain='farming' AND kind='farm_photo_v1' AND json_extract(data_json,'$."+field+"')=? ORDER BY id LIMIT 11",(value,))]
+    where, args = scope.predicate(con)
+    return [json.loads(r[0]) for r in con.execute('SELECT '+selection+" FROM domain_records WHERE domain='farming' AND kind='farm_photo_v1' AND "+where+" AND json_extract(data_json,'$."+field+"')=? ORDER BY id LIMIT 11",(*args,value))]
 
 
 def metadata(record):
     return {k: v for k, v in record.items() if k != 'image_base64'}
 
 
+@scope.entry
 def append(store, principal, payload):
     if not isinstance(payload, dict) or set(payload) != {'event_id', 'work_id', 'image_base64'}:
         raise ValueError('Supply exactly the photo fields.')
@@ -126,11 +129,12 @@ def append(store, principal, payload):
         record = {'id': photo_id, 'work_id': work_id, 'actor_id': principal.id, 'received_at': utc_text(utc_now()),
                   'sha256': digest, 'bytes': len(raw), 'image_base64': base64.b64encode(raw).decode('ascii')}
         con.execute('INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES(?,?,?,?)',
-                    ('farming', KIND, json.dumps(record, sort_keys=True), time.time()))
+                    ('farming', KIND, json.dumps(scope.stamp(record), sort_keys=True), time.time()))
         IdentityService(store)._event(con, principal, 'FARM_PHOTO_RECORDED', 'farming', photo_id, 'RECORDED')
-    return {'status': 'RECORDED', 'record': metadata(record)}
+    return {'status': 'RECORDED', 'record': metadata(scope.stamp(record))}
 
 
+@scope.entry
 def listing(store, principal, work_id):
     identifier(work_id)
     with store._connect() as con:
@@ -138,6 +142,7 @@ def listing(store, principal, work_id):
         return records(con, work_id=work_id, metadata_only=True)
 
 
+@scope.entry
 def image(store, principal, photo_id):
     identifier(photo_id)
     with store._connect() as con:

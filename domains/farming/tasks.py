@@ -9,7 +9,7 @@ import time
 
 from identity.service import IdentityService
 from operations.time_integrity import aware_utc, utc_now, utc_text
-from . import setup
+from . import setup, scope
 from .journal import identifier, bounded_text
 
 KIND = 'farm_task_v1'
@@ -21,16 +21,19 @@ TERMINAL_STATES = {'VERIFIED', 'CANCELLED'}
 
 
 def rows(con):
-    result = con.execute(
-        "SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id LIMIT ?",
-        (KIND, LIMIT + 1),
-    ).fetchall()
+    result = scope.records(con, KIND, limit=LIMIT + 1)
     if len(result) > LIMIT:
         raise ValueError('Task history capacity requires indexed upgrade; no truncated task state returned.')
-    return [json.loads(row[0]) for row in result]
+    return result
 
 
 def _farm_role_for_human(con, human_id, chief_role=None):
+    if scope.tenant_mode_connection(con):
+        from domains import tenancy
+        selected = scope.require_for_connection(con)
+        assignments = [item for item in tenancy._replay(con).values()
+                       if item['active'] and item['human_id'] == human_id and item['farm_id'] == selected.farm_id]
+        return assignments[-1]['role'] if assignments else None
     assignments = [r for r in setup.rows(con) if r['payload']['operation'] == 'assign_role' and r['payload']['human_id'] == human_id]
     if assignments:
         return assignments[-1]['payload']['role']
@@ -44,7 +47,10 @@ def _target(con, human_id):
         raise PermissionError('Task assignee must be an enabled Farm-scoped identity.')
     if row['role'] in {'Owner', 'Administrator'}:
         raise PermissionError('Use Staff identities for field-task assignment.')
-    return row, _farm_role_for_human(con, human_id, row['role'])
+    farm_role = _farm_role_for_human(con, human_id, row['role'])
+    if scope.tenant_mode_connection(con) and farm_role is None:
+        raise PermissionError('Task assignee must be assigned to the selected Farm.')
+    return row, farm_role
 
 
 def _validate_create(con, p):
@@ -146,7 +152,14 @@ def _capabilities(role, principal_id, task):
     }
 
 
-def overview(store, principal, offset=0):
+def overview(store, principal, offset=0, *, farm_id=None):
+    if scope.current() is not None:
+        return _overview(store, principal, offset)
+    with scope.bind(store, principal, farm_id):
+        return _overview(store, principal, offset)
+
+
+def _overview(store, principal, offset=0):
     if type(offset) is not int or not 0 <= offset <= 1000000:
         raise ValueError('Invalid task page.')
     with store._connect() as con:
@@ -164,7 +177,14 @@ def overview(store, principal, offset=0):
         }
 
 
-def append(store, principal, payload):
+def append(store, principal, payload, *, farm_id=None):
+    if scope.current() is not None:
+        return _append(store, principal, payload)
+    with scope.bind(store, principal, farm_id):
+        return _append(store, principal, payload)
+
+
+def _append(store, principal, payload):
     if not isinstance(payload, dict):
         raise ValueError('Supply a task event.')
     p = dict(payload); operation = p.get('operation'); identifier(p.get('event_id'))
@@ -191,7 +211,7 @@ def append(store, principal, payload):
             identifier(p['assigned_to'])
             if p['supervisor_id'] is not None: identifier(p['supervisor_id'])
     from control.notifications import initialize as initialize_notifications
-    initialize_notifications(store)  # Existing accepted schema; operational stores never run DDL here.
+    initialize_notifications(store)
     with store._connect() as con:
         con.execute('BEGIN IMMEDIATE')
         principal = setup.authorize(store, con, principal, 'setup' if operation == 'CREATE' else 'task')
@@ -230,8 +250,8 @@ def append(store, principal, payload):
                         raise ValueError('Task supervisor must have the Farm Supervisor assignment.')
                     if p['supervisor_id'] == p['assigned_to']:
                         raise ValueError('Task supervisor and assignee must differ.')
-        record = {'version': 1, 'payload': p, 'actor_id': principal.id,
-                  'session_id': principal.session_id, 'received_at': utc_text(utc_now())}
+        record = scope.stamp({'version': 1, 'payload': p, 'actor_id': principal.id,
+                              'session_id': principal.session_id, 'received_at': utc_text(utc_now())})
         con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",
                     (KIND, json.dumps(record, sort_keys=True), time.time()))
         IdentityService(store)._event(con, principal, 'FARM_TASK_' + operation, 'farming', p['event_id'], 'RECORDED')
