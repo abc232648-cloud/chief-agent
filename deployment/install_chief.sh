@@ -3,10 +3,11 @@ set -euo pipefail
 
 # The implementation remains a readable shell runbook, while this launcher injects
 # host/runtime details that must be established around that runbook: the future
-# tooling import path, Chief-owned Playwright storage, Node's future PATH, and
-# persistent user-service startup across reboots. It also removes NoNewPrivileges
-# from the Caddy user unit because Caddy intentionally receives only
-# CAP_NET_BIND_SERVICE on its verified executable.
+# tooling import path, Chief-owned Playwright storage and Node's future PATH. Older
+# implementations receive persistent user-service startup here; newer readable
+# runbooks carry that step directly. The launcher also removes NoNewPrivileges from
+# the Caddy user unit because Caddy intentionally receives only CAP_NET_BIND_SERVICE
+# on its verified executable.
 HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 SOURCE="$HERE/install_chief_xubuntu.sh"
 [[ -f "$SOURCE" ]] || { echo "Installer implementation is missing." >&2; exit 1; }
@@ -23,7 +24,8 @@ if text.count(anchor)!=1:raise SystemExit('Installer umask anchor changed; revie
 text=text.replace(anchor,anchor+'export PYTHONPATH="$HOME/.local/share/chief/tooling${PYTHONPATH:+:$PYTHONPATH}"\nexport PLAYWRIGHT_BROWSERS_PATH="$HOME/.local/share/chief/browsers"\n',1)
 anchor='sudo -v\n'
 if text.count(anchor)!=1:raise SystemExit('Installer sudo anchor changed; review launcher integration.')
-text=text.replace(anchor,anchor+'sudo loginctl enable-linger "$(id -un)"\n',1)
+if 'sudo loginctl enable-linger "$(id -un)"' not in text:
+    text=text.replace(anchor,anchor+'sudo loginctl enable-linger "$(id -un)"\n',1)
 anchor='NODE="$NODE_ROOT/bin/node"; NPM="$NODE_ROOT/bin/npm"\n'
 if text.count(anchor)!=1:raise SystemExit('Installer Node anchor changed; review launcher integration.')
 text=text.replace(anchor,anchor+'export PATH="$NODE_ROOT/bin:$PATH"\n',1)
