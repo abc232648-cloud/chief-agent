@@ -229,3 +229,13 @@ def test_conversion_and_allocation_versions_do_not_cross_farms(tenants):
     with pytest.raises(ValueError, match='does not match'):
         journal.append(t.store, t.ym, record(event_id='wrong-bag-size', quantity='50',
             conversion=dict(unit='bags', quantity='1', policy_revision='same-unit-version')))
+
+
+def test_legacy_daily_brief_retains_complete_history_query(dashboard, monkeypatch):
+    d = dashboard
+    owner = d.credentials['principal']
+    journal.append(d.store, owner, record(event_id='legacy-feed-first'))
+    journal.append(d.store, owner, record(event_id='legacy-feed-second'))
+    monkeypatch.setattr(journal, 'LIMIT', 1)
+    view = brief.overview(d.store, owner, '2026-01-01')
+    assert view['metrics'][0]['reports'] == 2

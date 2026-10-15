@@ -105,7 +105,7 @@ def overview(store, principal, day=''):
         requirements = schedule['payload']['requirements'] if schedule else []
         # Stream effective records. Never truncate a day's totals to the UI history page.
         metrics = {}; reported = {}; last_received = None
-        journal_history = journal.read_rows(con)
+        journal_history = scope.records(con, journal.KIND)
         journal_by_id = {r['payload']['event_id']: r for r in journal_history}
         for record in journal.effective(journal_history):
             p = record['payload']
@@ -145,7 +145,11 @@ def overview(store, principal, day=''):
         work = [item for item in staff.projection(staff.rows(con)).values()
                 if item['state'] != 'RESOLVED' and (manager or principal.id in {item['reporter'], item['assignee']})]
         work = [{k: item[k] for k in ('id','kind','text','state','due_at','severity','overdue')} for item in work]
-        balances = journal.overview(store, principal, limit=1)['balances'] if manager else []
+        if manager and scope.require_for_connection(con).legacy:
+            from .journal_queries import overview as legacy_overview
+            balances = legacy_overview(con, principal, manager, 0, 1)['balances']
+        else:
+            balances = journal.overview(store, principal, limit=1)['balances'] if manager else []
         latest = history[-1] if history else None
         settings = {'can_configure': role == 'OWNER'}
         if role == 'OWNER':

@@ -20,7 +20,7 @@ def rows(con):
 
 def stock(con, entity_id, unit, observed_at):
     digest=hashlib.sha256();total=Decimal(0);opening=False
-    history = [r for r in journal.read_rows(con) if r['payload'].get('entity_id') == entity_id]
+    history = [r for r in scope.records(con, journal.KIND) if r['payload'].get('entity_id') == entity_id]
     for record in history:
         encoded=json.dumps(record,sort_keys=True).encode();digest.update(str(len(encoded)).encode()+b':'+encoded)
     for record in journal.effective(history):

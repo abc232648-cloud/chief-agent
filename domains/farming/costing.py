@@ -25,7 +25,7 @@ def report(store, principal, *, start, end, currency, feed_minor_per_kg=None):
         con.execute('BEGIN')
         setup.authorize(store, con, principal, 'finance')
         movements = []
-        for record in journal.effective(journal.read_rows(con)):
+        for record in journal.effective(scope.records(con, journal.KIND)):
             payload = record['payload']
             if in_period(payload) and payload['kind'] in {'feed_used', 'eggs_collected', 'eggs_lost'}:
                 movements.append(payload)
