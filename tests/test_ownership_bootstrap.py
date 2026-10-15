@@ -4,7 +4,7 @@ import pytest
 
 from deployment.ownership_bootstrap import bootstrap_initial
 from domains import ownership
-from tests.checkpoint_f_fixture import PASSWORD, f_fixture
+from tests.checkpoint_f_fixture import PASSWORD, e_base, f_fixture
 
 
 def test_first_install_bootstrap_creates_initial_company_and_farm(f_fixture):
