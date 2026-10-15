@@ -19,6 +19,7 @@ on:
       - 'tests/test_farm_tenant_lineage.py'
       - 'tests/test_farm_tenant_sops.py'
       - 'tests/test_farm_tenant_health.py'
+      - 'tests/test_farm_tenant_notifications.py'
       - '.github/workflows/farm-tenant-lineage-ci.yml'
   workflow_dispatch:
 
@@ -55,6 +56,7 @@ jobs:
           tests/test_farm_tenant_lineage.py
           tests/test_farm_tenant_sops.py
           tests/test_farm_tenant_health.py
+          tests/test_farm_tenant_notifications.py
           tests/test_tenancy_scope.py
           tests/test_ownership_catalog.py
           tests/test_ownership_http.py
