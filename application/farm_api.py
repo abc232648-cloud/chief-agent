@@ -5,7 +5,7 @@ from urllib.parse import urlsplit, parse_qs
 
 
 _PATHS = {'/api/farm/expense-allocations','/api/farm/egg-loss-links','/api/farm/clarifications','/api/farm/worker-reports','/api/farm/tasks','/api/farm/incidents','/api/farm/sops','/api/farm/sops/assigned','/api/farm/planning','/api/farm/planning/preview','/api/farm/health-records','/api/farm/labour','/api/farm/units','/api/farm/costing','/api/farm/costing/policy','/api/farm/financial-permissions','/api/farm/physical-counts','/api/farm/notification-recipients','/api/farm/brief','/api/farm/brief/schedule','/api/farm/finance','/api/farm/journal', '/api/farm/setup', '/api/farm/bookkeeping', '/api/farm/staff', '/api/farm/assistant', '/api/farm/assistant/configure', '/api/farm/photos'}
-_TENANT_SAFE = {'/api/farm/setup', '/api/farm/journal', '/api/farm/tasks', '/api/farm/incidents', '/api/farm/worker-reports', '/api/farm/sops', '/api/farm/sops/assigned'}
+_TENANT_SAFE = {'/api/farm/setup', '/api/farm/journal', '/api/farm/tasks', '/api/farm/incidents', '/api/farm/worker-reports', '/api/farm/sops', '/api/farm/sops/assigned', '/api/farm/health-records'}
 
 
 def dispatch(handler, store, principal, path, method, body):
@@ -93,8 +93,8 @@ def dispatch(handler, store, principal, path, method, body):
         return True
     if parsed.path == '/api/farm/health-records':
         from domains.farming import health_records
-        if method in {'GET','HEAD'}: handler.json(health_records.overview(store,principal,offset=int(parse_qs(parsed.query).get('offset',['0'])[0])))
-        elif method == 'POST': handler.json(health_records.append(store,principal,body))
+        if method in {'GET','HEAD'}: handler.json(health_records.overview(store,principal,offset=int(parse_qs(parsed.query).get('offset',['0'])[0]),farm_id=farm_id))
+        elif method == 'POST': handler.json(health_records.append(store,principal,body,farm_id=farm_id))
         else: handler.json({'status':'METHOD_NOT_ALLOWED'},405)
         return True
     if parsed.path == '/api/farm/labour':
