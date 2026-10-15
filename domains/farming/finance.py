@@ -206,6 +206,8 @@ def _report(store,principal,*,start='',end='',query='',contact_id='',offset=0,in
         revision=_revision(history,contacts,receipt_records)
         page=list(reversed(selected))[offset:offset+100];page_ids={r['payload']['event_id'] for r in page}
         attachments=[{'event_id':r['event_id'],'reference':r['reference'],'sha256':r['sha256']} for r in receipt_records if r.get('reference') in page_ids]
-        return {'revision':revision,'categories':CATEGORIES,'contacts':contacts,'summaries':{c:{k:str(v) for k,v in t.items()},'balances':balances if include_all_balances else [b for b in balances if b['reference'] in page_ids],
+        return {'revision':revision,'categories':CATEGORIES,'contacts':contacts,
+                'summaries':{c:{k:str(v) for k,v in t.items()} for c,t in totals.items()},
+                'balances':balances if include_all_balances else [b for b in balances if b['reference'] in page_ids],
                 'records':page,'record_count':len(selected),'offset':offset,'receipts':attachments,
                 'can_approve':can_approve,'notice':'Current non-voided records for the selected Farm; confirmations as of now. Period cash totals use the reported payment date. Outstanding amounts relate to the selected sales, expenses and opening debts. Opening debts and attached invoices are not new sales or expenses. These are not bank balances or formal profit statements.'}
