@@ -10,23 +10,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
-from .dns_policy import resolve_addresses
-
-
-def public_addresses(host, port):
-    if host.replace('.','').isdigit():
-        try:ipaddress.IPv4Address(host)
-        except ValueError:raise PermissionError('Abbreviated numeric destinations are blocked.') from None
-    addresses = resolve_addresses(host, port)
-    def permitted(value):
-        address=ipaddress.ip_address(value)
-        if not address.is_global or address.is_multicast:return False
-        if address.version==6 and (address.ipv4_mapped or address.sixtofour or address.teredo
-                or address in ipaddress.ip_network('64:ff9b::/96') or address in ipaddress.ip_network('64:ff9b:1::/48')):return False
-        return True
-    if not addresses or not all(permitted(a) for a in addresses):
-        raise PermissionError('Destination is not exclusively public.')
-    return addresses
+from networking.dns_policy import public_addresses
 
 
 def connect_pinned(host, port):
