@@ -49,7 +49,10 @@ def test_debts_do_not_net_and_invoice_validation_preserves_history(dashboard):
 
 def test_manager_reports_debt_but_cannot_confirm_or_reconcile(dashboard):
     d=dashboard;owner=d.credentials['principal'];service=IdentityService(d.store)
-    service.create_user(owner,'opening-manager',PASSWORD,'Manager',('farming',));_,manager=service.login('opening-manager',PASSWORD)
+    uid=service.create_user(owner,'opening-manager',PASSWORD,'Manager',('farming',));_,manager=service.login('opening-manager',PASSWORD)
+    from domains.farming import financial_permissions as perms
+    import uuid
+    perms.configure(d.store,owner,{'event_id':str(uuid.uuid4()),'human_id':uid,'expected_revision':None,'permissions':dict(perms.ALL_GRANTED)})
     debt=entry(kind='OPENING_PAYABLE');books.append(d.store,manager,debt)
     payment=entry(kind='PAYMENT_CLAIM',reference=debt['event_id'],receipt_ref='reported-payment')
     books.append(d.store,manager,payment)
@@ -59,8 +62,11 @@ def test_manager_reports_debt_but_cannot_confirm_or_reconcile(dashboard):
 
 def test_dispute_blocks_confirmation_until_owner_resolution_and_preserves_history(dashboard):
     d=dashboard; owner=d.credentials['principal']; service=IdentityService(d.store)
-    service.create_user(owner,'dispute-manager',PASSWORD,'Manager',('farming',))
+    uid=service.create_user(owner,'dispute-manager',PASSWORD,'Manager',('farming',))
     _,manager=service.login('dispute-manager',PASSWORD)
+    from domains.farming import financial_permissions as perms
+    import uuid
+    perms.configure(d.store,owner,{'event_id':str(uuid.uuid4()),'human_id':uid,'expected_revision':None,'permissions':dict(perms.ALL_GRANTED)})
     debt=entry(kind='OPENING_PAYABLE'); books.append(d.store,manager,debt)
     dispute=entry(kind='DISPUTE_DEBT',amount_minor=0,reference=debt['event_id'])
     books.append(d.store,manager,dispute)

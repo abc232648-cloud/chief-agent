@@ -19,7 +19,7 @@ KIND = 'farm_worker_report_v1'
 LIMIT = 10000
 CATEGORIES = {
     'OBSERVATION', 'MORTALITY', 'FEED', 'WATER', 'EQUIPMENT',
-    'INVENTORY', 'TASK_EVIDENCE'
+    'INVENTORY', 'TASK_EVIDENCE', 'SANITATION', 'DISPOSAL', 'VACCINE_STORAGE', 'SAFETY'
 }
 SEVERITIES = {'ROUTINE', 'IMPORTANT', 'URGENT'}
 BASES = {'MEASURED', 'ESTIMATED', 'COUNTED'}
@@ -75,6 +75,10 @@ def _validate(con, principal, payload):
             raise ValueError('Report location must match the referenced Farm entity name.')
         if p['category'] == 'MORTALITY' and entity['entity_type'] != 'FLOCK':
             raise ValueError('Mortality observations must reference a registered flock when an entity is supplied.')
+        if p['category'] == 'EQUIPMENT' and entity['entity_type'] not in {'EQUIPMENT', 'HOUSE'}:
+            raise ValueError('Equipment observations must reference registered equipment or house.')
+        if p['category'] == 'VACCINE_STORAGE' and entity['entity_type'] not in {'FEED_STORE', 'EQUIPMENT'}:
+            raise ValueError('Vaccine storage observations must reference a store or equipment.')
     p['location'] = bounded_text(p['location'], 120)
     p['summary'] = bounded_text(p['summary'], 2000)
 
@@ -144,14 +148,18 @@ def append(store, principal, payload):
     }
 
 
-def overview(store, principal, offset=0):
+def overview(store, principal, offset=0, category=None):
     if type(offset) is not int or not 0 <= offset <= 1000000:
         raise ValueError('Invalid worker-report page.')
+    if category is not None and category not in CATEGORIES:
+        raise ValueError('Unknown worker-report category filter.')
     with store._connect() as con:
         principal = setup.authorize(store, con, principal, 'read')
         role = setup.role(con, principal)
         visible = []
         for record in rows(con):
+            if category is not None and record['payload']['category'] != category:
+                continue
             if record['actor_id'] == principal.id:
                 visible.append(record)
                 continue

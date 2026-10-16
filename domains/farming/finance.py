@@ -15,6 +15,7 @@ RECEIPTS='farm_finance_receipt_v1'
 CATEGORIES={'FEED':'Feed','BIRDS':'Birds','VETERINARY':'Veterinary care','WAGES':'Wages',
             'TRANSPORT':'Transport','POWER':'Power','MAINTENANCE':'Maintenance',
             'EGG_SALES':'Egg sales','BIRD_SALES':'Bird sales','OTHER':'Other'}
+SALE_OUTPUTS={'EGG_SALES':'EGGS','BIRD_SALES':'MEAT'}
 
 
 def records(con,kind):
@@ -28,12 +29,20 @@ def day(value):
 
 
 def details(value,payload):
-    if not isinstance(value,dict) or set(value)!={'category','contact_id','due_on','items'}:
+    if not isinstance(value,dict):
+        raise ValueError('Supply category, contact, due date and line items.')
+    required = {'category','contact_id','due_on','items'}
+    optional = {'flock_id','output_type','entity_id'}
+    keys = set(value)
+    if not required.issubset(keys) or not keys.issubset(required | optional):
         raise ValueError('Supply category, contact, due date and line items.')
     if payload['kind'] not in {'SALE','EXPENSE_CLAIM','PURCHASE_REQUEST','OPENING_RECEIVABLE','OPENING_PAYABLE'}:
         raise ValueError('Transaction details belong to a sale, expense or purchase request.')
     if value['category'] not in CATEGORIES:raise ValueError('Choose a financial category.')
     if value['contact_id'] is not None:identifier(value['contact_id'])
+    if value.get('flock_id') is not None:identifier(value['flock_id'])
+    if value.get('entity_id') is not None:identifier(value['entity_id'])
+    if value.get('output_type') is not None:bounded_text(value['output_type'], 40)
     if value['due_on'] is not None:day(value['due_on'])
     if not isinstance(value['items'],list) or len(value['items'])>30:raise ValueError('Use at most30 line items.')
     for item in value['items']:
@@ -42,7 +51,26 @@ def details(value,payload):
         if type(item['amount_minor']) is not int or not 0<item['amount_minor']<=999999999999:raise ValueError('Line amounts must be positive exact minor units.')
     if value['items'] and sum(i['amount_minor'] for i in value['items'])!=payload['amount_minor']:
         raise ValueError('Line item amounts must equal the transaction total.')
-    return value
+
+    normalized=dict(value)
+    provenance=[v for v in (value.get('flock_id'),value.get('entity_id')) if v is not None]
+    if payload['kind']=='SALE' and value['category'] in SALE_OUTPUTS:
+        authoritative=SALE_OUTPUTS[value['category']]
+        if value.get('output_type') not in (None,authoritative):
+            raise ValueError('Sale output is determined by its category and cannot be overridden.')
+        if provenance:
+            if len(set(provenance))!=1:raise ValueError('Sale provenance must identify one source flock.')
+            normalized['flock_id']=provenance[0]
+            normalized.pop('entity_id',None)
+            normalized['output_type']=authoritative
+        else:
+            # Preserve historical/API compatibility when no source flock was
+            # recorded. Bookkeeping performs the treatment-aware fail-closed
+            # gate: once any treatment hold exists, such a sale is rejected.
+            normalized.pop('output_type',None)
+    elif provenance or value.get('output_type') is not None:
+        raise ValueError('Flock/output provenance belongs to egg or bird sales.')
+    return normalized
 
 
 def validate_contact(con,p):

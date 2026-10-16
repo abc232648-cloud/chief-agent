@@ -50,6 +50,9 @@ def test_finance_privacy_and_owner_only_confirmation(dashboard):
     d=dashboard;owner=d.credentials['principal'];service=IdentityService(d.store)
     uid=service.create_user(owner,'farm-finance-manager',PASSWORD,'Manager',('farming',))
     _,manager=service.login('farm-finance-manager',PASSWORD)
+    from domains.farming import financial_permissions as perms
+    import uuid
+    perms.configure(d.store,owner,{'event_id':str(uuid.uuid4()),'human_id':uid,'expected_revision':None,'permissions':dict(perms.ALL_GRANTED)})
     sale=entry();books.append(d.store,manager,sale)
     with pytest.raises(PermissionError):books.append(d.store,manager,entry(kind='VOID',reference=sale['event_id'],amount_minor=0))
     assign(d.store,owner,uid,'SUPERVISOR')
