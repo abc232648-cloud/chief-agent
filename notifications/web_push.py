@@ -195,6 +195,10 @@ def subscription_status(store,principal_id,env=None):
 
 
 def _default_sender(subscription,payload,settings):
+    # pywebpush owns its HTTP stack, but its ordinary hostname lookup is kept
+    # inside the same Chief process-scoped DNS boundary as provider SDKs/SMTP.
+    from networking.dns_policy import ensure_process_policy
+    ensure_process_policy()
     from pywebpush import webpush
     return webpush(
         subscription_info={'endpoint':subscription['endpoint'],'keys':subscription['keys']},
