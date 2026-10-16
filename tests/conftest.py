@@ -28,7 +28,7 @@ def explicit_isolated_instance(tmp_path,monkeypatch):
     # opt into production/service flags afterwards through their own monkeypatch.
     # This prevents process-global environment writes in one regression from
     # contaminating a later, otherwise isolated test.
-    for name in ('CHIEF_SERVICE_CONFIGURED','CHIEF_FARM_PRODUCTION','CHIEF_TRUSTED_PROXY'):
+    for name in ('CHIEF_DNS_MODE','CHIEF_SERVICE_CONFIGURED','CHIEF_FARM_PRODUCTION','CHIEF_TRUSTED_PROXY'):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv('CHIEF_INSTANCE_MODE','test')
     monkeypatch.setenv('CHIEF_ISOLATED_ROOT',str(tmp_path))

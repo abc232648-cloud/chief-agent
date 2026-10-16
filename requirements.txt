@@ -12,3 +12,6 @@ cryptography==50.0.1
 # Windows does not ship an IANA timezone database for zoneinfo.
 tzdata==2026.5; sys_platform == "win32"
 tzlocal==5.4.4
+
+# Chief-scoped secure DNS with HTTP/2 and numeric bootstrap.
+dnspython[doh]==2.8.0

@@ -118,6 +118,12 @@ class SiteAccess:
         if os.name=='nt':raise ValueError('Website sign-in must currently run in the Ubuntu VM desktop; native Windows sign-in is not qualified.')
         from .environment import browser_environment
         env = browser_environment()
+        from .dns_policy import selected_mode
+        env['CHIEF_DNS_MODE'] = selected_mode()
+        if os.environ.get('CHIEF_BROWSER_RUNTIME'):
+            env['CHIEF_BROWSER_RUNTIME'] = os.environ['CHIEF_BROWSER_RUNTIME']
+        if os.environ.get('CHIEF_INSTANCE_MODE'):
+            env['CHIEF_INSTANCE_MODE'] = os.environ['CHIEF_INSTANCE_MODE']
         desktop = subprocess.run(['systemctl', '--user', 'show-environment'], capture_output=True, text=True, timeout=5)
         for line in desktop.stdout.splitlines():
             key, _, value = line.partition('=')

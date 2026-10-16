@@ -14,7 +14,8 @@ from pathlib import Path
 import re
 import tempfile
 from urllib.parse import quote, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request
+from browser.https_transport import urlopen
 
 
 _POLICY = "config/dependency_update_policy.json"

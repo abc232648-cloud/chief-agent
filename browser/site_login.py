@@ -1,4 +1,5 @@
 """Visible browser controlled only by the user, isolated from the AI worker."""
+from contextlib import ExitStack
 import json
 import os
 import sys
@@ -22,12 +23,18 @@ def login(db, domain, revision):
     if not row or row['revision'] != revision or row['status'] != 'SIGNING_IN':
         return
     try:
-        with sync_playwright() as p:
+        with sync_playwright() as p, ExitStack() as stack:
             from .environment import browser_environment
             from .runtime import launch_options
-            browser = p.chromium.launch(headless=False,env=browser_environment(), **launch_options())
+            from .egress import EgressProxy
+            from .request_policy import UserLoginPolicy
+            proxy = stack.enter_context(EgressProxy(UserLoginPolicy()))
+            browser = p.chromium.launch(headless=False,env=browser_environment(), **launch_options(),
+                proxy={'server': proxy.url, 'bypass': '<-loopback>'},
+                args=['--disable-quic', '--disable-dns-prefetch',
+                      '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'])
             try:
-                context = browser.new_context(accept_downloads=False)
+                context = browser.new_context(accept_downloads=False, service_workers='block')
                 page = context.new_page()
                 page.goto(row['url'], wait_until='domcontentloaded', timeout=30000)
                 while browser.is_connected():

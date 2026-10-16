@@ -10,15 +10,14 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
+from .dns_policy import resolve_addresses
 
 
 def public_addresses(host, port):
     if host.replace('.','').isdigit():
         try:ipaddress.IPv4Address(host)
         except ValueError:raise PermissionError('Abbreviated numeric destinations are blocked.') from None
-    try:records = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    except OSError:raise PermissionError('Destination could not be verified.') from None
-    addresses = tuple(dict.fromkeys(record[4][0] for record in records))
+    addresses = resolve_addresses(host, port)
     def permitted(value):
         address=ipaddress.ip_address(value)
         if not address.is_global or address.is_multicast:return False

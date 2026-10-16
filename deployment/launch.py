@@ -14,7 +14,7 @@ def configure(filename):
     if path.stat().st_size>8192:raise ValueError('Instance configuration exceeds limit.')
     data=json.loads(path.read_text(encoding='utf-8'))
     allowed={'mode','state_root','database','schema_sha256','dashboard_port','browser_runtime',
-             'farm_operations','trusted_tls_proxy','public_host'}
+             'farm_operations','trusted_tls_proxy','public_host','dns_mode'}
     if not isinstance(data,dict) or set(data)-allowed:raise ValueError('Unknown instance field; secrets and arbitrary environment are forbidden.')
     if data.get('mode') not in {'PRODUCTION','ISOLATED_DEVELOPMENT'}:raise ValueError('Explicit prepared instance required.')
     root=Path(data['state_root']);database=Path(data['database'])
@@ -25,6 +25,12 @@ def configure(filename):
     if type(port) is not int or not 1<=port<=65535:raise ValueError('Invalid dashboard port.')
     farm=data.get('farm_operations','DISABLED')
     if farm not in {'DISABLED','ENABLED'}:raise ValueError('farm_operations must be explicitly DISABLED or ENABLED.')
+
+    from browser.dns_policy import validate_mode
+    dns_mode = validate_mode(data.get('dns_mode', 'quad9'))
+    if os.environ.get('CHIEF_DNS_MODE') not in (None, dns_mode):
+        raise PermissionError('Conflicting Chief DNS environment.')
+    os.environ['CHIEF_DNS_MODE'] = dns_mode
 
     # Service configuration cannot quietly inherit a different target or public bind.
     for key,expected in [('JOB_WORKER_DB',str(database)),('CHIEF_STATE_ROOT',str(root)),

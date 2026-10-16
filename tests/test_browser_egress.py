@@ -9,6 +9,7 @@ from browser.environment import browser_environment
 
 @pytest.mark.parametrize('address',['127.0.0.1','10.0.0.1','169.254.169.254','::1','fe80::1','::ffff:127.0.0.1','224.0.0.1','0.0.0.0','64:ff9b::7f00:1','2002:7f00:1::'])
 def test_connection_time_dns_rejects_nonpublic_and_mixed_answers(monkeypatch,address):
+    monkeypatch.setenv('CHIEF_DNS_MODE','system')
     answers=[(socket.AF_INET,socket.SOCK_STREAM,6,'',(a,443)) for a in ('93.184.215.14',address)]
     monkeypatch.setattr(socket,'getaddrinfo',lambda *a,**kw:answers)
     with pytest.raises(PermissionError):public_addresses('approved.fixture.test',443)
@@ -35,6 +36,7 @@ def test_origin_and_connection_boundaries(url):
 
 def test_real_local_proxy_connection_blocks_private_dns_before_connect(monkeypatch):
     import browser.egress as egress
+    monkeypatch.setenv('CHIEF_DNS_MODE','system')
     called=[]
     monkeypatch.setattr(socket,'getaddrinfo',lambda *a,**kw:[(socket.AF_INET,socket.SOCK_STREAM,6,'',('127.0.0.1',443))])
     # Construct without getaddrinfo: actual local TCP, no external network target.

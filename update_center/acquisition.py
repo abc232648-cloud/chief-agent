@@ -10,7 +10,8 @@ import hashlib
 import os
 from pathlib import Path
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request
+from browser.https_transport import urlopen
 import uuid
 
 from operations import backup
