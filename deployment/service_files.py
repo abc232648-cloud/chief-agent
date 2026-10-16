@@ -63,7 +63,8 @@ def definitions(platform,project,user,*,instance_config,python=None,managed_inst
             value={'Label':'local.'+name,'ProgramArguments':[str(interpreter),*args],'WorkingDirectory':str(root),'UserName':user,'RunAtLoad':True,'KeepAlive':{'SuccessfulExit':False},'ThrottleInterval':10,'Umask':0o077,'StandardOutPath':str(root/'logs'/(component+'.out.log')),'StandardErrorPath':str(root/'logs'/(component+'.err.log'))}
             result['local.'+name+'.plist']=plistlib.dumps(value)
         elif platform=='linux':
-            if any(c in project+str(config)+str(interpreter)+(managed_installation or '') for c in '"%\\$'):raise ValueError('Unsupported systemd path character.')
+            managed_str = str(managed) if managed_installation is not None else ''
+            if any(c in str(root)+str(config)+str(interpreter)+managed_str for c in '"%\\$'):raise ValueError('Unsupported systemd path character.')
             command=' '.join('"'+a+'"' for a in [str(interpreter),*args])
             result[name+'.service']=(f'[Unit]\nDescription=Chief Agent {component}\nConditionUser={user}\nAfter=network.target\nStartLimitIntervalSec=120\nStartLimitBurst=3\n\n[Service]\nType=simple\nWorkingDirectory={root}\nExecStart={command}\nExecStop={command} --stop\nTimeoutStopSec=30\nKillMode=control-group\nNoNewPrivileges=yes\nRestart=on-failure\nRestartSec=10\nUMask=0077\n\n[Install]\nWantedBy=default.target\n').encode()
         else:raise ValueError('Supported targets: linux, windows, macos.')
