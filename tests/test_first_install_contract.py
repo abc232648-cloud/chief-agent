@@ -40,7 +40,7 @@ def test_chief_agent_provides_stable_deployment_contract():
     )
     info = get_contract_info()
     assert info.contract_version == "1.0.0"
-    assert info.chief_agent_commit == "819b7d76c9b17e0c58b50c32ea485991f163aeba"
+    assert len(info.chief_agent_commit) == 40 and all(c in "0123456789abcdef" for c in info.chief_agent_commit)
     assert "prepare_instance" in info.supported_capabilities
     assert "bootstrap_install" in info.supported_capabilities
     assert "install_readiness" in info.supported_capabilities

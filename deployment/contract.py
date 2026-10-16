@@ -27,7 +27,19 @@ SUPPORTED_CAPABILITIES: List[str] = [
     "installation_identity",
 ]
 
-CHIEF_AGENT_BASELINE_COMMIT = "819b7d76c9b17e0c58b50c32ea485991f163aeba"
+CHIEF_AGENT_BASELINE_COMMIT = "fef8f429ad58b4ed4c62053c3c73c1e007c96efc"
+
+
+def _detect_current_commit(root: Path) -> str:
+    try:
+        import subprocess
+        res = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, check=False)
+        c = res.stdout.strip().lower()
+        if len(c) == 40 and all(ch in "0123456789abcdef" for ch in c):
+            return c
+    except Exception:
+        pass
+    return CHIEF_AGENT_BASELINE_COMMIT
 
 
 @dataclass(frozen=True)
@@ -45,9 +57,10 @@ class DeploymentContractInfo:
 
 def get_contract_info() -> DeploymentContractInfo:
     """Return structured contract metadata and capability profile."""
+    current_commit = _detect_current_commit(Path(__file__).resolve().parents[1])
     return DeploymentContractInfo(
         contract_version=DEPLOYMENT_CONTRACT_VERSION,
-        chief_agent_commit=CHIEF_AGENT_BASELINE_COMMIT,
+        chief_agent_commit=current_commit,
         supported_capabilities=list(SUPPORTED_CAPABILITIES),
         min_compatible_installer_version=MIN_COMPATIBLE_INSTALLER_VERSION,
         max_compatible_installer_version=MAX_COMPATIBLE_INSTALLER_VERSION,
