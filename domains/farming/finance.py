@@ -55,10 +55,8 @@ def details(value,payload):
     normalized=dict(value)
     provenance=[v for v in (value.get('flock_id'),value.get('entity_id')) if v is not None]
     if payload['kind']=='SALE' and value['category'] in SALE_OUTPUTS:
-        if not provenance:
-            raise ValueError('Egg and bird sales require the source flock.')
-        if len(set(provenance))!=1:
-            raise ValueError('Sale provenance must identify one source flock.')
+        if not provenance:raise ValueError('Egg and bird sales require the source flock.')
+        if len(set(provenance))!=1:raise ValueError('Sale provenance must identify one source flock.')
         authoritative=SALE_OUTPUTS[value['category']]
         if value.get('output_type') not in (None,authoritative):
             raise ValueError('Sale output is determined by its category and cannot be overridden.')
@@ -101,6 +99,7 @@ def append(store,principal,payload):
     else:raise ValueError('Unknown financial operation.')
     with store._connect() as con:
         con.execute('BEGIN IMMEDIATE');principal=setup.authorize(store,con,principal,'finance');setup.available(store,con)
+        # Receipts are bounded/scoped; never materialize all attachment bytes.
         existing=con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? AND json_extract(data_json,'$.event_id')=?",(kind,value['event_id'])).fetchone()
         if existing:
             prior=json.loads(existing[0])
@@ -194,12 +193,25 @@ def report(store,principal,*,start='',end='',query='',contact_id='',offset=0,inc
                 paid=sum(v['amount_minor'] for v in payments.get(p['event_id'],[]) if v['event_id'] in confirmed)
                 owed=p['amount_minor']-paid;t['receivable' if incoming else 'payable']+=owed
                 due=p.get('details',{}).get('due_on')
-                balances.append({'record':r,'outstanding_minor':owed,'paid_minor':paid,'due_on':due,'disputed':p['event_id'] in disputes})
-            elif p['kind']=='PURCHASE_REQUEST' and p['event_id'] not in decided:t['pending_approvals']+=p['amount_minor']
-            elif p['kind']=='CONFIRM_PAYMENT':
-                claim=active.get(p['reference']);parent=active.get(claim['payload']['reference']) if claim else None
-                if parent:t['received' if parent['payload']['kind'] in books.RECEIVABLES else 'paid']+=claim['payload']['amount_minor']
-        all_balances=balances if include_all_balances else balances[:100]
-        return {'records':list(reversed(selected[offset:offset+100])),'balances':all_balances,'totals':totals,'contacts':contacts,
-                'can_approve':can_approve,'next_offset':offset+100 if offset+100<len(selected) else None,
-                'notice':'Reported operational bookkeeping; no payment execution, bank confirmation or statutory accounting.'}
+                balances.append({'id':p['event_id'],'counterparty':p['counterparty'],'currency':p['currency'],'kind':p['kind'],'outstanding_minor':str(owed),'disputed':p['event_id'] in disputes,'due_on':due,'overdue':bool(due and owed and due<utc_now().astimezone(setup.farm_zone(con)).date().isoformat())})
+            if p['kind']=='PAYMENT_CLAIM':
+                parent=active.get(p['reference'],{}).get('payload',{})
+                if contact_id and parent.get('details',{}).get('contact_id')!=contact_id:continue
+                if p['event_id'] in confirmed:t['received' if parent.get('kind') in books.RECEIVABLES else 'paid']+=p['amount_minor']
+                else:t['unconfirmed']+=p['amount_minor']
+            if p['kind']=='PURCHASE_REQUEST' and p['event_id'] not in decided:t['pending_approvals']+=1
+        # Money strings preserve exact totals even beyond JavaScript's safe integer range.
+        digest=hashlib.sha256()
+        for row in con.execute("SELECT kind,json_remove(data_json,'$.image_base64') FROM domain_records WHERE domain='farming' AND kind IN (?,?,?) ORDER BY id",(books.KIND,CONTACTS,RECEIPTS)):
+            encoded=json.dumps(tuple(row),ensure_ascii=False).encode()
+            digest.update(str(len(encoded)).encode()+b':'+encoded)
+        revision=digest.hexdigest()
+        page=list(reversed(selected))[offset:offset+100]
+        page_ids={r['payload']['event_id'] for r in page}
+        attachments=[]
+        if page_ids:
+            sql="SELECT json_extract(data_json,'$.event_id'),json_extract(data_json,'$.reference'),json_extract(data_json,'$.sha256') FROM domain_records WHERE domain='farming' AND kind=? AND json_extract(data_json,'$.reference') IN ("+','.join('?' for _ in page_ids)+')'
+            attachments=[dict(zip(('event_id','reference','sha256'),row)) for row in con.execute(sql,(RECEIPTS,*sorted(page_ids)))]
+        return {'revision':revision,'categories':CATEGORIES,'contacts':contacts,'summaries':{c:{k:str(v) for k,v in t.items()} for c,t in totals.items()},'balances':balances if include_all_balances else [b for b in balances if b['id'] in page_ids],
+                'records':page,'record_count':len(selected),'offset':offset,'receipts':[{k:r[k] for k in ('event_id','reference','sha256')} for r in attachments],
+                'can_approve':can_approve,'notice':'Current non-voided records; confirmations as of now. Period cash totals use the reported payment date. Outstanding amounts relate to the selected sales, expenses and opening debts. Opening debts and attached invoices are not new sales or expenses. These are not bank balances or formal profit statements.'}
