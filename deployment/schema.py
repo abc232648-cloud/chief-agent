@@ -10,8 +10,8 @@ from operations.restore_guard import assert_not_quarantined
 
 
 def fingerprint(con):
-    rows=[tuple(r) for r in con.execute("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_stat%' ORDER BY type,name")]
-    return hashlib.sha256(json.dumps(rows,separators=(',',':'),ensure_ascii=True).encode()).hexdigest()
+    schema = con.execute("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE sql IS NOT NULL ORDER BY type,name").fetchall()
+    return hashlib.sha256(json.dumps(schema, sort_keys=True, separators=(',', ':')).encode('utf-8')).hexdigest()
 
 
 def preflight(database,expected_schema):

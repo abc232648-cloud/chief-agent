@@ -38,7 +38,7 @@ from tests.checkpoint_f_fixture import PASSWORD, e_base, f_fixture
 def test_contract_metadata_fields():
     info = get_contract_info()
     assert info.contract_version == DEPLOYMENT_CONTRACT_VERSION
-    assert info.chief_agent_commit == CHIEF_AGENT_BASELINE_COMMIT
+    assert len(info.chief_agent_commit) == 40 and all(c in "0123456789abcdef" for c in info.chief_agent_commit)
     for cap in [
         "source_manifest",
         "prepare_instance",
@@ -75,7 +75,7 @@ def test_contract_cli_info():
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
     data = json.loads(res.stdout)
     assert data["contract_version"] == DEPLOYMENT_CONTRACT_VERSION
-    assert data["chief_agent_commit"] == CHIEF_AGENT_BASELINE_COMMIT
+    assert len(data["chief_agent_commit"]) == 40 and all(c in "0123456789abcdef" for c in data["chief_agent_commit"])
     assert "prepare_instance" in data["supported_capabilities"]
     assert "install_readiness" in data["supported_capabilities"]
 

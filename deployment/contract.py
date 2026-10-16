@@ -27,7 +27,7 @@ SUPPORTED_CAPABILITIES: List[str] = [
     "installation_identity",
 ]
 
-CHIEF_AGENT_BASELINE_COMMIT = "fef8f429ad58b4ed4c62053c3c73c1e007c96efc"
+CHIEF_AGENT_BASELINE_COMMIT = "a9a1f33e42f1cfc7c73811ffd13ae3db0963cb47"
 
 
 def _detect_current_commit(root: Path) -> str:
