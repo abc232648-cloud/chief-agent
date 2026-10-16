@@ -55,14 +55,19 @@ def details(value,payload):
     normalized=dict(value)
     provenance=[v for v in (value.get('flock_id'),value.get('entity_id')) if v is not None]
     if payload['kind']=='SALE' and value['category'] in SALE_OUTPUTS:
-        if not provenance:raise ValueError('Egg and bird sales require the source flock.')
-        if len(set(provenance))!=1:raise ValueError('Sale provenance must identify one source flock.')
         authoritative=SALE_OUTPUTS[value['category']]
         if value.get('output_type') not in (None,authoritative):
             raise ValueError('Sale output is determined by its category and cannot be overridden.')
-        normalized['flock_id']=provenance[0]
-        normalized.pop('entity_id',None)
-        normalized['output_type']=authoritative
+        if provenance:
+            if len(set(provenance))!=1:raise ValueError('Sale provenance must identify one source flock.')
+            normalized['flock_id']=provenance[0]
+            normalized.pop('entity_id',None)
+            normalized['output_type']=authoritative
+        else:
+            # Preserve historical/API compatibility when no source flock was
+            # recorded. Bookkeeping performs the treatment-aware fail-closed
+            # gate: once any treatment hold exists, such a sale is rejected.
+            normalized.pop('output_type',None)
     elif provenance or value.get('output_type') is not None:
         raise ValueError('Flock/output provenance belongs to egg or bird sales.')
     return normalized
