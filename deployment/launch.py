@@ -26,11 +26,14 @@ def configure(filename):
     farm=data.get('farm_operations','DISABLED')
     if farm not in {'DISABLED','ENABLED'}:raise ValueError('farm_operations must be explicitly DISABLED or ENABLED.')
 
-    from browser.dns_policy import validate_mode
+    from networking.dns_policy import validate_mode, ensure_process_policy
     dns_mode = validate_mode(data.get('dns_mode', 'quad9'))
     if os.environ.get('CHIEF_DNS_MODE') not in (None, dns_mode):
         raise PermissionError('Conflicting Chief DNS environment.')
     os.environ['CHIEF_DNS_MODE'] = dns_mode
+    # Every ordinary hostname lookup made by this Chief service process now goes
+    # through the selected Chief resolver. This does not modify host/OS DNS.
+    ensure_process_policy(dns_mode)
 
     # Service configuration cannot quietly inherit a different target or public bind.
     for key,expected in [('JOB_WORKER_DB',str(database)),('CHIEF_STATE_ROOT',str(root)),
