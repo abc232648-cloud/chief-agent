@@ -152,6 +152,18 @@ def test_legacy_generic_sale_still_records_when_no_treatment_hold_exists(dashboa
     assert books.append(d.store,owner,entry(kind='SALE'))['status']=='RECORDED'
 
 
+def test_legacy_product_sale_without_flock_is_compatible_only_without_treatment_hold(dashboard):
+    d=dashboard;owner=d.credentials['principal']
+    legacy_details={'category':'EGG_SALES','contact_id':None,'due_on':None,'items':[]}
+    compatible=entry(kind='SALE',observed_at='2026-01-03T07:00:00+01:00',details=dict(legacy_details))
+    assert books.append(d.store,owner,compatible)['status']=='RECORDED'
+
+    fid=flock(d);health_event(d,fid)
+    unsafe=entry(kind='SALE',observed_at='2026-01-03T10:00:00+01:00',details=dict(legacy_details))
+    with pytest.raises(PermissionError,match='Active Treatment Hold'):
+        books.append(d.store,owner,unsafe)
+
+
 def test_worker_cannot_self_issue_or_release_restriction(dashboard):
     d=dashboard;owner=d.credentials['principal'];fid=flock(d);hid=health_event(d,fid)
     svc=IdentityService(d.store);svc.create_user(owner,'pen-worker',PASSWORD,'Worker',('farming',))
