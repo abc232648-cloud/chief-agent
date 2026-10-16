@@ -6,6 +6,7 @@ external callers to understand Chief Agent's internal module topology.
 """
 from dataclasses import asdict, dataclass
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any, Dict, List, Optional
@@ -23,6 +24,7 @@ SUPPORTED_CAPABILITIES: List[str] = [
     "service_files",
     "linux_service_control",
     "ownership_bootstrap",
+    "installation_identity",
 ]
 
 CHIEF_AGENT_BASELINE_COMMIT = "819b7d76c9b17e0c58b50c32ea485991f163aeba"
@@ -73,6 +75,21 @@ def verify_installer_compatibility(installer_contract_version: str) -> bool:
         return False
 
 
+# --- Capability 1: Source Manifest ---
+
+def build_source_manifest(
+    source_root: Path,
+    output: Path,
+    *,
+    expected_git_commit: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Build deterministic source manifest from a clean, pinned Git checkout."""
+    from deployment.source_manifest import build_source_manifest as _build
+    return _build(source_root=source_root, output=output, expected_git_commit=expected_git_commit)
+
+
+# --- Capability 2: Prepare Production Instance ---
+
 def prepare_production(
     root: Path,
     config: Path,
@@ -108,7 +125,9 @@ def prepare_production(
     )
 
 
-def bootstrap_managed_install(
+# --- Capability 3: Bootstrap Managed Installation ---
+
+def bootstrap_installation(
     directory: Path,
     *,
     source_root: Path,
@@ -117,9 +136,9 @@ def bootstrap_managed_install(
     python: Path,
     instance_config: Path,
     schema_sha256: str,
-    private_storage_confirmed: bool = True,
+    private_storage_confirmed: bool = False,
 ) -> Dict[str, Any]:
-    """Provision immutable managed installation source slot."""
+    """Provision one immutable managed installation source slot without starting services."""
     from deployment.bootstrap_install import bootstrap_installation as _bootstrap
     return _bootstrap(
         directory=directory,
@@ -132,58 +151,183 @@ def bootstrap_managed_install(
         private_storage_confirmed=private_storage_confirmed,
     )
 
+# Backward-compatible alias
+bootstrap_managed_install = bootstrap_installation
 
-def verify_install_readiness(
-    instance_config: Path,
+
+# --- Capability 4: Installation Readiness ---
+
+def installation_readiness(
+    config: Path,
     *,
+    source_root: Path,
+    source_manifest: Path,
+    backup_directory: Path,
+    manifest_sha256: str,
     expected_source: str,
-    managed_dir: Path,
+    expected_schema: str,
+    platform: str,
+    project: str,
+    user: str,
+    python: Optional[Any] = None,
+    managed_installation: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    """Verify that an installation is ready to run before services start."""
-    from deployment.install_readiness import verify_readiness as _readiness
+    """Return metadata-only readiness evidence; no deployment action is performed."""
+    from deployment.install_readiness import installation_readiness as _readiness
     return _readiness(
-        instance_config=instance_config,
+        config=config,
+        source_root=source_root,
+        source_manifest=source_manifest,
+        backup_directory=backup_directory,
+        manifest_sha256=manifest_sha256,
         expected_source=expected_source,
-        managed_dir=managed_dir,
+        expected_schema=expected_schema,
+        platform=platform,
+        project=project,
+        user=user,
+        python=str(python) if python is not None else None,
+        managed_installation=str(managed_installation) if managed_installation is not None else None,
     )
 
+# Backward-compatible alias
+verify_install_readiness = installation_readiness
+
+
+# --- Capability 5: Install Backup ---
 
 def create_install_backup(
-    database: Path,
+    config: Path,
     destination: Path,
     *,
     source_root: Path,
     source_manifest: Path,
+    private_storage_confirmed: bool = False,
 ) -> Dict[str, Any]:
-    """Create a verified base install backup before service activation."""
+    """Create a database-only installation backup pinned to an exact source manifest."""
     from deployment.install_backup import create_install_backup as _backup
     return _backup(
-        database=database,
+        config=config,
         destination=destination,
         source_root=source_root,
         source_manifest=source_manifest,
+        private_storage_confirmed=private_storage_confirmed,
     )
 
 
-def generate_service_units(
-    target_dir: Path,
+# --- Capability 6: Service Files & Definitions ---
+
+def service_definitions(
+    platform: str,
+    project: str,
+    user: str,
     *,
-    python: Path,
-    repo_root: Path,
-    config_path: Path,
-    caddy_path: Optional[Path] = None,
-    caddyfile_path: Optional[Path] = None,
-) -> List[Path]:
-    """Generate systemd user service unit files."""
-    from deployment.service_files import write_service_files as _write_services
-    return _write_services(
-        target_dir=target_dir,
+    instance_config: str,
+    python: Optional[str] = None,
+    managed_installation: Optional[str] = None,
+) -> Dict[str, bytes]:
+    """Generate reviewable startup definitions dictionary mapping filename to definition bytes."""
+    from deployment.service_files import definitions as _definitions
+    return _definitions(
+        platform=platform,
+        project=project,
+        user=user,
+        instance_config=instance_config,
         python=python,
-        repo_root=repo_root,
-        config_path=config_path,
-        caddy_path=caddy_path,
-        caddyfile_path=caddyfile_path,
+        managed_installation=managed_installation,
     )
+
+definitions = service_definitions
+
+
+def write_service_definitions(
+    target_dir: Path,
+    platform: str,
+    project: str,
+    user: str,
+    *,
+    instance_config: str,
+    python: Optional[str] = None,
+    managed_installation: Optional[str] = None,
+) -> List[Path]:
+    """Generate and write service definition files into target_dir."""
+    target_path = Path(target_dir)
+    target_path.mkdir(parents=True, exist_ok=True)
+    files = service_definitions(
+        platform=platform,
+        project=project,
+        user=user,
+        instance_config=instance_config,
+        python=python,
+        managed_installation=managed_installation,
+    )
+    written: List[Path] = []
+    for name, data in files.items():
+        dest = target_path / name
+        dest.write_bytes(data)
+        written.append(dest)
+    return written
+
+generate_service_units = write_service_definitions
+
+
+# --- Capability 7: Linux Service Control ---
+
+def stop_linux_services(*, timeout: int = 60) -> Dict[str, Any]:
+    """Stop writers before source selection using systemd --user."""
+    from deployment.linux_service_control import stop_services as _stop
+    return _stop(timeout=timeout)
+
+
+def start_linux_services(instance: Any, *, timeout: int = 90) -> Dict[str, Any]:
+    """Start the selected source and require fresh READY records for all components."""
+    from deployment.linux_service_control import start_services as _start
+    return _start(instance, timeout=timeout)
+
+
+# --- Capability 8: Ownership Bootstrap ---
+
+def bootstrap_ownership(
+    store: Any,
+    owner_id: str,
+    organization_name: str,
+    farm_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Seed the first organization/farm into an otherwise empty ownership ledger."""
+    from deployment.ownership_bootstrap import bootstrap_initial as _bootstrap
+    return _bootstrap(
+        store=store,
+        owner_id=owner_id,
+        organization_name=organization_name,
+        farm_name=farm_name,
+    )
+
+bootstrap_initial = bootstrap_ownership
+
+
+# --- Capability 9: Installation Identity ---
+
+def derive_display_name(raw: str) -> str:
+    """Normalize owner display name."""
+    from deployment.installation_identity import display_name as _display_name
+    return _display_name(raw)
+
+
+def derive_local_host_label(owner_name: str) -> str:
+    """Derive RFC 1035 safe host label from owner display name."""
+    from deployment.installation_identity import local_host_label as _label
+    return _label(owner_name)
+
+
+def derive_local_hostname(owner_name: str) -> str:
+    """Derive local mDNS hostname from owner display name."""
+    from deployment.installation_identity import local_hostname as _hostname
+    return _hostname(owner_name)
+
+
+def create_installation_identity(owner_display_name: str, *, hostname: Optional[str] = None) -> Dict[str, Any]:
+    """Create initial installation identity dictionary."""
+    from deployment.installation_identity import new_identity as _new_id
+    return _new_id(owner_display_name, hostname=hostname)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
