@@ -14,7 +14,15 @@ from operations.time_integrity import utc_now, utc_text, aware_utc
 from .timezone import unambiguous_deadline
 
 KIND = 'farm_reporting_schedule_v1'
-REPORTS = {'mortality': 'FLOCK', 'eggs_collected': 'FLOCK', 'feed_used': 'FEED_STORE'}
+REPORTS = {
+    'mortality': {'FLOCK'},
+    'eggs_collected': {'FLOCK'},
+    'feed_used': {'FEED_STORE'},
+    'water_checked': {'HOUSE', 'EQUIPMENT'},
+    'equipment_checked': {'EQUIPMENT'},
+    'vaccine_storage_checked': {'FEED_STORE', 'EQUIPMENT'},
+    'sanitation_checked': {'HOUSE', 'FEED_STORE'},
+}
 
 
 def schedules(con):
@@ -58,9 +66,11 @@ def configure(store, principal, payload):
             for field in ('entity_id', 'assignee'):
                 journal.identifier(r[field])
             if not isinstance(r['kind'], str) or r['kind'] not in REPORTS:
-                raise ValueError('Choose egg collection, mortality or feed use.')
-            if catalog.get(r['entity_id'], {}).get('entity_type') != REPORTS[r['kind']]:
-                raise ValueError('Choose a registered flock or feed store appropriate for the report.')
+                raise ValueError('Choose egg collection, mortality, feed use or an operational check.')
+            allowed_types = REPORTS[r['kind']]
+            entity_type = catalog.get(r['entity_id'], {}).get('entity_type')
+            if entity_type not in (allowed_types if isinstance(allowed_types, (set, tuple)) else {allowed_types}):
+                raise ValueError('Choose a registered Farm entity appropriate for the report.')
             if not isinstance(r['due_time'], str) or not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d', r['due_time']):
                 raise ValueError('Use a farm-local deadline in HH:MM format.')
             key = (r['entity_id'], r['kind'])
@@ -128,6 +138,25 @@ def overview(store, principal, day=''):
             last_received = max(last_received or '', record['received_at'])
         for m in metrics.values():
             m['quantity'] = format(m['quantity'], 'f')
+        from . import reports
+        REPORT_CATEGORIES = {
+            'water_checked': 'WATER',
+            'equipment_checked': 'EQUIPMENT',
+            'vaccine_storage_checked': 'VACCINE_STORAGE',
+            'sanitation_checked': 'SANITATION',
+        }
+        for rec in reports.rows(con):
+            rp = rec['payload']
+            if aware_utc(rp['observed_at']).astimezone(report_zone).date() != selected:
+                continue
+            cat = rp['category']
+            entity_id_match = rp.get('entity_id') or next((e_id for e_id, e in catalog.items() if e['name'] == rp.get('location')), None)
+            if not entity_id_match:
+                continue
+            for check_kind, expected_cat in REPORT_CATEGORIES.items():
+                if cat == expected_cat:
+                    key = (entity_id_match, check_kind)
+                    reported.setdefault(key, []).append(rec['received_at'])
         checks = []
         for requirement in requirements:
             if not manager and requirement['assignee'] != principal.id:

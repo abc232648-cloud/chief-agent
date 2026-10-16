@@ -80,7 +80,7 @@ def append(store, principal, payload, *, connection=None):
                           'report_payments' if p['kind'] == 'PAYMENT_CLAIM' else
                           'record_debts' if p['kind'] in OBLIGATIONS else None)
             if permission and not effective(con, principal.id)[permission]:
-                raise PermissionError('The Owner has disabled this financial permission.')
+                raise PermissionError('Financial records are currently reserved for the Farm Owner. If you need to view accounts or log sales, your Farm Owner can enable your access in Settings -> Team.')
         setup.available(store, con)
         from .finance import validate_contact
         validate_contact(con,p)
@@ -98,6 +98,16 @@ def append(store, principal, payload, *, connection=None):
         if kind in {'PURCHASE_REQUEST', 'SALE', 'OPENING_RECEIVABLE', 'OPENING_PAYABLE'}:
             if ref is not None or p['amount_minor'] <= 0:
                 raise ValueError('New requests and sales need a positive amount and no parent.')
+            if kind == 'SALE':
+                details = p.get('details')
+                if isinstance(details, dict):
+                    flock_id = details.get('flock_id') or details.get('entity_id')
+                    output_type = details.get('output_type', 'EGGS')
+                    if flock_id:
+                        from .health_records import check_restriction
+                        res = check_restriction(con, flock_id, output_type=output_type, at_time=p['observed_at'])
+                        if res['restricted']:
+                            raise PermissionError(res['warning'])
         elif kind == 'EXPENSE_CLAIM':
             if p['amount_minor'] <= 0 or (ref and ref['kind'] != 'PURCHASE_REQUEST'):
                 raise ValueError('Expenses may reference a purchase request; they never imply its approval.')

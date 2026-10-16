@@ -70,3 +70,118 @@ def overview(store,principal,offset=0):
                 related.add(p['event_id']);visible.append({**record,'is_current':p['event_id'] not in replaced,'expired_at_administration':bool(p['expires_on'] and p['expires_on']<aware_utc(p['observed_at']).astimezone(setup.farm_zone(con)).date().isoformat())})
         visible.reverse()
         return {'items':visible[offset:offset+100],'total':len(visible),'next_offset':offset+100 if offset+100<len(visible) else None,'can_correct':manager,'notice':'Reported history only. Recording a treatment does not recommend it, authorize it, or establish a withdrawal period. Unknown details remain unknown.'}
+
+
+RESTRICTION_KIND = 'farm_treatment_restriction_v1'
+RESTRICTION_OUTPUTS = {'EGGS', 'MEAT', 'ALL'}
+RESTRICTION_TYPES = {'WITHDRAWAL', 'HOLD', 'DISPOSAL_ONLY'}
+RESTRICTION_FIELDS = {'event_id', 'health_event_id', 'entity_id', 'output_type', 'restriction_type',
+                      'active_from', 'active_until', 'reason', 'source_document', 'reviewed_by'}
+
+
+def restriction_rows(con):
+    values = con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id", (RESTRICTION_KIND,)).fetchall()
+    return [json.loads(r[0]) for r in values]
+
+
+def append_restriction(store, principal, payload):
+    if not isinstance(payload, dict) or set(payload) != RESTRICTION_FIELDS:
+        raise ValueError('Supply exactly the treatment restriction fields.')
+    p = dict(payload)
+    identifier(p['event_id']); identifier(p['health_event_id']); identifier(p['entity_id'])
+    if p['output_type'] not in RESTRICTION_OUTPUTS:
+        raise ValueError('Choose a valid restriction output type: EGGS, MEAT, or ALL.')
+    if p['restriction_type'] not in RESTRICTION_TYPES:
+        raise ValueError('Choose a valid restriction type.')
+    active_from = aware_utc(p['active_from'])
+    p['active_from'] = utc_text(active_from)
+    if p['active_until'] is not None:
+        active_until = aware_utc(p['active_until'])
+        if active_until < active_from:
+            raise ValueError('Restriction end date cannot precede start date.')
+        p['active_until'] = utc_text(active_until)
+    for key, limit in [('reason', 2000), ('source_document', 400), ('reviewed_by', 120)]:
+        p[key] = bounded_text(p[key], limit, empty=False)
+
+    with store._connect() as con:
+        con.execute('BEGIN IMMEDIATE')
+        principal = setup.authorize(store, con, principal, 'manage')
+        setup.available(store, con)
+        h_records = rows(con)
+        health_event = next((r['payload'] for r in h_records if r['payload']['event_id'] == p['health_event_id']), None)
+        if not health_event:
+            raise ValueError('Referenced health event does not exist.')
+        if health_event['entity_id'] != p['entity_id']:
+            raise ValueError('Restriction flock does not match referenced health event flock.')
+        entity = setup.entities(con).get(p['entity_id'])
+        if not entity or entity['entity_type'] != 'FLOCK':
+            raise ValueError('Choose a registered flock.')
+
+        history = restriction_rows(con)
+        prior = next((r for r in history if r['payload']['event_id'] == p['event_id']), None)
+        if prior:
+            if prior['payload'] != p or prior['actor_id'] != principal.id:
+                raise ValueError('Submission identifier conflict.')
+            return {'status': 'ALREADY_RECORDED'}
+
+        record = {'payload': p, 'actor_id': principal.id, 'received_at': utc_text(utc_now()), 'evidence_status': 'QUALIFIED_INSTRUCTION'}
+        con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",
+                    (RESTRICTION_KIND, json.dumps(record, sort_keys=True), time.time()))
+        IdentityService(store)._event(con, principal, 'FARM_TREATMENT_RESTRICTION_RECORDED', 'farming', p['event_id'], 'RECORDED')
+    return {'status': 'RECORDED'}
+
+
+def restrictions_overview(store, principal, entity_id=None):
+    with store._connect() as con:
+        principal = setup.authorize(store, con, principal, 'read')
+        history = restriction_rows(con)
+        if entity_id:
+            history = [r for r in history if r['payload']['entity_id'] == entity_id]
+        now = utc_now()
+        items = []
+        for r in history:
+            p = r['payload']
+            from_t = aware_utc(p['active_from'])
+            until_t = aware_utc(p['active_until']) if p['active_until'] else None
+            is_active = (from_t <= now) and (until_t is None or now <= until_t)
+            items.append({**r, 'is_active': is_active, 'duration_known': until_t is not None})
+        items.reverse()
+        return {'items': items, 'total': len(items)}
+
+
+def check_restriction(con, entity_id, output_type='EGGS', at_time=None):
+    """Check if flock/output is under an active treatment restriction.
+    Unknown duration is NOT zero and never means cleared.
+    """
+    if not entity_id:
+        return {'restricted': False}
+    t = aware_utc(at_time) if at_time else utc_now()
+    history = restriction_rows(con)
+    flock_history = [r['payload'] for r in history if r['payload']['entity_id'] == entity_id]
+    if not flock_history:
+        return {'restricted': False}
+
+    entity = setup.entities(con).get(entity_id)
+    flock_name = entity['name'] if entity else f'Flock {entity_id[:8]}'
+
+    active_holds = []
+    for r in flock_history:
+        if r['output_type'] not in {output_type, 'ALL'}:
+            continue
+        from_t = aware_utc(r['active_from'])
+        until_t = aware_utc(r['active_until']) if r['active_until'] else None
+        if from_t <= t and (until_t is None or t <= until_t):
+            active_holds.append(r)
+
+    if not active_holds:
+        return {'restricted': False}
+
+    unknown_holds = [h for h in active_holds if h['active_until'] is None]
+    if unknown_holds:
+        warning = f"Active Treatment Hold: Eggs/meat from {flock_name} cannot be sold (medication clearing period is unknown and unverified). Safe for internal recording and disposal only."
+        return {'restricted': True, 'warning': warning, 'active_holds': active_holds, 'duration_known': False}
+
+    latest_until = max(aware_utc(h['active_until']) for h in active_holds)
+    date_str = latest_until.astimezone(setup.farm_zone(con)).date().strftime('%b %d')
+    warning = f"Active Treatment Hold: Eggs/meat from {flock_name} cannot be sold until {date_str} (medication clearing period). Safe for internal recording and disposal only."
+    return {'restricted': True, 'warning': warning, 'active_holds': active_holds, 'duration_known': True, 'clears_at': utc_text(latest_until)}

@@ -44,7 +44,7 @@ def authorize(store, con, principal, action):
     if action == 'finance' and current != 'OWNER':
         from .financial_permissions import effective
         if not effective(con, principal.id)['access']:
-            raise PermissionError('The Owner has disabled your bookkeeping access.')
+            raise PermissionError('Financial records are currently reserved for the Farm Owner. If you need to view accounts or log sales, your Farm Owner can enable your access in Settings -> Team.')
     return principal
 
 
@@ -90,7 +90,7 @@ def append(store, principal, payload):
         if set(p) != common | {'entity_id', 'entity_type', 'name', 'opened_on', 'house_id'}:
             raise ValueError('Supply exactly the entity fields.')
         identifier(p['entity_id'])
-        if p['entity_type'] not in ('HOUSE', 'FLOCK', 'FEED_STORE'):
+        if p['entity_type'] not in ('HOUSE', 'FLOCK', 'FEED_STORE', 'EQUIPMENT'):
             raise ValueError('Unknown Farm entity type.')
         p['name'] = bounded_text(p['name'], 80)
         opening_date(p['opened_on'], store)
@@ -173,8 +173,8 @@ def overview(store, principal):
         result = {'timezone': timezone_setting(con)['timezone'], 'timezone_basis': timezone_setting(con)['basis'], 'entities': list(entities(con).values()), 'farm_role': current,
                   'can_manage': current in {'OWNER', 'GENERAL_MANAGER', 'SUPERVISOR'},
                   'can_setup': current in {'OWNER', 'GENERAL_MANAGER'}, 'can_assign': current == 'OWNER'}
-        from .financial_permissions import effective, DEFAULTS
-        result['financial_permissions'] = dict(DEFAULTS) if current == 'OWNER' else effective(con, principal.id)
+        from .financial_permissions import effective, ALL_GRANTED
+        result['financial_permissions'] = dict(ALL_GRANTED) if current == 'OWNER' else effective(con, principal.id)
         result['can_finance'] = result['can_setup'] and result['financial_permissions']['access']
         if result['can_setup']:
             history = [r for r in rows(con) if r['payload']['operation'] in {'create_entity', 'update_entity'}]

@@ -28,12 +28,20 @@ def day(value):
 
 
 def details(value,payload):
-    if not isinstance(value,dict) or set(value)!={'category','contact_id','due_on','items'}:
+    if not isinstance(value,dict):
+        raise ValueError('Supply category, contact, due date and line items.')
+    required = {'category','contact_id','due_on','items'}
+    optional = {'flock_id','output_type','entity_id'}
+    keys = set(value)
+    if not required.issubset(keys) or not keys.issubset(required | optional):
         raise ValueError('Supply category, contact, due date and line items.')
     if payload['kind'] not in {'SALE','EXPENSE_CLAIM','PURCHASE_REQUEST','OPENING_RECEIVABLE','OPENING_PAYABLE'}:
         raise ValueError('Transaction details belong to a sale, expense or purchase request.')
     if value['category'] not in CATEGORIES:raise ValueError('Choose a financial category.')
     if value['contact_id'] is not None:identifier(value['contact_id'])
+    if value.get('flock_id') is not None:identifier(value['flock_id'])
+    if value.get('entity_id') is not None:identifier(value['entity_id'])
+    if value.get('output_type') is not None:bounded_text(value['output_type'], 40)
     if value['due_on'] is not None:day(value['due_on'])
     if not isinstance(value['items'],list) or len(value['items'])>30:raise ValueError('Use at most30 line items.')
     for item in value['items']:

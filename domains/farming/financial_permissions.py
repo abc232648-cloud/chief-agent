@@ -8,7 +8,8 @@ from operations.time_integrity import utc_now, utc_text
 
 KIND='farm_financial_permissions_v1'
 LABELS={'access':'View and access bookkeeping','record_debts':'Record sales, expenses and opening debts','flag_debts':'Flag debt disputes','report_payments':'Report payment claims'}
-DEFAULTS={key:True for key in LABELS}
+DEFAULTS={key:False for key in LABELS}
+ALL_GRANTED={key:True for key in LABELS}
 
 
 def rows(con):
@@ -54,4 +55,4 @@ def overview(store,principal):
             if not {'farming','*'} & set(json.loads(u['domains'])):continue
             own=[r for r in history if r['payload']['human_id']==u['id']]
             users.append({'id':u['id'],'username':u['username'],'permissions':effective(con,u['id']),'revision':own[-1]['payload']['event_id'] if own else None})
-        return {'users':users,'labels':LABELS,'notice':'Existing Manager access is retained until changed. These switches restrict existing Farm management authority. Approvals, dispute resolution and payment confirmation remain Owner-only.'}
+        return {'users':users,'labels':LABELS,'notice':'Sensitive financial access is disabled by default for General Managers. Use these switches to grant specific access. Approvals, dispute resolution and payment confirmation remain Owner-only.'}

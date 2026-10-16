@@ -6,14 +6,15 @@ from urllib.parse import urlsplit, parse_qs
 
 def dispatch(handler, store, principal, path, method, body):
     parsed = urlsplit(handler.path)
-    if parsed.path not in {'/api/farm/expense-allocations','/api/farm/egg-loss-links','/api/farm/clarifications','/api/farm/worker-reports','/api/farm/tasks','/api/farm/incidents','/api/farm/sops','/api/farm/sops/assigned','/api/farm/planning','/api/farm/planning/preview','/api/farm/health-records','/api/farm/labour','/api/farm/units','/api/farm/costing','/api/farm/costing/policy','/api/farm/financial-permissions','/api/farm/physical-counts','/api/farm/notification-recipients','/api/farm/brief','/api/farm/brief/schedule','/api/farm/finance','/api/farm/journal', '/api/farm/setup', '/api/farm/bookkeeping', '/api/farm/staff', '/api/farm/assistant', '/api/farm/assistant/configure', '/api/farm/photos'} and not parsed.path.startswith(('/api/farm/photos/','/api/farm/receipts/','/api/farm/finance/history/')):
+    if parsed.path not in {'/api/farm/expense-allocations','/api/farm/egg-loss-links','/api/farm/clarifications','/api/farm/worker-reports','/api/farm/tasks','/api/farm/incidents','/api/farm/sops','/api/farm/sops/assigned','/api/farm/planning','/api/farm/planning/preview','/api/farm/health-records','/api/farm/treatment-restrictions','/api/farm/labour','/api/farm/units','/api/farm/costing','/api/farm/costing/policy','/api/farm/financial-permissions','/api/farm/physical-counts','/api/farm/notification-recipients','/api/farm/brief','/api/farm/brief/schedule','/api/farm/finance','/api/farm/journal', '/api/farm/setup', '/api/farm/bookkeeping', '/api/farm/staff', '/api/farm/assistant', '/api/farm/assistant/configure', '/api/farm/photos'} and not parsed.path.startswith(('/api/farm/photos/','/api/farm/receipts/','/api/farm/finance/history/')):
         return False
     require_farm_runtime()
     if parsed.path == '/api/farm/worker-reports':
         from domains.farming import reports
         if method in {'GET', 'HEAD'}:
             q = parse_qs(parsed.query)
-            handler.json(reports.overview(store, principal, offset=int(q.get('offset', ['0'])[0])))
+            category = q.get('category', [None])[0]
+            handler.json(reports.overview(store, principal, offset=int(q.get('offset', ['0'])[0]), category=category))
         elif method == 'POST':
             handler.json(reports.append(store, principal, body))
         else:
@@ -85,6 +86,16 @@ def dispatch(handler, store, principal, path, method, body):
         if method in {'GET','HEAD'}: handler.json(health_records.overview(store,principal,offset=int(parse_qs(parsed.query).get('offset',['0'])[0])))
         elif method == 'POST': handler.json(health_records.append(store,principal,body))
         else: handler.json({'status':'METHOD_NOT_ALLOWED'},405)
+        return True
+    if parsed.path == '/api/farm/treatment-restrictions':
+        from domains.farming import health_records
+        if method in {'GET','HEAD'}:
+            q = parse_qs(parsed.query)
+            handler.json(health_records.restrictions_overview(store, principal, entity_id=q.get('flock_id', [None])[0]))
+        elif method == 'POST':
+            handler.json(health_records.append_restriction(store, principal, body))
+        else:
+            handler.json({'status':'METHOD_NOT_ALLOWED'},405)
         return True
     if parsed.path == '/api/farm/labour':
         from domains.farming import labour
