@@ -39,6 +39,8 @@ class SmtpEmailChannel:
     def _send(self, subject: str, text: str, html: str | None = None) -> None:
         import smtplib
         from email.message import EmailMessage
+        from networking.dns_policy import ensure_process_policy
+        ensure_process_policy()
         msg = EmailMessage()
         msg["Subject"], msg["From"], msg["To"] = subject, self.sender, self.recipient
         msg.set_content(text)
