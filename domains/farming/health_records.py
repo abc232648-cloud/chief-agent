@@ -135,8 +135,6 @@ def append_restriction(store, principal, payload):
                 raise ValueError('Submission identifier conflict.')
             return {'status': 'ALREADY_RECORDED'}
 
-        # This is an operator-recorded instruction/reference. Chief does not
-        # infer that the reviewer/source is medically qualified from free text.
         record = {'payload': p, 'actor_id': principal.id, 'received_at': utc_text(utc_now()),
                   'evidence_status': 'HUMAN_REPORTED_INSTRUCTION'}
         con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",
@@ -164,13 +162,7 @@ def restrictions_overview(store, principal, entity_id=None):
 
 
 def check_restriction(con, entity_id, output_type='EGGS', at_time=None):
-    """Fail closed for treated flock output until current human-recorded instructions clear it.
-
-    MEDICINE events create an automatic unknown-duration hold. The latest matching
-    restriction instruction for that treatment/output supersedes the automatic hold
-    (and older instructions for the same treatment/output). Separate treatments remain
-    additive, so one cleared course cannot clear another course accidentally.
-    """
+    """Fail closed for treated flock output until current human-recorded instructions clear it."""
     identifier(entity_id)
     if output_type not in {'EGGS', 'MEAT'}:
         raise ValueError('Treatment checks require EGGS or MEAT output.')
@@ -190,10 +182,6 @@ def check_restriction(con, entity_id, output_type='EGGS', at_time=None):
                     if r['payload']['health_event_id'] == treatment['event_id']
                     and r['payload']['output_type'] in {output_type, 'ALL'}]
         latest = matching[-1] if matching else None
-
-        # Medicine is fail-closed: absence of an explicit instruction, or an
-        # instruction whose stated period has not started yet, cannot be treated
-        # as evidence that output is safe to sell.
         if treatment['kind'] == 'MEDICINE' and (latest is None or aware_utc(latest['active_from']) > t):
             active_holds.append({'health_event_id': treatment['event_id'],
                                  'entity_id': entity_id, 'output_type': output_type,
@@ -223,3 +211,15 @@ def check_restriction(con, entity_id, output_type='EGGS', at_time=None):
     warning = f"Active Treatment Hold: {output_type.lower()} from {flock_name} cannot be sold until {date_str} under the recorded treatment instruction. Safe for internal recording and disposal only."
     return {'restricted': True, 'warning': warning, 'active_holds': active_holds,
             'duration_known': True, 'clears_at': utc_text(latest_until)}
+
+
+def sale_hold_exists(con, at_time=None):
+    """Return True when any current treatment makes sale provenance safety-relevant."""
+    t = aware_utc(at_time) if at_time else utc_now()
+    treatment_flocks = {p['entity_id'] for p in _current_health(rows(con))
+                        if p['kind'] in {'MEDICINE', 'VACCINATION'} and aware_utc(p['observed_at']) <= t}
+    for entity_id in treatment_flocks:
+        for output_type in ('EGGS', 'MEAT'):
+            if check_restriction(con, entity_id, output_type=output_type, at_time=t)['restricted']:
+                return True
+    return False
