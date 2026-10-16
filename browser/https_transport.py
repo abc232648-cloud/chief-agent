@@ -4,7 +4,7 @@ import socket
 from urllib.request import HTTPSHandler, HTTPRedirectHandler, ProxyHandler, build_opener
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
-from .egress import public_addresses
+from networking.dns_policy import public_addresses
 
 
 class ChiefHTTPSConnection(http.client.HTTPSConnection):
