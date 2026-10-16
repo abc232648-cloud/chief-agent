@@ -17,18 +17,21 @@ def definitions(platform,project,user,*,instance_config,python=None,managed_inst
     if any(c in project+user+instance_config+(python or '')+(managed_installation or '') for c in '\r\n\x00'):raise ValueError('Paths/accounts must be single-line.')
     if not user:raise ValueError('Specify the operating-system account that owns the project.')
     windows=platform=='windows'
-    root=PureWindowsPath(project) if windows else PurePosixPath(project)
+    def _to_path(p):
+        if not windows and isinstance(p, str) and re.match(r'^[a-zA-Z]:', p):
+            p = re.sub(r'^[a-zA-Z]:/*', '/', p.replace('\\', '/'))
+        return PureWindowsPath(p) if windows else PurePosixPath(p)
+    root=_to_path(project)
     if not root.is_absolute():raise ValueError('Project path must be absolute.')
     interpreter=root/'.venv'/('Scripts/python.exe' if windows else 'bin/python')
-    path_type=PureWindowsPath if windows else PurePosixPath
-    config=path_type(instance_config)
+    config=_to_path(instance_config)
     if not config.is_absolute():raise ValueError('Absolute instance config required.')
     if managed_installation is not None:
-        managed=path_type(managed_installation)
+        managed=_to_path(managed_installation)
         if not managed.is_absolute():raise ValueError('Absolute managed installation required.')
         if root==managed or root.is_relative_to(managed):raise ValueError('Stable launcher source must stay outside managed releases.')
     if python is not None:
-        interpreter=path_type(python)
+        interpreter=_to_path(python)
         if not interpreter.is_absolute():raise ValueError('Absolute interpreter required.')
     if platform=='linux':_linux_account(user)
     result={}
