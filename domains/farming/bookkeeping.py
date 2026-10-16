@@ -106,11 +106,14 @@ def append(store, principal, payload, *, connection=None):
                     if sale_hold_exists(con, at_time=p['observed_at']):
                         raise PermissionError('Active Treatment Hold: classify the sale as eggs or birds and select its source flock before recording it.')
                 elif details['category'] in SALE_OUTPUTS:
-                    flock_id = details['flock_id']
-                    output_type = SALE_OUTPUTS[details['category']]
-                    result = check_restriction(con, flock_id, output_type=output_type, at_time=p['observed_at'])
-                    if result['restricted']:
-                        raise PermissionError(result['warning'])
+                    flock_id = details.get('flock_id')
+                    if flock_id:
+                        output_type = SALE_OUTPUTS[details['category']]
+                        result = check_restriction(con, flock_id, output_type=output_type, at_time=p['observed_at'])
+                        if result['restricted']:
+                            raise PermissionError(result['warning'])
+                    elif sale_hold_exists(con, at_time=p['observed_at']):
+                        raise PermissionError('Active Treatment Hold: egg and bird sales require the source flock before recording them.')
                 elif sale_hold_exists(con, at_time=p['observed_at']):
                     raise PermissionError('Active Treatment Hold: unclassified or other sales cannot bypass flock/output provenance while a treatment hold is active.')
         elif kind == 'EXPENSE_CLAIM':
