@@ -113,7 +113,14 @@ def test_real_resolver_uses_only_secure_wire_transport(monkeypatch):
         response = dns.message.make_response(query)
         kind = query.question[0].rdtype
         if kind == 1:
-            response.answer.append(dns.rrset.from_text('example.org.', 30, 'IN', 'A', '93.184.215.14'))
+            rrset = response.find_rrset(
+                response.answer,
+                query.question[0].name,
+                query.question[0].rdclass,
+                query.question[0].rdtype,
+                create=True,
+            )
+            rrset.update(dns.rrset.from_text('example.org.', 30, 'IN', 'A', '93.184.215.14'))
         return response
     monkeypatch.setattr(dns.query, 'https', https)
     assert resolve_addresses('example.org',443,mode='quad9') == ('93.184.215.14',)
