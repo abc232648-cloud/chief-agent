@@ -5,6 +5,18 @@ from threading import Thread
 from types import SimpleNamespace
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def isolate_chief_process_dns_policy():
+    """No test may leak Chief's process-global resolver hook into another test."""
+    from networking.dns_policy import _reset_process_policy_for_tests
+    _reset_process_policy_for_tests()
+    try:
+        yield
+    finally:
+        _reset_process_policy_for_tests()
+
+
 @pytest.fixture(autouse=True)
 def qualified_acceptance_browser(monkeypatch):
     """When selected by the acceptance runner, all Chromium fixtures use that build."""
@@ -139,4 +151,3 @@ def synthetic_farm_timezone(monkeypatch):
     from zoneinfo import ZoneInfo
     import domains.farming.timezone as farm_time
     monkeypatch.setattr(farm_time, "host_zone", lambda: ZoneInfo("Africa/Lagos"))
-
