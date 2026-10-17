@@ -15,9 +15,10 @@ def _answer(host, port, family=0, type=0, proto=0, flags=0):
 
 def test_process_policy_resolves_named_hosts_then_uses_numeric_connection(monkeypatch):
     lookups=[]
-    monkeypatch.setattr(dns_policy, '_ORIGINAL_GETADDRINFO',
-                        lambda host, port, family=0, type=0, proto=0, flags=0:
-                        lookups.append((host, flags)) or _answer(host, port, family, type, proto, flags))
+    orig = (lambda host, port, family=0, type=0, proto=0, flags=0:
+            lookups.append((host, flags)) or _answer(host, port, family, type, proto, flags))
+    monkeypatch.setattr(dns_policy, '_ORIGINAL_GETADDRINFO', orig)
+    monkeypatch.setattr(socket, 'getaddrinfo', orig)
     monkeypatch.setattr(dns_policy, 'resolve_addresses',
                         lambda host, port, mode=None, provider=dns_policy.QUAD9_SECURE: ('93.184.215.14',))
 
@@ -42,9 +43,10 @@ def test_explicit_numeric_loopback_does_not_use_external_dns(monkeypatch):
     calls=[]
     monkeypatch.setattr(dns_policy, 'resolve_addresses',
                         lambda *a, **kw: (_ for _ in ()).throw(AssertionError('DNS must not run for numeric loopback')))
-    monkeypatch.setattr(dns_policy, '_ORIGINAL_GETADDRINFO',
-                        lambda host, port, family=0, type=0, proto=0, flags=0:
-                        calls.append(host) or _answer(host, port, family, type, proto, flags))
+    orig = (lambda host, port, family=0, type=0, proto=0, flags=0:
+            calls.append(host) or _answer(host, port, family, type, proto, flags))
+    monkeypatch.setattr(dns_policy, '_ORIGINAL_GETADDRINFO', orig)
+    monkeypatch.setattr(socket, 'getaddrinfo', orig)
     dns_policy.install_process_policy('quad9')
     result=socket.getaddrinfo('127.0.0.1',5678,type=socket.SOCK_STREAM)
     assert result[0][4][0] == '127.0.0.1'
@@ -59,6 +61,7 @@ def test_system_mode_is_explicit_and_still_pins_returned_numeric_address(monkeyp
             return [(socket.AF_INET,socket.SOCK_STREAM,6,'',('93.184.215.14',port))]
         return _answer(host, port, family, type, proto, flags)
     monkeypatch.setattr(dns_policy, '_ORIGINAL_GETADDRINFO', original)
+    monkeypatch.setattr(socket, 'getaddrinfo', original)
     dns_policy.install_process_policy('system')
     result=socket.getaddrinfo('smtp.fixture.test',587,type=socket.SOCK_STREAM)
     assert result[0][4][0] == '93.184.215.14'
