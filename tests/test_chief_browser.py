@@ -10,7 +10,7 @@ def test_chief_agent_controls_notifications_and_report_browser(dashboard):
         browser=p.chromium.launch(headless=True);page=browser.new_page();errors=[]
         page.on('pageerror',lambda e:errors.append(str(e)))
         page.on('console',lambda m:errors.append(m.text) if m.type=='error' else None)
-        page.on('requestfailed',lambda r:errors.append(r.url))
+        page.on('requestfailed',lambda r:errors.append((r.url,r.failure)))
         page.on('dialog',lambda d:d.accept())
         page.goto(dashboard.url)
         expect(page.locator('#workspaceName')).to_have_text('Chief Agent')

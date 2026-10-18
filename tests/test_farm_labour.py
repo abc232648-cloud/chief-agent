@@ -97,7 +97,7 @@ def test_browser_correction_waits_for_record_refresh(dashboard):
               window.fetch = async (...args) => {
                 const response = await original(...args);
                 if (window.holdLabourRefresh && String(args[0]).includes('/api/farm/labour?')) {
-                  window.labourRefreshHeld = true;
+                  document.documentElement.dataset.labourRefreshHeld = 'true';
                   await new Promise(resolve => { window.releaseLabourRefresh = resolve; });
                 }
                 return response;
@@ -110,7 +110,7 @@ def test_browser_correction_waits_for_record_refresh(dashboard):
             page.fill('#farmLabourReason', 'Checked work register')
             page.evaluate('window.holdLabourRefresh = true')
             page.get_by_role('button', name='Save labour correction', exact=True).click()
-            page.wait_for_function('() => window.labourRefreshHeld === true')
+            expect(page.locator('html')).to_have_attribute('data-labour-refresh-held', 'true')
             assert page.locator('#farmLabourHistory').evaluate('(element) => element.inert')
             expect(page.locator('#farmLabourStatus')).not_to_contain_text('Correction recorded.')
             expect(page.locator('#farmLabourHistory')).not_to_contain_text('Corrected synthetic task')

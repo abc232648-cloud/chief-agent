@@ -70,5 +70,5 @@ def test_browser_upload_converts_to_bounded_metadata_free_png(dashboard):
             expect(staff_items).to_contain_text('Photo attached. Metadata was not retained.')
             page.get_by_role('button',name='View photos',exact=True).first.click()
             expect(staff_items.locator('img')).to_have_count(1)
-            page.wait_for_function("()=>document.querySelector('#farmStaffItems img')?.naturalWidth>0")
+            expect(page.locator('#farmStaffItems img')).to_have_js_property('naturalWidth', 1)
         finally:browser.close()
