@@ -48,7 +48,7 @@
     lastActivity=performance.now();activityPending=true;
     // Let this already-authorized, bounded receipt finish across navigation.
     // This is not a retry or an offline queue; CSRF and session checks still apply.
-    try{await window.fetch('/api/auth/activity',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',keepalive:true});}
+    try{const response=await window.fetch('/api/auth/activity',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',keepalive:true});await response.arrayBuffer();}
     catch{/* Network failure never queues an activity receipt for later replay. */}
     finally{activityPending=false;}
   }

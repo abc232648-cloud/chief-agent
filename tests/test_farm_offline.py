@@ -37,11 +37,14 @@ def test_offline_restart_encrypted_queue_and_explicit_sync(dashboard):
             page.evaluate('(payload)=>FarmOutbox.queue(payload)',payload)
             raw=page.evaluate("async()=>{const db=await new Promise(r=>{const q=indexedDB.open('farm-private-outbox-v1',2);q.onsuccess=()=>r(q.result)});return new Promise(r=>{const q=db.transaction('profiles').objectStore('profiles').getAll();q.onsuccess=()=>{db.close();r(JSON.stringify(q.result))}})}")
             assert 'PRIVATE_OFFLINE_MARKER' not in raw and e['name'] not in raw and PHRASE not in raw
-            page.context.set_offline(True);page.goto(d.url+'/work')
-            expect(page.locator('h1')).to_have_text('Private pending reports')
-            page.evaluate('args=>FarmOutbox.unlock(args.id,args.phrase)',{'id':info['id'],'phrase':PHRASE})
-            assert page.evaluate('async()=> (await FarmOutbox.view()).pending.length')==1
-            assert journal.overview(d.store,d.credentials['principal'])['record_count']==0
+            # Chromium's emulated offline mode alone can leave worker fetches online.
+            # Stop the actual server so the fallback must survive real unavailability.
+            with d.server_outage():
+                page.context.set_offline(True);page.goto(d.url+'/work')
+                expect(page.locator('h1')).to_have_text('Private pending reports')
+                page.evaluate('args=>FarmOutbox.unlock(args.id,args.phrase)',{'id':info['id'],'phrase':PHRASE})
+                assert page.evaluate('async()=> (await FarmOutbox.view()).pending.length')==1
+                assert journal.overview(d.store,d.credentials['principal'])['record_count']==0
             page.context.set_offline(False)
             result=page.evaluate('()=>FarmOutbox.sync()')
             assert result=={'sent':1,'pending':0}

@@ -120,8 +120,22 @@ def dashboard(tmp_path, monkeypatch):
     monkeypatch.setattr(Browser,'new_context',authenticated_context)
     thread=Thread(target=server.run,daemon=True)
     thread.start()
+    from contextlib import contextmanager
+    @contextmanager
+    def server_outage():
+        """Disconnect the real transport, including service-worker requests."""
+        nonlocal server, thread
+        port=int(server.effective_port)
+        close_dashboard_server(server);thread.join(timeout=5)
+        assert not thread.is_alive()
+        try:
+            yield
+        finally:
+            server=create_dashboard_server(app.Handler,TransportSettings(port=port))
+            thread=Thread(target=server.run,daemon=True)
+            thread.start()
     try:
-        yield SimpleNamespace(app=app,store=app.STORE,url=origin,root=root,credentials=credentials,secure_store=authenticate_store)
+        yield SimpleNamespace(app=app,store=app.STORE,url=origin,root=root,credentials=credentials,secure_store=authenticate_store,server_outage=server_outage)
     finally:
         close_dashboard_server(server); thread.join(timeout=5)
         assert not thread.is_alive()

@@ -17,11 +17,13 @@ def test_chief_agent_controls_notifications_and_report_browser(dashboard):
         expect(page.locator('#chiefAgents')).to_contain_text('Job Agent')
         expect(page.locator('#chiefAgents')).to_contain_text('Farm Agent')
         expect(page.locator('#notificationBadge')).to_have_text('1')
-        page.locator('#notificationDropdown summary').click()
+        with page.expect_event('requestfinished',predicate=lambda r:r.url.endswith('/api/auth/activity')):
+            page.locator('#notificationDropdown summary').click()
         page.locator('#notificationPreview [data-action="notice-read"]').click()
         expect(page.locator('#notificationBadge')).to_have_text('0')
         page.reload();expect(page.locator('#notificationBadge')).to_have_text('0')
-        navigate(page,'domains')
+        with page.expect_event('requestfinished',predicate=lambda r:r.url.endswith('/api/auth/activity')):
+            navigate(page,'domains')
         control=page.locator('#domainList [data-action="agent-control"][data-id="farming"][data-key="autostart"]')
         control.click();expect(control).to_have_attribute('aria-checked','false')
         page.locator('#domainList [data-action="open-agent"][data-id="jobs"]').click()
