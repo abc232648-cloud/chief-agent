@@ -146,9 +146,10 @@ def test_unknown_offline_payload_version_is_retained_without_submission(paired):
     page.get_by_role('button',name='Send report to Chief',exact=True).click()
     expect(page.get_by_text('Stored on this device',exact=True)).to_be_visible()
     # Simulate a queue written by a future client. Do not reinterpret its payload.
-    page.evaluate("""() => new Promise((resolve,reject)=>{const r=indexedDB.open('chief_staff_pwa',1);
+    page.evaluate("""() => new Promise((resolve,reject)=>{const r=indexedDB.open('chief_staff_pwa');
       r.onsuccess=()=>{const db=r.result;const tx=db.transaction('queue','readwrite');const s=tx.objectStore('queue');
-      const q=s.getAll();q.onsuccess=()=>q.result.forEach(x=>s.put({...x,payloadVersion:99}));
+      const q=s.getAll();q.onsuccess=()=>{if(q.result.length!==1 || !q.result[0].encryptedPayload){tx.abort();reject(new Error('Expected one encrypted queued report'));return;}
+        q.result.forEach(x=>s.put({...x,payloadVersion:99}));};
       tx.oncomplete=()=>{db.close();resolve(true)};tx.onerror=()=>reject(tx.error)};r.onerror=()=>reject(r.error)})""")
     page.close()
     set_network_unavailable(d, context, False)
@@ -157,6 +158,10 @@ def test_unknown_offline_payload_version_is_retained_without_submission(paired):
     page.get_by_role('button',name='Send queued to Chief',exact=True).click()
     expect(page.locator('.offline-record')).to_contain_text('needs attention')
     assert page.evaluate("async()=> (await (await fetch('/api/farm/worker-reports')).json()).reports.length") == 0
+    assert page.evaluate("""() => new Promise((resolve,reject)=>{const r=indexedDB.open('chief_staff_pwa');
+      r.onsuccess=()=>{const db=r.result;const q=db.transaction('queue').objectStore('queue').getAll();
+        q.onsuccess=()=>{db.close();resolve(q.result.length===1 && q.result[0].payloadVersion===99 && !!q.result[0].encryptedPayload)};
+        q.onerror=()=>reject(q.error)};r.onerror=()=>reject(r.error)})""")
 
 
 def test_actual_service_worker_update_preserves_queued_report(paired, tmp_path):
