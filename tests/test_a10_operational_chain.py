@@ -146,11 +146,24 @@ def test_unknown_offline_payload_version_is_retained_without_submission(paired):
     page.get_by_role('button',name='Send report to Chief',exact=True).click()
     expect(page.get_by_text('Stored on this device',exact=True)).to_be_visible()
     # Simulate a queue written by a future client. Do not reinterpret its payload.
-    page.evaluate("""() => new Promise((resolve,reject)=>{const r=indexedDB.open('chief_staff_pwa');
-      r.onsuccess=()=>{const db=r.result;const tx=db.transaction('queue','readwrite');const s=tx.objectStore('queue');
-      const q=s.getAll();q.onsuccess=()=>{if(q.result.length!==1 || !q.result[0].encryptedPayload){tx.abort();reject(new Error('Expected one encrypted queued report'));return;}
-        q.result.forEach(x=>s.put({...x,payloadVersion:99}));};
-      tx.oncomplete=()=>{db.close();resolve(true)};tx.onerror=()=>reject(tx.error)};r.onerror=()=>reject(r.error)})""")
+    page.evaluate("""async () => {
+      const request = r => new Promise((resolve,reject)=>{r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
+      const db = await request(indexedDB.open('chief_staff_pwa'));
+      try {
+        const rows = await request(db.transaction('queue').objectStore('queue').getAll());
+        if(rows.length!==1 || !rows[0].encryptedPayload)throw new Error('Expected one encrypted queued report');
+        const row=rows[0], saved=await request(db.transaction('crypto_keys').objectStore('crypto_keys').get(row.namespace));
+        const bytes=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+        const aad=v=>new TextEncoder().encode(`CHIEF_OFFLINE:${row.environment}:${row.ownerUserId}:v${v}:queue:${row.id}:${row.kind}`);
+        const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:bytes(row.encryptedPayload.iv),additionalData:aad(row.payloadVersion)},saved.key,bytes(row.encryptedPayload.ciphertext));
+        const iv=crypto.getRandomValues(new Uint8Array(12));
+        const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:aad(99)},saved.key,plain);
+        const b64=b=>btoa(String.fromCharCode(...new Uint8Array(b)));
+        const tx=db.transaction('queue','readwrite');
+        tx.objectStore('queue').put({...row,payloadVersion:99,encryptedPayload:{...row.encryptedPayload,iv:b64(iv),ciphertext:b64(cipher)}});
+        await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)});
+      } finally {db.close()}
+    }""")
     page.close()
     set_network_unavailable(d, context, False)
     page = context.new_page()
