@@ -1,3 +1,4 @@
+from browser_conditions import wait_for_browser_condition
 from datetime import datetime, timezone
 import json
 import pytest
@@ -59,7 +60,7 @@ def test_finance_reference_selection_is_visible_and_never_saves(dashboard):
         try:
             page=browser.new_page();errors=[];page.on('pageerror',lambda error:errors.append(str(error)));page.goto(d.url+'/work')
             page.get_by_role('button', name='Expand all sections', exact=True).click()
-            page.wait_for_function("() => document.getElementById('farmMoneyHistory').children.length>0 || document.getElementById('workError').textContent")
+            wait_for_browser_condition(page, "() => document.getElementById('farmMoneyHistory').children.length>0 || document.getElementById('workError').textContent")
             assert not errors,errors
             assert page.locator('#workError').inner_text()==''
             page.get_by_text('Financial history',exact=True).click()

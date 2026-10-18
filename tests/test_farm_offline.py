@@ -1,6 +1,7 @@
 import base64
 import json
 import uuid
+import pytest
 from playwright.sync_api import sync_playwright,expect
 from domains.farming import setup,journal,staff,photos
 from tests.test_farm_setup import entity
@@ -13,6 +14,39 @@ from identity.service import IdentityService
 PHRASE='Synthetic offline fixture passphrase only'
 
 
+@pytest.mark.parametrize('status', [200, 401, 403, 503])
+def test_offline_shell_fallback_preserves_origin_authority(dashboard, monkeypatch, status):
+    d = dashboard
+    original_get = d.app.Handler.do_GET
+    fault = {'enabled': False}
+    def get(handler):
+        if fault['enabled'] and handler.path == '/work':
+            handler.send_response(status)
+            handler.send_header('Content-Type', 'text/plain')
+            handler.end_headers()
+            handler.wfile.write(b'Origin response retained')
+            return
+        return original_get(handler)
+    monkeypatch.setattr(d.app.Handler, 'do_GET', get)
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.goto(d.url+'/work')
+            page.get_by_role('button', name='Offline reports', exact=True).click()
+            expect(page.get_by_role('heading', name='Private pending reports', exact=True)).to_be_visible()
+            fault['enabled'] = True
+            response = page.goto(d.url+'/work')
+            if status == 503:
+                expect(page.get_by_role('heading', name='Private pending reports', exact=True)).to_be_visible()
+            else:
+                assert response.status == status
+                expect(page.locator('body')).to_contain_text('Origin response retained')
+                expect(page.locator('#offlineUnlock')).to_have_count(0)
+        finally:
+            browser.close()
+
+
 def configured(d):
     e=entity();setup.append(d.store,d.credentials['principal'],e)
     return e,record(entity_id=e['entity_id'],location=e['name'],notes='PRIVATE_OFFLINE_MARKER')
@@ -23,8 +57,21 @@ def work_photo(d):
     return work,{'event_id':str(uuid.uuid4()),'work_id':work['event_id'],'image_base64':base64.b64encode(png()).decode()}
 
 
-def test_offline_restart_encrypted_queue_and_explicit_sync(dashboard):
+def test_offline_restart_encrypted_queue_and_explicit_sync(dashboard, monkeypatch):
     d=dashboard;e,payload=configured(d)
+    # Offline emulation can leave service-worker networking online. Make the
+    # disposable origin explicitly unavailable too; never accept online HTML
+    # as evidence that offline recovery worked.
+    offline = {'active': False, 'blocked': 0}
+    original_get = d.app.Handler.do_GET
+    def origin_get(handler):
+        if offline['active']:
+            offline['blocked'] += 1
+            handler.send_response(503)
+            handler.end_headers()
+            return
+        return original_get(handler)
+    monkeypatch.setattr(d.app.Handler, 'do_GET', origin_get)
     with sync_playwright() as p:
         browser=p.chromium.launch(headless=True)
         try:
@@ -37,11 +84,13 @@ def test_offline_restart_encrypted_queue_and_explicit_sync(dashboard):
             page.evaluate('(payload)=>FarmOutbox.queue(payload)',payload)
             raw=page.evaluate("async()=>{const db=await new Promise(r=>{const q=indexedDB.open('farm-private-outbox-v1',2);q.onsuccess=()=>r(q.result)});return new Promise(r=>{const q=db.transaction('profiles').objectStore('profiles').getAll();q.onsuccess=()=>{db.close();r(JSON.stringify(q.result))}})}")
             assert 'PRIVATE_OFFLINE_MARKER' not in raw and e['name'] not in raw and PHRASE not in raw
+            offline['active'] = True
             page.context.set_offline(True);page.goto(d.url+'/work')
             expect(page.locator('h1')).to_have_text('Private pending reports')
             page.evaluate('args=>FarmOutbox.unlock(args.id,args.phrase)',{'id':info['id'],'phrase':PHRASE})
             assert page.evaluate('async()=> (await FarmOutbox.view()).pending.length')==1
             assert journal.overview(d.store,d.credentials['principal'])['record_count']==0
+            offline['active'] = False
             page.context.set_offline(False)
             result=page.evaluate('()=>FarmOutbox.sync()')
             assert result=={'sent':1,'pending':0}

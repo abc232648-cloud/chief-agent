@@ -1,3 +1,4 @@
+from browser_conditions import wait_for_browser_condition
 import base64
 import struct
 import uuid
@@ -70,5 +71,5 @@ def test_browser_upload_converts_to_bounded_metadata_free_png(dashboard):
             expect(staff_items).to_contain_text('Photo attached. Metadata was not retained.')
             page.get_by_role('button',name='View photos',exact=True).first.click()
             expect(staff_items.locator('img')).to_have_count(1)
-            page.wait_for_function("()=>document.querySelector('#farmStaffItems img')?.naturalWidth>0")
+            wait_for_browser_condition(page, "()=>document.querySelector('#farmStaffItems img')?.naturalWidth>0")
         finally:browser.close()

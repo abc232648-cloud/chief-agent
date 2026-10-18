@@ -10,14 +10,24 @@ def test_chief_agent_controls_notifications_and_report_browser(dashboard):
         browser=p.chromium.launch(headless=True);page=browser.new_page();errors=[]
         page.on('pageerror',lambda e:errors.append(str(e)))
         page.on('console',lambda m:errors.append(m.text) if m.type=='error' else None)
-        page.on('requestfailed',lambda r:errors.append(r.url))
+        def request_failed(request):
+            # A navigation can cancel a best-effort activity ping. Do not hide
+            # failed mutations, other endpoints, or non-cancellation errors.
+            if (request.url == dashboard.url+'/api/auth/activity'
+                    and request.method == 'POST'
+                    and request.failure == 'net::ERR_ABORTED'):
+                return
+            errors.append((request.url, request.failure))
+        page.on('requestfailed',request_failed)
         page.on('dialog',lambda d:d.accept())
         page.goto(dashboard.url)
         expect(page.locator('#workspaceName')).to_have_text('Chief Agent')
         expect(page.locator('#chiefAgents')).to_contain_text('Job Agent')
         expect(page.locator('#chiefAgents')).to_contain_text('Farm Agent')
         expect(page.locator('#notificationBadge')).to_have_text('1')
-        page.locator('#notificationDropdown summary').click()
+        with page.expect_response(lambda r: r.url == dashboard.url+'/api/auth/activity' and r.request.method == 'POST') as activity:
+            page.locator('#notificationDropdown summary').click()
+        assert activity.value.ok
         page.locator('#notificationPreview [data-action="notice-read"]').click()
         expect(page.locator('#notificationBadge')).to_have_text('0')
         page.reload();expect(page.locator('#notificationBadge')).to_have_text('0')

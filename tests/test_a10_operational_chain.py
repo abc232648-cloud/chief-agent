@@ -6,6 +6,8 @@ from tests.test_a10_paired_clients import paired, sign_in, wait_async, set_netwo
 from tests.test_farm_tasks import staff
 
 
+from browser_conditions import wait_for_browser_condition
+
 def change_person(context, origin, username, prefix='staff'):
     for page in context.pages:
         page.close()
@@ -173,7 +175,7 @@ def test_actual_service_worker_update_preserves_queued_report(paired, tmp_path):
     page.goto(origin+'/staff/#/more')
     expect(page.locator('.offline-record')).to_have_count(1)
     wait_async(page, "async()=>!!(await navigator.serviceWorker.getRegistration('/staff/'))?.active")
-    page.wait_for_function('!!navigator.serviceWorker.controller')
+    wait_for_browser_condition(page, '!!navigator.serviceWorker.controller')
     bundle = tmp_path/'next-staff-build'
     shutil.copytree(d.a10_bundles['/staff/'],bundle)
     sw = bundle/'sw.js'

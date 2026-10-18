@@ -1,3 +1,4 @@
+from browser_conditions import wait_for_browser_condition
 import uuid
 import pytest
 from domains.farming import labour,bookkeeping as books,finance
@@ -110,7 +111,7 @@ def test_browser_correction_waits_for_record_refresh(dashboard):
             page.fill('#farmLabourReason', 'Checked work register')
             page.evaluate('window.holdLabourRefresh = true')
             page.get_by_role('button', name='Save labour correction', exact=True).click()
-            page.wait_for_function('() => window.labourRefreshHeld === true')
+            wait_for_browser_condition(page, '() => window.labourRefreshHeld === true')
             assert page.locator('#farmLabourHistory').evaluate('(element) => element.inert')
             expect(page.locator('#farmLabourStatus')).not_to_contain_text('Correction recorded.')
             expect(page.locator('#farmLabourHistory')).not_to_contain_text('Corrected synthetic task')
