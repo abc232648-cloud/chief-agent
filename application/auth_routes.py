@@ -119,6 +119,8 @@ def intercept(handler,store):
         if notification_route(handler,store,principal,path,method,body):return True
         from .ownership_api import dispatch as ownership_dispatch
         if ownership_dispatch(handler,store,principal,path,method,body):return True
+        from .remote_access_api import dispatch as remote_access_dispatch
+        if remote_access_dispatch(handler,store,principal,path,method,body):return True
         from .farm_api import dispatch as farm_dispatch
         if farm_dispatch(handler,store,principal,path,method,body):return True
         from .ui_api import dispatch as ui_dispatch
