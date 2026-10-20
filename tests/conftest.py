@@ -5,6 +5,18 @@ from threading import Thread
 from types import SimpleNamespace
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def isolate_chief_process_dns_policy():
+    """No test may leak Chief's process-global resolver hook into another test."""
+    from networking.dns_policy import _reset_process_policy_for_tests
+    _reset_process_policy_for_tests()
+    try:
+        yield
+    finally:
+        _reset_process_policy_for_tests()
+
+
 @pytest.fixture(autouse=True)
 def qualified_acceptance_browser(monkeypatch):
     """When selected by the acceptance runner, all Chromium fixtures use that build."""
@@ -28,7 +40,7 @@ def explicit_isolated_instance(tmp_path,monkeypatch):
     # opt into production/service flags afterwards through their own monkeypatch.
     # This prevents process-global environment writes in one regression from
     # contaminating a later, otherwise isolated test.
-    for name in ('CHIEF_SERVICE_CONFIGURED','CHIEF_FARM_PRODUCTION','CHIEF_TRUSTED_PROXY'):
+    for name in ('CHIEF_DNS_MODE','CHIEF_SERVICE_CONFIGURED','CHIEF_FARM_PRODUCTION','CHIEF_TRUSTED_PROXY'):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv('CHIEF_INSTANCE_MODE','test')
     monkeypatch.setenv('CHIEF_ISOLATED_ROOT',str(tmp_path))
@@ -120,8 +132,22 @@ def dashboard(tmp_path, monkeypatch):
     monkeypatch.setattr(Browser,'new_context',authenticated_context)
     thread=Thread(target=server.run,daemon=True)
     thread.start()
+    from contextlib import contextmanager
+    @contextmanager
+    def server_outage():
+        """Disconnect the real transport, including service-worker requests."""
+        nonlocal server, thread
+        port=int(server.effective_port)
+        close_dashboard_server(server);thread.join(timeout=5)
+        assert not thread.is_alive()
+        try:
+            yield
+        finally:
+            server=create_dashboard_server(app.Handler,TransportSettings(port=port))
+            thread=Thread(target=server.run,daemon=True)
+            thread.start()
     try:
-        yield SimpleNamespace(app=app,store=app.STORE,url=origin,root=root,credentials=credentials,secure_store=authenticate_store)
+        yield SimpleNamespace(app=app,store=app.STORE,url=origin,root=root,credentials=credentials,secure_store=authenticate_store,server_outage=server_outage)
     finally:
         close_dashboard_server(server); thread.join(timeout=5)
         assert not thread.is_alive()
@@ -139,4 +165,3 @@ def synthetic_farm_timezone(monkeypatch):
     from zoneinfo import ZoneInfo
     import domains.farming.timezone as farm_time
     monkeypatch.setattr(farm_time, "host_zone", lambda: ZoneInfo("Africa/Lagos"))
-

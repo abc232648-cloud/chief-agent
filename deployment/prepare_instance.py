@@ -65,7 +65,7 @@ def _write_new_json(path,data,mode=0o600):
 def prepare_production(root,config,source_root,source_manifest,username,password,*,
                        public_host,browser_runtime,dashboard_port=8765,
                        trusted_tls_proxy='127.0.0.1',farm_operations='DISABLED',
-                       organization_name=None,farm_name=None):
+                       organization_name=None,farm_name=None,dns_mode="quad9"):
     """Create a new production instance without ever running migrations on production state.
 
     All schema work, Owner bootstrap and optional initial organization/farm bootstrap happen
@@ -79,6 +79,8 @@ def prepare_production(root,config,source_root,source_manifest,username,password
 
     root=_new_absolute(root,'Production state root')
     config=_new_absolute(config,'Production config')
+    from browser.dns_policy import validate_mode
+    dns_mode = validate_mode(dns_mode)
     browser_runtime=Path(browser_runtime).expanduser()
     if not browser_runtime.is_absolute() or not browser_runtime.is_file():
         raise ValueError('Production requires an existing absolute browser runtime configuration.')
@@ -123,6 +125,7 @@ def prepare_production(root,config,source_root,source_manifest,username,password
         'schema_sha256':schema,
         'dashboard_port':dashboard_port,
         'browser_runtime':str(browser_runtime),
+        'dns_mode':dns_mode,
         'farm_operations':farm_operations,
         'trusted_tls_proxy':https['trusted_proxy'],
         'public_host':https['public_host'],

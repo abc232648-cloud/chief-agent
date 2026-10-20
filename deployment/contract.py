@@ -18,6 +18,7 @@ MAX_COMPATIBLE_INSTALLER_VERSION = "1.999.999"
 SUPPORTED_CAPABILITIES: List[str] = [
     "source_manifest",
     "prepare_instance",
+    "chief_scoped_dns",
     "bootstrap_install",
     "install_readiness",
     "install_backup",
@@ -118,6 +119,7 @@ def prepare_production(
     farm_operations: str = "DISABLED",
     organization_name: Optional[str] = None,
     farm_name: Optional[str] = None,
+    dns_mode: str = "quad9",
 ) -> Dict[str, Any]:
     """Execute isolated production preparation and promotion."""
     from deployment.prepare_instance import prepare_production as _prepare
@@ -135,6 +137,7 @@ def prepare_production(
         farm_operations=farm_operations,
         organization_name=organization_name,
         farm_name=farm_name,
+        dns_mode=dns_mode,
     )
 
 

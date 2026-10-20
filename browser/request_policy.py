@@ -97,3 +97,23 @@ def controlled_browser(playwright,url,*,storage_state=None,resource_origins=(),r
         finally:
             if browser:browser.close()
             policy.flush()
+
+
+class UserLoginPolicy:
+    """Human-operated login may follow public HTTPS identity-provider redirects.
+
+    This grants no automated action authority. The CONNECT proxy still validates
+    every resolved destination and blocks private addresses and non-TLS traffic.
+    """
+    phase = 'LOGIN'
+
+    @property
+    def origins(self):
+        return self
+
+    def __contains__(self, target):
+        return target[0] == 'https' and bool(target[1]) and target[2] == 443
+
+    def block(self, code):
+        import logging
+        logging.getLogger('chief.browser.security').warning('Sign-in connection blocked: %s', code)

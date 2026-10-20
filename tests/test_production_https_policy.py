@@ -28,13 +28,14 @@ def test_trusted_proxy_requires_one_loopback_ip(value):
     with pytest.raises(ValueError):trusted_loopback(value)
 
 
-def test_production_service_config_requires_https_and_defaults_farm_off(tmp_path,monkeypatch):
+@pytest.mark.parametrize("dns_mode", ["quad9", "system"])
+def test_production_service_config_requires_https_and_defaults_farm_off(tmp_path,monkeypatch,dns_mode):
     from deployment import instance,launch
     root=tmp_path/'state';root.mkdir();database=root/'chief.sqlite3';database.write_bytes(b'fixture')
     config=tmp_path/'instance.json'
     config.write_text(json.dumps({
         'mode':'PRODUCTION','state_root':str(root),'database':str(database),
-        'schema_sha256':'0'*64,'dashboard_port':8765,
+        'schema_sha256':'0'*64,'dashboard_port':8765,'dns_mode':dns_mode,
         'trusted_tls_proxy':'127.0.0.1','public_host':'chief.example.com'
     }))
     for key in ('JOB_WORKER_DB','CHIEF_STATE_ROOT','DASHBOARD_HOST','DASHBOARD_PORT',
@@ -43,6 +44,7 @@ def test_production_service_config_requires_https_and_defaults_farm_off(tmp_path
         monkeypatch.delenv(key,raising=False)
     monkeypatch.setattr(instance,'load_instance',lambda component:'validated-'+component)
     assert launch.configure(str(config.resolve()))=='validated-worker'
+    assert os.environ['CHIEF_DNS_MODE']==dns_mode
     assert os.environ['CHIEF_INSTANCE_MODE']=='production'
     assert os.environ['DASHBOARD_HOST']=='127.0.0.1'
     assert os.environ['CHIEF_TRUSTED_PROXY']=='127.0.0.1'

@@ -9,7 +9,10 @@ self.addEventListener('fetch',event=>{
   // Never cache an authenticated response, API request, photograph or mutation.
   if(request.mode==='navigate'&&url.pathname==='/work'){
     if(url.searchParams.get('offline')==='1'){event.respondWith(caches.match('/static/farm-offline.html'));return;}
-    event.respondWith(fetch(request).catch(()=>caches.match('/static/farm-offline.html')));return;
+    // An unavailable origin may return HTTP 503 instead of a network error.
+    // Keep authentication/authorization responses intact; only the public,
+    // encrypted-outbox shell is a fallback for service unavailability.
+    event.respondWith(fetch(request).then(response=>response.status===503?caches.match('/static/farm-offline.html'):response).catch(()=>caches.match('/static/farm-offline.html')));return;
   }
   if(ASSETS.includes(url.pathname))event.respondWith(caches.match(request).then(cached=>cached||fetch(request)));
 });

@@ -6,6 +6,8 @@ from tests.test_a10_paired_clients import paired, sign_in, wait_async, set_netwo
 from tests.test_farm_tasks import staff
 
 
+from browser_conditions import wait_for_browser_condition
+
 def change_person(context, origin, username, prefix='staff'):
     for page in context.pages:
         page.close()
@@ -144,10 +146,24 @@ def test_unknown_offline_payload_version_is_retained_without_submission(paired):
     page.get_by_role('button',name='Send report to Chief',exact=True).click()
     expect(page.get_by_text('Stored on this device',exact=True)).to_be_visible()
     # Simulate a queue written by a future client. Do not reinterpret its payload.
-    page.evaluate("""() => new Promise((resolve,reject)=>{const r=indexedDB.open('chief_staff_pwa',1);
-      r.onsuccess=()=>{const db=r.result;const tx=db.transaction('queue','readwrite');const s=tx.objectStore('queue');
-      const q=s.getAll();q.onsuccess=()=>q.result.forEach(x=>s.put({...x,payloadVersion:99}));
-      tx.oncomplete=()=>{db.close();resolve(true)};tx.onerror=()=>reject(tx.error)};r.onerror=()=>reject(r.error)})""")
+    page.evaluate("""async () => {
+      const request = r => new Promise((resolve,reject)=>{r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
+      const db = await request(indexedDB.open('chief_staff_pwa'));
+      try {
+        const rows = await request(db.transaction('queue').objectStore('queue').getAll());
+        if(rows.length!==1 || !rows[0].encryptedPayload)throw new Error('Expected one encrypted queued report');
+        const row=rows[0], saved=await request(db.transaction('crypto_keys').objectStore('crypto_keys').get(row.namespace));
+        const bytes=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+        const aad=v=>new TextEncoder().encode(`CHIEF_OFFLINE:${row.environment}:${row.ownerUserId}:v${v}:queue:${row.id}:${row.kind}`);
+        const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:bytes(row.encryptedPayload.iv),additionalData:aad(row.payloadVersion)},saved.key,bytes(row.encryptedPayload.ciphertext));
+        const iv=crypto.getRandomValues(new Uint8Array(12));
+        const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:aad(99)},saved.key,plain);
+        const b64=b=>btoa(String.fromCharCode(...new Uint8Array(b)));
+        const tx=db.transaction('queue','readwrite');
+        tx.objectStore('queue').put({...row,payloadVersion:99,encryptedPayload:{...row.encryptedPayload,iv:b64(iv),ciphertext:b64(cipher)}});
+        await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)});
+      } finally {db.close()}
+    }""")
     page.close()
     set_network_unavailable(d, context, False)
     page = context.new_page()
@@ -155,6 +171,10 @@ def test_unknown_offline_payload_version_is_retained_without_submission(paired):
     page.get_by_role('button',name='Send queued to Chief',exact=True).click()
     expect(page.locator('.offline-record')).to_contain_text('needs attention')
     assert page.evaluate("async()=> (await (await fetch('/api/farm/worker-reports')).json()).reports.length") == 0
+    assert page.evaluate("""() => new Promise((resolve,reject)=>{const r=indexedDB.open('chief_staff_pwa');
+      r.onsuccess=()=>{const db=r.result;const q=db.transaction('queue').objectStore('queue').getAll();
+        q.onsuccess=()=>{db.close();resolve(q.result.length===1 && q.result[0].payloadVersion===99 && !!q.result[0].encryptedPayload)};
+        q.onerror=()=>reject(q.error)};r.onerror=()=>reject(r.error)})""")
 
 
 def test_actual_service_worker_update_preserves_queued_report(paired, tmp_path):
@@ -173,7 +193,7 @@ def test_actual_service_worker_update_preserves_queued_report(paired, tmp_path):
     page.goto(origin+'/staff/#/more')
     expect(page.locator('.offline-record')).to_have_count(1)
     wait_async(page, "async()=>!!(await navigator.serviceWorker.getRegistration('/staff/'))?.active")
-    page.wait_for_function('!!navigator.serviceWorker.controller')
+    wait_for_browser_condition(page, '!!navigator.serviceWorker.controller')
     bundle = tmp_path/'next-staff-build'
     shutil.copytree(d.a10_bundles['/staff/'],bundle)
     sw = bundle/'sw.js'

@@ -1,0 +1,51 @@
+name: Chief WireGuard Remote Access CI
+
+on:
+  push:
+    branches:
+      - 'feature/wireguard-remote-access'
+      - 'feature/wireguard**'
+      - main
+  pull_request:
+    branches:
+      - main
+      - 'release/integrated-candidate-20261020'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wireguard-test:
+    name: WireGuard & Remote Access (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      CHIEF_TEST_SECRET_BACKEND: portable-aead
+      PYTHONUTF8: "1"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-test.txt
+
+      - name: Run WireGuard remote-access, API, and core boundary tests
+        run: >-
+          python -m pytest -q
+          tests/test_wireguard_remote_access.py
+          tests/test_wireguard_dns.py
+          tests/test_remote_access_api.py
+          tests/test_dns_policy.py
+          tests/test_production_https_policy.py
+          tests/test_architecture_boundaries.py
+          tests/test_checkpoint_d_boundaries.py

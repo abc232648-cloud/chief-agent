@@ -46,7 +46,9 @@
   async function interaction(event){
     if(!event.isTrusted || document.visibilityState!=='visible' || activityPending || performance.now()-lastActivity<15000)return;
     lastActivity=performance.now();activityPending=true;
-    try{await window.fetch('/api/auth/activity',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});}
+    // Let this already-authorized, bounded receipt finish across navigation.
+    // This is not a retry or an offline queue; CSRF and session checks still apply.
+    try{const response=await window.fetch('/api/auth/activity',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',keepalive:true});await response.arrayBuffer();}
     catch{/* Network failure never queues an activity receipt for later replay. */}
     finally{activityPending=false;}
   }

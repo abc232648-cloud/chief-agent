@@ -1,6 +1,7 @@
 import base64
 import json
 import uuid
+import pytest
 from playwright.sync_api import sync_playwright,expect
 from domains.farming import setup,journal,staff,photos
 from tests.test_farm_setup import entity
@@ -11,6 +12,39 @@ from tests.checkpoint_f_fixture import PASSWORD
 from identity.service import IdentityService
 
 PHRASE='Synthetic offline fixture passphrase only'
+
+
+@pytest.mark.parametrize('status', [200, 401, 403, 503])
+def test_offline_shell_fallback_preserves_origin_authority(dashboard, monkeypatch, status):
+    d = dashboard
+    original_get = d.app.Handler.do_GET
+    fault = {'enabled': False}
+    def get(handler):
+        if fault['enabled'] and handler.path == '/work':
+            handler.send_response(status)
+            handler.send_header('Content-Type', 'text/plain')
+            handler.end_headers()
+            handler.wfile.write(b'Origin response retained')
+            return
+        return original_get(handler)
+    monkeypatch.setattr(d.app.Handler, 'do_GET', get)
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.goto(d.url+'/work')
+            page.get_by_role('button', name='Offline reports', exact=True).click()
+            expect(page.get_by_role('heading', name='Private pending reports', exact=True)).to_be_visible()
+            fault['enabled'] = True
+            response = page.goto(d.url+'/work')
+            if status == 503:
+                expect(page.get_by_role('heading', name='Private pending reports', exact=True)).to_be_visible()
+            else:
+                assert response.status == status
+                expect(page.locator('body')).to_contain_text('Origin response retained')
+                expect(page.locator('#offlineUnlock')).to_have_count(0)
+        finally:
+            browser.close()
 
 
 def configured(d):
@@ -37,11 +71,14 @@ def test_offline_restart_encrypted_queue_and_explicit_sync(dashboard):
             page.evaluate('(payload)=>FarmOutbox.queue(payload)',payload)
             raw=page.evaluate("async()=>{const db=await new Promise(r=>{const q=indexedDB.open('farm-private-outbox-v1',2);q.onsuccess=()=>r(q.result)});return new Promise(r=>{const q=db.transaction('profiles').objectStore('profiles').getAll();q.onsuccess=()=>{db.close();r(JSON.stringify(q.result))}})}")
             assert 'PRIVATE_OFFLINE_MARKER' not in raw and e['name'] not in raw and PHRASE not in raw
-            page.context.set_offline(True);page.goto(d.url+'/work')
-            expect(page.locator('h1')).to_have_text('Private pending reports')
-            page.evaluate('args=>FarmOutbox.unlock(args.id,args.phrase)',{'id':info['id'],'phrase':PHRASE})
-            assert page.evaluate('async()=> (await FarmOutbox.view()).pending.length')==1
-            assert journal.overview(d.store,d.credentials['principal'])['record_count']==0
+            # Chromium's emulated offline mode alone can leave worker fetches online.
+            # Stop the actual server so the fallback must survive real unavailability.
+            with d.server_outage():
+                page.context.set_offline(True);page.goto(d.url+'/work')
+                expect(page.locator('h1')).to_have_text('Private pending reports')
+                page.evaluate('args=>FarmOutbox.unlock(args.id,args.phrase)',{'id':info['id'],'phrase':PHRASE})
+                assert page.evaluate('async()=> (await FarmOutbox.view()).pending.length')==1
+                assert journal.overview(d.store,d.credentials['principal'])['record_count']==0
             page.context.set_offline(False)
             result=page.evaluate('()=>FarmOutbox.sync()')
             assert result=={'sent':1,'pending':0}

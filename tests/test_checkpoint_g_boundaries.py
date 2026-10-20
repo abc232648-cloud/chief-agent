@@ -66,7 +66,7 @@ def test_checkpoint_g_update_planning_has_metadata_transport_but_no_install_or_a
     for path in planning_files:
         tree=ast.parse(path.read_text(encoding='utf-8'))
         for node in ast.walk(tree):
-            if isinstance(node,ast.ImportFrom) and node.module=='urllib.request':
+            if isinstance(node,ast.ImportFrom) and node.module in {'urllib.request', 'browser.https_transport'}:
                 if any(alias.name=='urlopen' for alias in node.names):network_importers.append(path.relative_to(ROOT).as_posix())
             elif isinstance(node,ast.Import):
                 if any(alias.name=='urllib.request' for alias in node.names):network_importers.append(path.relative_to(ROOT).as_posix())

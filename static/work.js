@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
     if(canDomain('work.read','jobs'))choices.push(['jobWork','Job work']);
     if(chiefContext.user_management.roles.length)choices.push(['users','Manage Workers']);
     for(const [id,label] of choices){const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=()=>showWork(id).catch(e=>document.getElementById('workError').textContent=e.message);nav.append(b);}
-    if(canDomain('work.read','farming')){const offline=document.createElement('button');offline.type='button';offline.textContent='Offline reports';offline.onclick=async()=>{try{if(!('serviceWorker' in navigator))throw new Error('This browser does not support offline reporting.');await navigator.serviceWorker.register('/farm-sw.js',{scope:'/work'});await navigator.serviceWorker.ready;location.href='/work?offline=1';}catch(error){document.getElementById('workError').textContent=error.message;}};nav.append(offline);}
+    if(canDomain('work.read','farming')){const offline=document.createElement('button');offline.type='button';offline.textContent='Offline reports';offline.onclick=async()=>{try{if(!('serviceWorker' in navigator))throw new Error('This browser does not support offline reporting.');await navigator.serviceWorker.register('/farm-sw.js',{scope:'/work'});await navigator.serviceWorker.ready;await waitForOfflineControl();location.href='/work?offline=1';}catch(error){document.getElementById('workError').textContent=error.message;}};nav.append(offline);}
     document.getElementById('workWelcome').textContent=choices.length?'Choose your work area.':'No work area is assigned. Ask your Owner to review your access.';
     await showWork(choices[0]?.[0]||'workHome');
   }catch(error){document.getElementById('workError').textContent=error.message;}
@@ -64,3 +64,22 @@ document.addEventListener('click',async event=>{
   const action=userActions(b)[b.dataset.action];if(!action)return;
   b.disabled=true;try{await action();}catch(error){document.getElementById('usersResult').textContent=error.message;}finally{b.disabled=false;}
 });
+// An active registration is not enough: the first page may not be controlled yet.
+// Wait for clients.claim() before navigating to the service-worker-only shell.
+function waitForOfflineControl(){
+  if(navigator.serviceWorker.controller)return Promise.resolve();
+  return new Promise((resolve,reject)=>{
+    const finish=()=>{
+      if(!navigator.serviceWorker.controller)return;
+      clearTimeout(timer);
+      navigator.serviceWorker.removeEventListener('controllerchange',finish);
+      resolve();
+    };
+    const timer=setTimeout(()=>{
+      navigator.serviceWorker.removeEventListener('controllerchange',finish);
+      reject(new Error('Offline reporting is not ready yet. Please try again.'));
+    },15000);
+    navigator.serviceWorker.addEventListener('controllerchange',finish);
+    finish();
+  });
+}

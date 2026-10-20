@@ -18,7 +18,8 @@ def _browser_runtime(tmp_path):
     return config
 
 
-def test_prepare_production_promotes_verified_isolated_snapshot(tmp_path,monkeypatch):
+@pytest.mark.parametrize("dns_mode", ["quad9", "system"])
+def test_prepare_production_promotes_verified_isolated_snapshot(tmp_path,monkeypatch,dns_mode):
     source_root=tmp_path/'source';source_root.mkdir()
     source_manifest=tmp_path/'SOURCE_MANIFEST.json';source_manifest.write_text('{}',encoding='utf-8')
     browser=_browser_runtime(tmp_path)
@@ -44,13 +45,14 @@ def test_prepare_production_promotes_verified_isolated_snapshot(tmp_path,monkeyp
     result=prepare_instance.prepare_production(
         root,config,source_root,source_manifest,'owner','secret-password',
         public_host='chief.example.test',browser_runtime=browser,farm_operations='ENABLED',
-        organization_name='Yellow Farm Ltd',farm_name='Yellow Farm')
+        organization_name='Yellow Farm Ltd',farm_name='Yellow Farm',dns_mode=dns_mode)
 
     assert result['status']=='PRODUCTION_PREPARED'
     assert result['migrations_on_production'] is False and result['services_started'] is False
     assert result['organization_id']=='org-1' and result['farm_id']=='farm-1'
     assert json.loads((root/'.chief-production.json').read_text())=={'mode':'PRODUCTION'}
     data=json.loads(config.read_text())
+    assert data['dns_mode']==dns_mode
     assert data['mode']=='PRODUCTION'
     assert data['state_root']==str(root)
     assert data['database']==str(root/'state.sqlite3')

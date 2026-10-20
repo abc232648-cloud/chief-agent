@@ -7,6 +7,11 @@ from .models import AIRequest, AIResponse
 def _sdk_call(callback, message):
     status=None
     try:
+        # Provider SDKs use their own HTTP stacks. Installing the process-scoped
+        # resolver makes their ordinary hostname lookups obey Chief DNS without
+        # changing the host machine's resolver configuration.
+        from networking.dns_policy import ensure_process_policy
+        ensure_process_policy()
         return callback()
     except Exception as exc:
         value=getattr(exc,'status_code',None)
