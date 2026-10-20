@@ -43,6 +43,7 @@ jobs:
         run: >-
           python -m pytest -q
           tests/test_wireguard_remote_access.py
+          tests/test_wireguard_dns.py
           tests/test_remote_access_api.py
           tests/test_dns_policy.py
           tests/test_production_https_policy.py

@@ -61,8 +61,10 @@ def test_remote_access_api_configuration_lifecycle(tmp_path):
     init_body = {
         "endpoint": "203.0.113.15",
         "canonical_hostname": "chief-farm.local",
+        "allow_unsupported_platform": True,
         "port": 51820,
         "vpn_subnet": "10.77.0.0/24",
+        "allow_unsupported_platform": True,
     }
     assert dispatch(h_init, store, owner, "/api/settings/remote-access", "POST", init_body) is True
     assert h_init.response_data["status"] == "CONFIGURED"

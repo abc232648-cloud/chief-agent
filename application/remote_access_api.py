@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import urlsplit
 
-from networking.remote_access import WireGuardManager
+from networking.remote_access import UnsupportedPlatformError, WireGuardManager
 
 
 def _get_manager(store: Any) -> WireGuardManager:
@@ -45,14 +45,19 @@ def dispatch(handler: Any, store: Any, principal: Any, path: str, method: str, b
             port = int(body.get("port", 51820))
             vpn_subnet = str(body.get("vpn_subnet", "10.77.0.0/24")).strip()
             farm_lan_cidr = body.get("farm_lan_cidr")
-            status = mgr.initialize_server(
-                endpoint=endpoint,
-                canonical_hostname=canonical_hostname,
-                port=port,
-                vpn_subnet=vpn_subnet,
-                farm_lan_cidr=farm_lan_cidr,
-            )
-            handler.json({"status": "CONFIGURED", "details": status})
+            allow_unsupported = bool(body.get("allow_unsupported_platform", False))
+            try:
+                status = mgr.initialize_server(
+                    endpoint=endpoint,
+                    canonical_hostname=canonical_hostname,
+                    port=port,
+                    vpn_subnet=vpn_subnet,
+                    farm_lan_cidr=farm_lan_cidr,
+                    allow_unsupported_platform=allow_unsupported,
+                )
+                handler.json({"status": "CONFIGURED", "details": status})
+            except UnsupportedPlatformError as exc:
+                handler.json({"status": "UNSUPPORTED_PLATFORM", "error": str(exc)}, 400)
             return True
 
     # 2. Reachability & CGNAT preflight: /api/settings/remote-access/preflight
@@ -83,7 +88,7 @@ def dispatch(handler: Any, store: Any, principal: Any, path: str, method: str, b
             })
             return True
 
-    # 4. Peer operations: /api/settings/remote-access/peers/<peer_id>[/rotate]
+    # 4. Peer operations: /api/settings/remote-access/peers/<peer_id>[/rotate|/replace]
     if clean_path.startswith("/api/settings/remote-access/peers/"):
         parts = clean_path.split("/")
         peer_id = parts[5]

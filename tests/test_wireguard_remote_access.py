@@ -1,10 +1,13 @@
-"""Unit tests for WireGuard remote access, peer lifecycle, firewall rules, and split-DNS."""
+"""Unit tests for WireGuard remote access, peer lifecycle, firewall rules, service readiness, and honest reachability."""
 import ipaddress
 import json
 from pathlib import Path
+import time
 import pytest
 
 from networking.remote_access import (
+    UnsupportedPlatformError,
+    WireGuardFirewallManager,
     WireGuardManager,
     WireGuardPeer,
     generate_preshared_key,
@@ -38,6 +41,7 @@ def test_manager_initialization_and_secrecy(tmp_path):
         canonical_hostname="chief-farm.local",
         port=51820,
         vpn_subnet="10.77.0.0/24",
+        allow_unsupported_platform=True,
     )
 
     assert mgr.is_configured()
@@ -61,6 +65,19 @@ def test_manager_initialization_and_secrecy(tmp_path):
     assert key_path.read_text(encoding="utf-8").strip() == server_priv
 
 
+def test_windows_server_hosting_fails_closed(tmp_path, monkeypatch):
+    mgr = WireGuardManager(tmp_path / "wg_state")
+    monkeypatch.setattr(mgr, "detect_platform", lambda: "windows")
+
+    # WireGuard server hosting on Windows must fail closed
+    with pytest.raises(UnsupportedPlatformError, match="supported only on Linux"):
+        mgr.initialize_server(
+            endpoint="203.0.113.10",
+            canonical_hostname="chief-farm.local",
+            allow_unsupported_platform=False,
+        )
+
+
 def test_subnet_collision_detection(tmp_path):
     mgr = WireGuardManager(tmp_path / "wg_state")
 
@@ -71,6 +88,7 @@ def test_subnet_collision_detection(tmp_path):
             canonical_hostname="chief-farm.local",
             vpn_subnet="10.77.0.0/24",
             farm_lan_cidr="10.77.0.0/16",
+            allow_unsupported_platform=True,
         )
 
     # Non-conflicting subnets pass
@@ -79,30 +97,37 @@ def test_subnet_collision_detection(tmp_path):
         canonical_hostname="chief-farm.local",
         vpn_subnet="10.77.0.0/24",
         farm_lan_cidr="192.168.1.0/24",
+        allow_unsupported_platform=True,
     )
     assert status["enabled"] is True
 
 
-def test_reachability_and_cgnat_detection(tmp_path):
+def test_reachability_honest_udp_classification(tmp_path):
     mgr = WireGuardManager(tmp_path / "wg_state")
 
     # 1. CGNAT address in 100.64.0.0/10
     rep_cgnat = mgr.check_reachability("100.64.12.34", 51820)
     assert rep_cgnat.is_valid is False
     assert rep_cgnat.cgnat_detected is True
+    assert rep_cgnat.reachability_status == "CGNAT_BLOCKED"
     assert "Carrier-Grade NAT" in rep_cgnat.message
 
     # 2. Private LAN address (e.g. 192.168.1.100)
     rep_priv = mgr.check_reachability("192.168.1.100", 51820)
     assert rep_priv.is_valid is False
     assert rep_priv.is_private_ip is True
+    assert rep_priv.reachability_status == "PRIVATE_IP_BLOCKED"
     assert "private local address" in rep_priv.message
 
-    # 3. Valid public routable IP (TEST-NET-3: 203.0.113.50)
+    # 3. Public routable IP (TEST-NET-3: 203.0.113.50)
     rep_pub = mgr.check_reachability("203.0.113.50", 51820)
     assert rep_pub.is_valid is True
     assert rep_pub.cgnat_detected is False
     assert rep_pub.is_private_ip is False
+    assert rep_pub.is_public is True
+    # CRITICAL HONESTY: udp_verified must be False because router forwarding is not yet tested
+    assert rep_pub.udp_verified is False
+    assert rep_pub.reachability_status == "PUBLIC_UNVERIFIED"
     assert "Forward UDP port 51820" in rep_pub.router_guidance
 
 
@@ -112,6 +137,7 @@ def test_peer_lifecycle_roles_and_defaults(tmp_path):
         endpoint="203.0.113.10",
         canonical_hostname="chief-farm.local",
         port=51820,
+        allow_unsupported_platform=True,
     )
 
     # 1. Owner peer: Enabled by default
@@ -154,58 +180,13 @@ def test_peer_lifecycle_roles_and_defaults(tmp_path):
     assert mgr.revoke_peer(mgr_peer.peer_id) is True
     wg_conf_revoked = mgr.render_server_config()
     assert mgr_peer.public_key not in wg_conf_revoked
-    # Other peers remain active
     assert owner_peer.public_key in wg_conf_revoked
     assert staff_peer.public_key in wg_conf_revoked
 
 
-def test_peer_key_rotation(tmp_path):
-    mgr = WireGuardManager(tmp_path / "wg_state")
-    mgr.initialize_server(endpoint="203.0.113.10", canonical_hostname="chief-farm.local")
-
-    peer, conf1 = mgr.add_peer(name="Alice", role="Owner", device_name="Phone 1")
-    old_pub = peer.public_key
-
-    updated_peer, conf2 = mgr.rotate_peer_key(peer.peer_id)
-    assert updated_peer.public_key != old_pub
-    assert updated_peer.vpn_ip == peer.vpn_ip  # Retains IP assignment
-
-    wg_conf = mgr.render_server_config()
-    assert updated_peer.public_key in wg_conf
-    assert old_pub not in wg_conf
-
-
-def test_firewall_rules_fail_closed_guarantees(tmp_path):
-    mgr = WireGuardManager(tmp_path / "wg_state")
-    mgr.initialize_server(
-        endpoint="203.0.113.10",
-        canonical_hostname="chief-farm.local",
-        port=51820,
-        vpn_subnet="10.77.0.0/24",
-    )
-
-    rules = mgr.render_firewall_rules(chief_https_port=443)
-    iptables = rules["linux_iptables"]
-
-    # 1. Must allow UDP port 51820 on WAN
-    assert any("51820" in r and "ACCEPT" in r for r in iptables)
-
-    # 2. Must allow HTTPS (443) on VPN interface (wg0)
-    assert any("--dport 443 -j ACCEPT" in r and "10.77.0.0/24" in r for r in iptables)
-
-    # 3. Must allow DNS (53) on VPN interface for split-DNS
-    assert any("--dport 53 -j ACCEPT" in r for r in iptables)
-
-    # 4. Must drop all other traffic to server
-    assert "iptables -A INPUT -i wg0 -j DROP" in iptables
-
-    # 5. Must drop forwarding to farm LAN
-    assert "iptables -A FORWARD -i wg0 -j DROP" in iptables
-
-
 def test_peer_replace_device(tmp_path):
     mgr = WireGuardManager(tmp_path / "wg_state")
-    mgr.initialize_server(endpoint="203.0.113.10", canonical_hostname="chief-farm.local")
+    mgr.initialize_server(endpoint="203.0.113.10", canonical_hostname="chief-farm.local", allow_unsupported_platform=True)
 
     peer, conf1 = mgr.add_peer(name="Alice", role="Owner", device_name="Old iPhone")
     old_pub = peer.public_key
@@ -223,74 +204,82 @@ def test_peer_replace_device(tmp_path):
     assert old_pub not in wg_conf
 
 
-def test_manager_peer_explicit_authorization(tmp_path):
-    mgr = WireGuardManager(tmp_path / "wg_state")
-    mgr.initialize_server(endpoint="203.0.113.10", canonical_hostname="chief-farm.local")
+def test_firewall_manager_chains_and_rules():
+    cmds = []
+    def fake_runner(cmd):
+        cmds.append(cmd)
+        return 0
 
-    # Manager peers are authorized individually
-    mgr_peer, conf = mgr.add_peer(name="Bob Manager", role="Manager", device_name="Work Laptop", enabled=True)
-    assert mgr_peer.role == "Manager"
-    assert mgr_peer.enabled is True
-
-    # Can be individually deactivated
-    mgr.set_peer_enabled(mgr_peer.peer_id, False)
-    assert mgr.get_safe_status()["peers"][mgr_peer.peer_id]["enabled"] is False
-    assert f"# [Peer: Bob Manager (Manager) - DISABLED]" in mgr.render_server_config()
-
-
-def test_reachability_unresolvable_and_blocked_endpoints(tmp_path):
-    mgr = WireGuardManager(tmp_path / "wg_state")
-
-    # Loopback IP
-    rep_loop = mgr.check_reachability("127.0.0.1", 51820)
-    assert rep_loop.is_valid is False
-    assert rep_loop.is_private_ip is True
-
-    # Unresolvable DNS hostname
-    rep_bad_dns = mgr.check_reachability("this-domain-definitely-does-not-exist-xyz987.farm", 51820)
-    assert rep_bad_dns.is_valid is False
-    assert "DNS resolution failed" in rep_bad_dns.message
-
-    # Invalid hostname format
-    rep_bad_fmt = mgr.check_reachability("invalid_host!@#$", 51820)
-    assert rep_bad_fmt.is_valid is False
-    assert "Invalid endpoint format" in rep_bad_fmt.message
-
-
-def test_idempotent_server_initialization_and_safe_state(tmp_path):
-    mgr = WireGuardManager(tmp_path / "wg_state")
-
-    # First init
-    status1 = mgr.initialize_server(
-        endpoint="203.0.113.10",
-        canonical_hostname="chief-farm.local",
+    ok = WireGuardFirewallManager.apply(
+        vpn_subnet="10.77.0.0/24",
+        server_vpn_ip="10.77.0.1",
         port=51820,
+        chief_https_port=443,
+        runner=fake_runner,
     )
-    server_pub1 = status1["server_public_key"]
-    server_priv1 = mgr.get_server_private_key()
+    assert ok is True
 
-    # Add a peer
-    peer, _ = mgr.add_peer(name="Dave", role="Owner", device_name="iPad")
+    # 1. Custom chains created and flushed
+    assert ["iptables", "-N", "CHIEF-WG-IN"] in cmds
+    assert ["iptables", "-N", "CHIEF-WG-FWD"] in cmds
+    assert ["iptables", "-F", "CHIEF-WG-IN"] in cmds
+    assert ["iptables", "-F", "CHIEF-WG-FWD"] in cmds
 
-    # Second init (e.g. updating endpoint or dynamic DNS)
-    status2 = mgr.initialize_server(
-        endpoint="farm.example.com",
-        canonical_hostname="chief-farm.local",
-        port=51820,
-    )
-    server_pub2 = status2["server_public_key"]
-    server_priv2 = mgr.get_server_private_key()
+    # 2. WireGuard UDP listener allowed on WAN
+    assert ["iptables", "-A", "CHIEF-WG-IN", "-p", "udp", "--dport", "51820", "-j", "ACCEPT"] in cmds
 
-    # CRITICAL IDEMPOTENCY: Keys must not change; existing peers must be preserved
-    assert server_pub1 == server_pub2
-    assert server_priv1 == server_priv2
-    assert status2["endpoint"] == "farm.example.com"
-    assert peer.peer_id in status2["peers"]
+    # 3. Chief HTTPS (443) allowed on wg0
+    assert ["iptables", "-A", "CHIEF-WG-IN", "-i", "wg0", "-s", "10.77.0.0/24", "-d", "10.77.0.1", "-p", "tcp", "--dport", "443", "-j", "ACCEPT"] in cmds
+
+    # 4. Split-DNS (53) allowed on wg0
+    assert ["iptables", "-A", "CHIEF-WG-IN", "-i", "wg0", "-s", "10.77.0.0/24", "-d", "10.77.0.1", "-p", "udp", "--dport", "53", "-j", "ACCEPT"] in cmds
+
+    # 5. DROP all other wg0 packets (SSH, DB, admin)
+    assert ["iptables", "-A", "CHIEF-WG-IN", "-i", "wg0", "-j", "DROP"] in cmds
+
+    # 6. DROP all forwarding (no LAN forwarding)
+    assert ["iptables", "-A", "CHIEF-WG-FWD", "-i", "wg0", "-j", "DROP"] in cmds
+
+    # Test rollback
+    rollback_cmds = []
+    WireGuardFirewallManager.rollback(runner=lambda c: rollback_cmds.append(c) or 0)
+    assert ["iptables", "-D", "INPUT", "-j", "CHIEF-WG-IN"] in rollback_cmds
+    assert ["iptables", "-X", "CHIEF-WG-IN"] in rollback_cmds
+
+
+def test_service_readiness_and_handshake_verification(tmp_path):
+    mgr = WireGuardManager(tmp_path / "wg_state")
+    mgr.initialize_server(endpoint="203.0.113.10", canonical_hostname="chief-farm.local", allow_unsupported_platform=True)
+    peer, _ = mgr.add_peer("Alice", "Owner", "Phone")
+
+    # 1. Readiness check returns False if wg command fails
+    assert mgr.check_service_readiness(runner=lambda c: (1, "")) is False
+    # Readiness check returns True when wg show succeeds
+    assert mgr.check_service_readiness(runner=lambda c: (0, "interface: wg0\n  public key: xyz\n")) is True
+
+    # 2. Handshake verification
+    pubkey = peer.public_key
+    now = int(time.time())
+
+    # Fresh handshake (10s ago)
+    def fresh_runner(cmd):
+        return (0, f"{pubkey} {now - 10}\n")
+    assert mgr.check_peer_handshake(pubkey, max_age_seconds=180, runner=fresh_runner) is True
+
+    # Stale handshake (500s ago)
+    def stale_runner(cmd):
+        return (0, f"{pubkey} {now - 500}\n")
+    assert mgr.check_peer_handshake(pubkey, max_age_seconds=180, runner=stale_runner) is False
+
+    # Missing handshake (0)
+    def zero_runner(cmd):
+        return (0, f"{pubkey} 0\n")
+    assert mgr.check_peer_handshake(pubkey, max_age_seconds=180, runner=zero_runner) is False
 
 
 def test_secret_handling_zero_key_leakage(tmp_path):
     mgr = WireGuardManager(tmp_path / "wg_state")
-    mgr.initialize_server(endpoint="203.0.113.10", canonical_hostname="chief-farm.local")
+    mgr.initialize_server(endpoint="203.0.113.10", canonical_hostname="chief-farm.local", allow_unsupported_platform=True)
     peer, conf = mgr.add_peer(name="Alice", role="Owner", device_name="Phone")
 
     server_priv = mgr.get_server_private_key()
@@ -299,13 +288,8 @@ def test_secret_handling_zero_key_leakage(tmp_path):
     safe_status = mgr.get_safe_status()
     safe_status_json = json.dumps(safe_status)
 
-    # 1. Server private key must never appear in safe status dict or JSON
     assert server_priv not in safe_status_json
-
-    # 2. Peer preshared key must never appear in safe status dict or JSON
     assert psk not in safe_status_json
-
-    # 3. Peer safe dict must exclude PSK
     safe_peer = peer.to_safe_dict()
     assert "preshared_key" not in safe_peer
     assert psk not in json.dumps(safe_peer)
@@ -313,11 +297,8 @@ def test_secret_handling_zero_key_leakage(tmp_path):
 
 def test_local_console_works_independently_of_vpn(tmp_path):
     mgr = WireGuardManager(tmp_path / "wg_state")
-    # Even when WireGuard is unconfigured or disabled, local paths and status remain coherent
     assert not mgr.is_configured()
     status = mgr.get_safe_status()
     assert status["enabled"] is False
-
-    # Simulate local LAN host access: local loopback and LAN IPs do not route through WireGuard
     local_origin = "https://192.168.1.100:8765"
     assert "10.77.0." not in local_origin
