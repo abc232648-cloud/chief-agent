@@ -1,4 +1,3 @@
-from browser_conditions import wait_for_browser_condition
 import json
 import os
 from pathlib import Path
@@ -121,7 +120,7 @@ def test_worker_cannot_open_users_in_browser(dashboard, role):
             page=browser.new_page()
             page.context.add_cookies([{'name':'chief_session','value':raw,'url':d.url,'httpOnly':True,'sameSite':'Strict'}])
             page.goto(d.url)
-            wait_for_browser_condition(page, '() => chiefContext !== null')
+            expect(page.locator('#workWelcome')).to_have_text('Choose your work area.')
             assert page.url.endswith('/work')
             assert page.locator('#chiefAgents').count() == 0
             assert page.get_by_role('button', name='Manage Workers', exact=True).count() == 0

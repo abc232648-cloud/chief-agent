@@ -1,4 +1,3 @@
-from browser_conditions import wait_for_browser_condition
 import base64,json,sqlite3,uuid
 import pytest
 from domains.farming import finance,bookkeeping as books
@@ -118,5 +117,5 @@ def test_browser_creates_contact_line_item_and_private_receipt(dashboard):
             expect(page.locator('#financeReceiptStatus')).to_contain_text('Payment status unchanged')
             page.get_by_role('button',name='View receipt',exact=True).click()
             expect(page.locator('#financeLedger img')).to_have_count(1)
-            wait_for_browser_condition(page, "()=>document.querySelector('#financeLedger img').naturalWidth>0")
+            expect(page.locator('#financeLedger img')).to_have_js_property('naturalWidth', 1)
         finally:browser.close()

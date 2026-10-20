@@ -26,6 +26,16 @@ on:
       - 'config/dependency_update_policy.json'
       - 'requirements.txt'
       - 'requirements-scrapy.txt'
+      - 'static/auth-bridge.js'
+      - 'static/work.js'
+      - 'tests/test_chief_browser.py'
+      - 'tests/test_farm_offline.py'
+      - 'tests/test_farm_labour.py'
+      - 'tests/test_farm_finance_expansion.py'
+      - 'tests/test_farm_photos.py'
+      - 'tests/test_farm_release_boundaries.py'
+      - 'tests/test_users_access.py'
+      - 'tests/test_foundation_sessions.py'
       - 'tests/conftest.py'
       - 'tests/test_web_push.py'
       - 'tests/test_notifications.py'
@@ -64,6 +74,16 @@ on:
       - 'config/dependency_update_policy.json'
       - 'requirements.txt'
       - 'requirements-scrapy.txt'
+      - 'static/auth-bridge.js'
+      - 'static/work.js'
+      - 'tests/test_chief_browser.py'
+      - 'tests/test_farm_offline.py'
+      - 'tests/test_farm_labour.py'
+      - 'tests/test_farm_finance_expansion.py'
+      - 'tests/test_farm_photos.py'
+      - 'tests/test_farm_release_boundaries.py'
+      - 'tests/test_users_access.py'
+      - 'tests/test_foundation_sessions.py'
       - 'tests/conftest.py'
       - 'tests/test_web_push.py'
       - 'tests/test_notifications.py'
@@ -135,6 +155,17 @@ jobs:
           tests/test_runtime_qualification.py
           tests/test_runtime_profiles.py
           tests/test_dependency_updates.py
+      - name: Verify browser navigation and session regressions
+        run: >-
+          python -m pytest -q
+          tests/test_chief_browser.py
+          tests/test_farm_offline.py
+          tests/test_farm_labour.py::test_browser_correction_waits_for_record_refresh
+          tests/test_farm_finance_expansion.py::test_browser_creates_contact_line_item_and_private_receipt
+          tests/test_farm_release_boundaries.py::test_finance_reference_selection_is_visible_and_never_saves
+          tests/test_farm_photos.py
+          tests/test_users_access.py::test_worker_cannot_open_users_in_browser
+          tests/test_foundation_sessions.py
 
   full-suite:
     name: Full suite (${{ matrix.label }})
