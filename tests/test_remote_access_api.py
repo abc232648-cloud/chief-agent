@@ -100,3 +100,43 @@ def test_remote_access_api_configuration_lifecycle(tmp_path):
     h_del = FakeHandler(f"/api/settings/remote-access/peers/{staff_peer_id}", "DELETE")
     assert dispatch(h_del, store, owner, f"/api/settings/remote-access/peers/{staff_peer_id}", "DELETE", {}) is True
     assert h_del.response_data["status"] == "REVOKED"
+
+
+def test_remote_access_api_replace_device(tmp_path):
+    store = FakeStore(tmp_path)
+    owner = SimpleNamespace(id="u1", role="Owner")
+
+    # Initialize server
+    h_init = FakeHandler("/api/settings/remote-access", "POST")
+    dispatch(h_init, store, owner, "/api/settings/remote-access", "POST", {
+        "endpoint": "203.0.113.15",
+        "canonical_hostname": "chief-farm.local",
+    })
+
+    # Add peer
+    h_peer = FakeHandler("/api/settings/remote-access/peers", "POST")
+    dispatch(h_peer, store, owner, "/api/settings/remote-access/peers", "POST", {
+        "name": "Jane Owner",
+        "role": "Owner",
+        "device_name": "Old Phone",
+    })
+    peer_id = h_peer.response_data["peer"]["peer_id"]
+
+    # Replace device
+    h_rep = FakeHandler(f"/api/settings/remote-access/peers/{peer_id}/replace", "POST")
+    dispatch(h_rep, store, owner, f"/api/settings/remote-access/peers/{peer_id}/replace", "POST", {
+        "device_name": "New Phone Pro",
+    })
+    assert h_rep.response_data["status"] == "DEVICE_REPLACED"
+    assert h_rep.response_data["peer"]["device_name"] == "New Phone Pro"
+    assert "client_config" in h_rep.response_data
+
+
+def test_vpn_peer_still_requires_chief_account_and_role_authorization(tmp_path):
+    store = FakeStore(tmp_path)
+    # A caller connected via VPN IP with no Chief session or with unprivileged role is denied
+    worker = SimpleNamespace(id="u_field", role="Worker")
+    handler = FakeHandler("/api/settings/remote-access", "POST", host="10.77.0.1")
+
+    with pytest.raises(PermissionError, match="restricted to Owner or Administrator"):
+        dispatch(handler, store, worker, "/api/settings/remote-access", "POST", {"endpoint": "203.0.113.10"})

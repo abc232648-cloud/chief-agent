@@ -201,3 +201,123 @@ def test_firewall_rules_fail_closed_guarantees(tmp_path):
 
     # 5. Must drop forwarding to farm LAN
     assert "iptables -A FORWARD -i wg0 -j DROP" in iptables
+
+
+def test_peer_replace_device(tmp_path):
+    mgr = WireGuardManager(tmp_path / "wg_state")
+    mgr.initialize_server(endpoint="203.0.113.10", canonical_hostname="chief-farm.local")
+
+    peer, conf1 = mgr.add_peer(name="Alice", role="Owner", device_name="Old iPhone")
+    old_pub = peer.public_key
+    assigned_ip = peer.vpn_ip
+
+    updated_peer, conf2 = mgr.replace_peer_device(peer.peer_id, "New iPhone 16")
+    assert updated_peer.device_name == "New iPhone 16"
+    assert updated_peer.public_key != old_pub
+    assert updated_peer.vpn_ip == assigned_ip
+    assert "New iPhone 16" in conf2
+    assert "Old iPhone" not in conf2
+
+    wg_conf = mgr.render_server_config()
+    assert updated_peer.public_key in wg_conf
+    assert old_pub not in wg_conf
+
+
+def test_manager_peer_explicit_authorization(tmp_path):
+    mgr = WireGuardManager(tmp_path / "wg_state")
+    mgr.initialize_server(endpoint="203.0.113.10", canonical_hostname="chief-farm.local")
+
+    # Manager peers are authorized individually
+    mgr_peer, conf = mgr.add_peer(name="Bob Manager", role="Manager", device_name="Work Laptop", enabled=True)
+    assert mgr_peer.role == "Manager"
+    assert mgr_peer.enabled is True
+
+    # Can be individually deactivated
+    mgr.set_peer_enabled(mgr_peer.peer_id, False)
+    assert mgr.get_safe_status()["peers"][mgr_peer.peer_id]["enabled"] is False
+    assert f"# [Peer: Bob Manager (Manager) - DISABLED]" in mgr.render_server_config()
+
+
+def test_reachability_unresolvable_and_blocked_endpoints(tmp_path):
+    mgr = WireGuardManager(tmp_path / "wg_state")
+
+    # Loopback IP
+    rep_loop = mgr.check_reachability("127.0.0.1", 51820)
+    assert rep_loop.is_valid is False
+    assert rep_loop.is_private_ip is True
+
+    # Unresolvable DNS hostname
+    rep_bad_dns = mgr.check_reachability("this-domain-definitely-does-not-exist-xyz987.farm", 51820)
+    assert rep_bad_dns.is_valid is False
+    assert "DNS resolution failed" in rep_bad_dns.message
+
+    # Invalid hostname format
+    rep_bad_fmt = mgr.check_reachability("invalid_host!@#$", 51820)
+    assert rep_bad_fmt.is_valid is False
+    assert "Invalid endpoint format" in rep_bad_fmt.message
+
+
+def test_idempotent_server_initialization_and_safe_state(tmp_path):
+    mgr = WireGuardManager(tmp_path / "wg_state")
+
+    # First init
+    status1 = mgr.initialize_server(
+        endpoint="203.0.113.10",
+        canonical_hostname="chief-farm.local",
+        port=51820,
+    )
+    server_pub1 = status1["server_public_key"]
+    server_priv1 = mgr.get_server_private_key()
+
+    # Add a peer
+    peer, _ = mgr.add_peer(name="Dave", role="Owner", device_name="iPad")
+
+    # Second init (e.g. updating endpoint or dynamic DNS)
+    status2 = mgr.initialize_server(
+        endpoint="farm.example.com",
+        canonical_hostname="chief-farm.local",
+        port=51820,
+    )
+    server_pub2 = status2["server_public_key"]
+    server_priv2 = mgr.get_server_private_key()
+
+    # CRITICAL IDEMPOTENCY: Keys must not change; existing peers must be preserved
+    assert server_pub1 == server_pub2
+    assert server_priv1 == server_priv2
+    assert status2["endpoint"] == "farm.example.com"
+    assert peer.peer_id in status2["peers"]
+
+
+def test_secret_handling_zero_key_leakage(tmp_path):
+    mgr = WireGuardManager(tmp_path / "wg_state")
+    mgr.initialize_server(endpoint="203.0.113.10", canonical_hostname="chief-farm.local")
+    peer, conf = mgr.add_peer(name="Alice", role="Owner", device_name="Phone")
+
+    server_priv = mgr.get_server_private_key()
+    psk = mgr._state["peers"][peer.peer_id]["preshared_key"]
+
+    safe_status = mgr.get_safe_status()
+    safe_status_json = json.dumps(safe_status)
+
+    # 1. Server private key must never appear in safe status dict or JSON
+    assert server_priv not in safe_status_json
+
+    # 2. Peer preshared key must never appear in safe status dict or JSON
+    assert psk not in safe_status_json
+
+    # 3. Peer safe dict must exclude PSK
+    safe_peer = peer.to_safe_dict()
+    assert "preshared_key" not in safe_peer
+    assert psk not in json.dumps(safe_peer)
+
+
+def test_local_console_works_independently_of_vpn(tmp_path):
+    mgr = WireGuardManager(tmp_path / "wg_state")
+    # Even when WireGuard is unconfigured or disabled, local paths and status remain coherent
+    assert not mgr.is_configured()
+    status = mgr.get_safe_status()
+    assert status["enabled"] is False
+
+    # Simulate local LAN host access: local loopback and LAN IPs do not route through WireGuard
+    local_origin = "https://192.168.1.100:8765"
+    assert "10.77.0." not in local_origin

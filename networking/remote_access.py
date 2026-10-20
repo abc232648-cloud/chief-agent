@@ -395,6 +395,28 @@ class WireGuardManager:
         client_conf = self.render_client_config(peer, client_priv)
         return peer, client_conf
 
+    def replace_peer_device(self, peer_id: str, new_device_name: str) -> Tuple[WireGuardPeer, str]:
+        """Replace a peer's device: updates device name and rotates keypair/PSK, preserving assigned IP."""
+        if peer_id not in self._state["peers"]:
+            raise KeyError(f"Peer {peer_id} not found")
+        new_device_name = new_device_name.strip()
+        if not new_device_name:
+            raise ValueError("New device name cannot be empty.")
+        data = self._state["peers"][peer_id]
+        client_priv, client_pub = generate_wireguard_keypair()
+        psk = generate_preshared_key()
+
+        data["device_name"] = new_device_name
+        data["public_key"] = client_pub
+        data["preshared_key"] = psk
+        self._state["peers"][peer_id] = data
+        self._save_state()
+        self.write_wg_conf()
+
+        peer = WireGuardPeer(**data)
+        client_conf = self.render_client_config(peer, client_priv)
+        return peer, client_conf
+
     def render_server_config(self) -> str:
         """Render standard wg0.conf server configuration."""
         priv_key = self.get_server_private_key() or "<MISSING_PRIVATE_KEY>"

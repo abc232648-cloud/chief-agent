@@ -97,6 +97,15 @@ def dispatch(handler: Any, store: Any, principal: Any, path: str, method: str, b
                 "client_config": client_conf,
             })
             return True
+        elif subaction == "replace" and method == "POST":
+            new_device = str(body.get("device_name", body.get("new_device_name", "Replaced Device"))).strip()
+            peer, client_conf = mgr.replace_peer_device(peer_id, new_device)
+            handler.json({
+                "status": "DEVICE_REPLACED",
+                "peer": peer.to_safe_dict(),
+                "client_config": client_conf,
+            })
+            return True
         elif not subaction:
             if method in {"POST", "PATCH"}:
                 enabled = bool(body.get("enabled", True))
