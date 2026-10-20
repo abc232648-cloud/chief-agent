@@ -81,3 +81,21 @@ def test_wireguard_dns_server_socket_interaction():
     finally:
         server.stop()
         assert server.is_running is False
+
+
+def test_wireguard_dns_cli_args_parsing(monkeypatch):
+    from networking.wireguard_dns import main
+    calls = []
+    class DummyServer:
+        def __init__(self, bind_ip, port, canonical_hostname, answer_ip):
+            calls.append((bind_ip, port, canonical_hostname, answer_ip))
+            self.is_running = False
+        def start(self):
+            pass
+        def stop(self):
+            pass
+
+    monkeypatch.setattr("networking.wireguard_dns.WireGuardDNSServer", DummyServer)
+    ret = main(["--bind", "10.77.0.1", "--port", "5353", "--hostname", "farm.test", "--answer", "10.77.0.1"])
+    assert ret == 0
+    assert calls == [("10.77.0.1", 5353, "farm.test", "10.77.0.1")]

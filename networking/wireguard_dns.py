@@ -157,3 +157,40 @@ class WireGuardDNSServer:
             self._thread.join(timeout=2.0)
             self._thread = None
         logger.info("WireGuard split-DNS server stopped.")
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """Standalone CLI entrypoint for running the authoritative split-DNS daemon."""
+    import argparse
+    import sys
+    import time
+    from typing import List
+
+    parser = argparse.ArgumentParser(description="Chief Authoritative WireGuard Split-DNS Daemon")
+    parser.add_argument("--bind", default="10.77.0.1", help="Virtual IP to bind to (default: 10.77.0.1)")
+    parser.add_argument("--port", type=int, default=53, help="UDP port (default: 53)")
+    parser.add_argument("--hostname", required=True, help="Canonical Chief hostname to answer authoritatively")
+    parser.add_argument("--answer", default="10.77.0.1", help="IPv4 address returned for the canonical hostname")
+    args = parser.parse_args(argv)
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    server = WireGuardDNSServer(
+        bind_ip=args.bind,
+        port=args.port,
+        canonical_hostname=args.hostname,
+        answer_ip=args.answer,
+    )
+    server.start()
+    try:
+        while server.is_running:
+            time.sleep(1.0)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.stop()
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main(sys.argv[1:]))
