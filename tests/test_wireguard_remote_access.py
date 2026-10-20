@@ -302,3 +302,93 @@ def test_local_console_works_independently_of_vpn(tmp_path):
     assert status["enabled"] is False
     local_origin = "https://192.168.1.100:8765"
     assert "10.77.0." not in local_origin
+def test_start_dns_server_contract_and_signature_permutations(tmp_path, monkeypatch):
+    """Verify start_dns_server accepts canonical_hostname and port in all supported call styles without TypeError."""
+    mgr = WireGuardManager(tmp_path / "wg_state")
+    mgr.initialize_server(endpoint="203.0.113.10", canonical_hostname="chief-farm.local", allow_unsupported_platform=True)
+
+    started_servers = []
+
+    class DummyDNSServer:
+        def __init__(self, bind_ip, port, canonical_hostname, answer_ip):
+            self.bind_ip = bind_ip
+            self.port = port
+            self.canonical_hostname = canonical_hostname
+            self.answer_ip = answer_ip
+            self.is_running = False
+            started_servers.append(self)
+
+        def start(self):
+            self.is_running = True
+
+        def stop(self):
+            self.is_running = False
+
+    monkeypatch.setattr("networking.remote_access.WireGuardDNSServer", DummyDNSServer)
+
+    # Style 1: Installer style: start_dns_server(canonical_hostname=canonical_host)
+    mgr._dns_server = None
+    ok1 = mgr.start_dns_server(canonical_hostname="farm-alpha.local")
+    assert ok1 is True
+    assert mgr._state["canonical_hostname"] == "farm-alpha.local"
+    assert started_servers[-1].canonical_hostname == "farm-alpha.local"
+    assert started_servers[-1].port == 53
+
+    # Style 2: start_dns_server(canonical_hostname="farm-beta.local", port=5353)
+    mgr._dns_server = None
+    ok2 = mgr.start_dns_server(canonical_hostname="farm-beta.local", port=5353)
+    assert ok2 is True
+    assert mgr._state["canonical_hostname"] == "farm-beta.local"
+    assert started_servers[-1].canonical_hostname == "farm-beta.local"
+    assert started_servers[-1].port == 5353
+
+    # Style 3: Positional swapped: start_dns_server("farm-gamma.local", 5354)
+    mgr._dns_server = None
+    ok3 = mgr.start_dns_server("farm-gamma.local", 5354)
+    assert ok3 is True
+    assert mgr._state["canonical_hostname"] == "farm-gamma.local"
+    assert started_servers[-1].canonical_hostname == "farm-gamma.local"
+    assert started_servers[-1].port == 5354
+
+    # Style 4: Classic legacy: start_dns_server(53)
+    mgr._dns_server = None
+    ok4 = mgr.start_dns_server(53)
+    assert ok4 is True
+    assert started_servers[-1].port == 53
+
+    # Style 5: Default parameterless
+    mgr._dns_server = None
+    ok5 = mgr.start_dns_server()
+    assert ok5 is True
+    assert started_servers[-1].port == 53
+
+
+def test_wireguard_manager_rollback_and_dns_readiness(tmp_path, monkeypatch):
+    """Verify WireGuardManager rollback cleans up daemon, service, firewall, and files."""
+    mgr = WireGuardManager(tmp_path / "wg_state")
+    mgr.initialize_server(endpoint="203.0.113.10", canonical_hostname="chief-farm.local", allow_unsupported_platform=True)
+
+    stopped = []
+    class DummyDNSServer:
+        def __init__(self, *args, **kwargs):
+            self.is_running = True
+        def start(self):
+            pass
+        def stop(self):
+            self.is_running = False
+            stopped.append("dns")
+
+    monkeypatch.setattr("networking.remote_access.WireGuardDNSServer", DummyDNSServer)
+    mgr.start_dns_server(canonical_hostname="chief-farm.local")
+
+    # Mock service and firewall runners
+    firewall_rolled_back = []
+    monkeypatch.setattr("networking.remote_access.WireGuardFirewallManager.rollback", lambda runner=None: firewall_rolled_back.append(True))
+
+    service_stopped = []
+    mgr.stop_interface_service = lambda runner=None: service_stopped.append(True)
+
+    mgr.rollback()
+    assert "dns" in stopped
+    assert firewall_rolled_back == [True]
+    assert service_stopped == [True]

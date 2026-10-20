@@ -810,30 +810,113 @@ class WireGuardManager:
                     pass
         return False
 
-    def start_dns_server(self, port: int = 53) -> bool:
-        """Start the split-DNS server on 10.77.0.1:port."""
-        if self._dns_server and self._dns_server.is_running:
+    def start_dns_server(
+        self,
+        port: Union[int, str] = 53,
+        canonical_hostname: Optional[str] = None,
+        **kwargs: Any,
+    ) -> bool:
+        """Start the split-DNS server on 10.77.0.1:port.
+
+        Accepts port and canonical_hostname flexibly by keyword or position.
+        Ensures the configured canonical hostname reaches the DNS server without breaking existing callers.
+        """
+        actual_port = 53
+        actual_hostname = canonical_hostname
+
+        if isinstance(port, int):
+            actual_port = port
+        elif isinstance(port, str):
+            if port.isdigit():
+                actual_port = int(port)
+            else:
+                actual_hostname = port
+
+        if isinstance(canonical_hostname, int):
+            actual_port = canonical_hostname
+            if isinstance(port, str):
+                actual_hostname = port
+
+        if "port" in kwargs and kwargs["port"] is not None:
+            actual_port = int(kwargs["port"])
+        if "canonical_hostname" in kwargs and kwargs["canonical_hostname"] is not None:
+            actual_hostname = str(kwargs["canonical_hostname"])
+
+        if actual_hostname:
+            self._state["canonical_hostname"] = str(actual_hostname).strip().rstrip(".")
+
+        if self._dns_server and getattr(self._dns_server, "is_running", False):
             return True
+
         server_ip = self._state.get("server_vpn_ip", "10.77.0.1")
-        hostname = self._state.get("canonical_hostname", "chief-farm.local")
+        hostname = actual_hostname or self._state.get("canonical_hostname", "chief-farm.local")
         try:
             self._dns_server = WireGuardDNSServer(
                 bind_ip=server_ip,
-                port=port,
+                port=actual_port,
                 canonical_hostname=hostname,
                 answer_ip=server_ip,
             )
             self._dns_server.start()
             return True
         except Exception as exc:
-            logger.warning("Could not start WireGuard split-DNS daemon on %s:%d: %s", server_ip, port, exc)
+            logger.warning("Could not start WireGuard split-DNS daemon on %s:%d: %s", server_ip, actual_port, exc)
             return False
 
     def stop_dns_server(self) -> None:
         """Stop the split-DNS server."""
         if self._dns_server:
-            self._dns_server.stop()
+            try:
+                self._dns_server.stop()
+            except Exception:
+                pass
             self._dns_server = None
+
+    def check_dns_readiness(
+        self,
+        canonical_hostname: Optional[str] = None,
+        server_ip: Optional[str] = None,
+        port: int = 53,
+        timeout: float = 2.0,
+    ) -> bool:
+        """Verify real DNS query resolution through UDP socket."""
+        try:
+            target_ip = server_ip or self._state.get("server_vpn_ip", "10.77.0.1")
+            target_host = canonical_hostname or self._state.get("canonical_hostname", "chief-farm.local")
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(timeout)
+            labels = target_host.strip().lower().split(".")
+            qname_bytes = b"".join(bytes([len(l)]) + l.encode("ascii") for l in labels) + b"\x00"
+            query = b"\xaa\xbb\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00" + qname_bytes + b"\x00\x01\x00\x01"
+            sock.sendto(query, (target_ip, port))
+            resp, _ = sock.recvfrom(2048)
+            sock.close()
+            if len(resp) >= 12 and socket.inet_aton(target_ip) in resp:
+                return True
+            return False
+        except Exception:
+            return False
+
+    def rollback(self) -> None:
+        """Safely clean up WireGuard server resources without affecting local Chief services."""
+        if self._dns_server:
+            try:
+                self.stop_dns_server()
+            except Exception:
+                pass
+        try:
+            self.stop_interface_service()
+        except Exception:
+            pass
+        try:
+            WireGuardFirewallManager.rollback()
+        except Exception:
+            pass
+        if hasattr(self, "wg_conf_path") and self.wg_conf_path and Path(self.wg_conf_path).exists():
+            try:
+                Path(self.wg_conf_path).unlink()
+            except OSError:
+                pass
 
     def render_firewall_rules(self, chief_https_port: int = 443) -> Dict[str, List[str]]:
         """Return firewall rules for inspection or documentation."""
