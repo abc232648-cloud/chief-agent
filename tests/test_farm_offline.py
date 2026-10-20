@@ -57,21 +57,8 @@ def work_photo(d):
     return work,{'event_id':str(uuid.uuid4()),'work_id':work['event_id'],'image_base64':base64.b64encode(png()).decode()}
 
 
-def test_offline_restart_encrypted_queue_and_explicit_sync(dashboard, monkeypatch):
+def test_offline_restart_encrypted_queue_and_explicit_sync(dashboard):
     d=dashboard;e,payload=configured(d)
-    # Offline emulation can leave service-worker networking online. Make the
-    # disposable origin explicitly unavailable too; never accept online HTML
-    # as evidence that offline recovery worked.
-    offline = {'active': False, 'blocked': 0}
-    original_get = d.app.Handler.do_GET
-    def origin_get(handler):
-        if offline['active']:
-            offline['blocked'] += 1
-            handler.send_response(503)
-            handler.end_headers()
-            return
-        return original_get(handler)
-    monkeypatch.setattr(d.app.Handler, 'do_GET', origin_get)
     with sync_playwright() as p:
         browser=p.chromium.launch(headless=True)
         try:
@@ -84,13 +71,14 @@ def test_offline_restart_encrypted_queue_and_explicit_sync(dashboard, monkeypatc
             page.evaluate('(payload)=>FarmOutbox.queue(payload)',payload)
             raw=page.evaluate("async()=>{const db=await new Promise(r=>{const q=indexedDB.open('farm-private-outbox-v1',2);q.onsuccess=()=>r(q.result)});return new Promise(r=>{const q=db.transaction('profiles').objectStore('profiles').getAll();q.onsuccess=()=>{db.close();r(JSON.stringify(q.result))}})}")
             assert 'PRIVATE_OFFLINE_MARKER' not in raw and e['name'] not in raw and PHRASE not in raw
-            offline['active'] = True
-            page.context.set_offline(True);page.goto(d.url+'/work')
-            expect(page.locator('h1')).to_have_text('Private pending reports')
-            page.evaluate('args=>FarmOutbox.unlock(args.id,args.phrase)',{'id':info['id'],'phrase':PHRASE})
-            assert page.evaluate('async()=> (await FarmOutbox.view()).pending.length')==1
-            assert journal.overview(d.store,d.credentials['principal'])['record_count']==0
-            offline['active'] = False
+            # Chromium's emulated offline mode alone can leave worker fetches online.
+            # Stop the actual server so the fallback must survive real unavailability.
+            with d.server_outage():
+                page.context.set_offline(True);page.goto(d.url+'/work')
+                expect(page.locator('h1')).to_have_text('Private pending reports')
+                page.evaluate('args=>FarmOutbox.unlock(args.id,args.phrase)',{'id':info['id'],'phrase':PHRASE})
+                assert page.evaluate('async()=> (await FarmOutbox.view()).pending.length')==1
+                assert journal.overview(d.store,d.credentials['principal'])['record_count']==0
             page.context.set_offline(False)
             result=page.evaluate('()=>FarmOutbox.sync()')
             assert result=={'sent':1,'pending':0}
