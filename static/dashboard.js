@@ -150,13 +150,22 @@ function bindActions() {
       'sign-out': async () => {
         try {
           const session = await api('/api/auth/session');
-          await api('/api/auth/logout', {
+          if (!session || !session.csrf) {
+            throw new Error('unable to obtain session CSRF token.');
+          }
+          const res = await api('/api/auth/logout', {
             method: 'POST',
             headers: {'Content-Type': 'application/json', 'X-Chief-CSRF': session.csrf},
             body: '{}'
           });
-        } catch {}
-        location.href = '/login';
+          if (res && res.status === 'SIGNED_OUT') {
+            location.href = '/login';
+            return;
+          }
+          throw new Error('server did not confirm session revocation.');
+        } catch (err) {
+          throw new Error('Sign-out failed: ' + (err.message || 'unable to revoke session. Please retry.'));
+        }
       }
     };
     if (!actions[action]) return;
@@ -170,6 +179,18 @@ function bindActions() {
 function initDashboard() {
   bindActions();
   document.body.classList.toggle('sidebarCollapsed',localStorage.getItem('chiefSidebar')==='collapsed');
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a');
+    if (a && a.href && !a.href.startsWith('javascript:')) {
+      try {
+        const u = new URL(a.href, location.origin);
+        if (u.origin !== location.origin) {
+          e.preventDefault();
+          window.open(u.href, '_blank', 'noopener,noreferrer');
+        }
+      } catch {}
+    }
+  });
   initializeChief().catch(reportError);
   setInterval(()=>{refreshNotifications().catch(reportError); if(!document.getElementById('overview').classList.contains('hidden'))loadChief().then(applyChiefVisibility).catch(reportError); if(!document.getElementById('jobOverview').classList.contains('hidden'))loadJobOverview().then(applyChiefVisibility).catch(reportError);},5000);
 }

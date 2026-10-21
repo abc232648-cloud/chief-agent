@@ -1,0 +1,49 @@
+name: Chief On-Farm Console & Local Identity CI
+
+on:
+  push:
+    branches:
+      - 'feature/on-farm-console**'
+      - main
+  pull_request:
+    branches:
+      - main
+      - 'release/integrated-candidate-20261020'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  console-identity-test:
+    name: Console Sign-Out & Identity (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      CHIEF_TEST_SECRET_BACKEND: portable-aead
+      PYTHONUTF8: "1"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install -r requirements-test.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Run Console sign-out and identity tests
+        run: >-
+          python -m pytest -v
+          tests/test_console_signout_contract.py
+          tests/test_foundation_identity_browser.py
+          tests/test_identity_http.py
+          tests/test_http_transport.py

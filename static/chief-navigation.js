@@ -33,7 +33,7 @@ function uiActionAllowed(b){
   if(['add-fact','edit-fact','add-profile','toggle-profile','upload-cv','toggle-cv','add-schedule','edit-schedule','pause-schedule'].includes(a))return canDomain('work.manage');
   if(['n8n-report-preview','n8n-report-history','n8n-handshake','n8n-history','n8n-toggle','n8n-check','add-site','site-control','save-email','test-email','summary-toggle','save-notice-preferences','notice-read','notice-open','read-all','generate-audit','component-preview','component-apply','model-state'].includes(a))return canGlobal('installation.manage');
   if(a==='send-command')return canDomain('work.request');
-  if(a==='foundation-refresh'||a==='toggle-sidebar')return true;
+  if(a==='foundation-refresh'||a==='toggle-sidebar'||a==='sign-out')return true;
   return ['refresh-domains','select-site','load-audit','filter-notifications','report-preview','show-application'].includes(a);
 }
 function applyChiefVisibility(){
