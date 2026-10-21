@@ -23,7 +23,7 @@ def definitions(platform,project,user,*,instance_config,python=None,managed_inst
         return PureWindowsPath(p) if windows else PurePosixPath(p)
     root=_to_path(project)
     if not root.is_absolute():raise ValueError('Project path must be absolute.')
-    interpreter=root/'.venv'/('Scripts/python.exe' if windows else 'bin/python')
+    interpreter=root/'.venv'/('Scripts/pythonw.exe' if windows else 'bin/python')
     config=_to_path(instance_config)
     if not config.is_absolute():raise ValueError('Absolute instance config required.')
     if managed_installation is not None:
@@ -31,7 +31,7 @@ def definitions(platform,project,user,*,instance_config,python=None,managed_inst
         if not managed.is_absolute():raise ValueError('Absolute managed installation required.')
         if root==managed or root.is_relative_to(managed):raise ValueError('Stable launcher source must stay outside managed releases.')
     if python is not None:
-        interpreter=_to_path(python)
+        interpreter=_to_path(python); interpreter = interpreter.with_name("pythonw.exe") if (windows and interpreter.name.lower() == "python.exe") else interpreter
         if not interpreter.is_absolute():raise ValueError('Absolute interpreter required.')
     if platform=='linux':_linux_account(user)
     result={}
@@ -52,7 +52,7 @@ def definitions(platform,project,user,*,instance_config,python=None,managed_inst
             principal=child(child(task,'Principals'),'Principal');principal.set('id','Owner')
             child(principal,'UserId',user);child(principal,'LogonType','InteractiveToken');child(principal,'RunLevel','LeastPrivilege')
             settings=child(task,'Settings')
-            for tag,value in [('MultipleInstancesPolicy','IgnoreNew'),('DisallowStartIfOnBatteries','false'),('StopIfGoingOnBatteries','false'),('StartWhenAvailable','true'),('Enabled','true'),('ExecutionTimeLimit','PT0S')]:child(settings,tag,value)
+            for tag,value in [('MultipleInstancesPolicy','IgnoreNew'),('DisallowStartIfOnBatteries','false'),('StopIfGoingOnBatteries','false'),('StartWhenAvailable','true'),('Enabled','true'),('ExecutionTimeLimit','PT0S'),('Hidden','true')]:child(settings,tag,value)
             restart=child(settings,'RestartOnFailure');child(restart,'Interval','PT1M');child(restart,'Count','3')
             actions=child(task,'Actions');actions.set('Context','Owner');execute=child(actions,'Exec')
             child(execute,'Command',str(interpreter));child(execute,'Arguments',list2cmdline(args));child(execute,'WorkingDirectory',str(root))
