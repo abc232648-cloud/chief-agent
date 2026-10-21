@@ -146,7 +146,18 @@ function bindActions() {
       'toggle-cv': () => toggleCV(id, enabled === 'true'),
       'fact-status': () => factStatus(id, status),
       'toggle-profile': () => toggleProfile(id, enabled === 'true'),
-      'delete-profile': () => deleteProfile(id)
+      'delete-profile': () => deleteProfile(id),
+      'sign-out': async () => {
+        try {
+          const session = await api('/api/auth/session');
+          await api('/api/auth/logout', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-Chief-CSRF': session.csrf},
+            body: '{}'
+          });
+        } catch {}
+        location.href = '/login';
+      }
     };
     if (!actions[action]) return;
     clearError();
