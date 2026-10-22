@@ -41,7 +41,15 @@ class DesktopNotificationChannel:
             "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Job Worker').Show($toast)"
         )
         try:
-            result = subprocess.run([powershell, "-NoProfile", "-NonInteractive", "-Command", script],
+            cmd = [powershell, "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script]
+            kwargs = {}
+            if os.name == "nt":
+                kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+                si = subprocess.STARTUPINFO()
+                si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                si.wShowWindow = subprocess.SW_HIDE
+                kwargs["startupinfo"] = si
+            result = subprocess.run(cmd, **kwargs,
                                     check=False, timeout=8, capture_output=True, text=True)
             return result.returncode == 0
         except (OSError, subprocess.SubprocessError):

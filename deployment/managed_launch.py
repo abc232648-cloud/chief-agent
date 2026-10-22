@@ -14,6 +14,12 @@ def main(argv=None):
     identity = installation.selection(for_stop=args.stop)
     source, _ = installation.source(identity)
     python = installation.runtime(identity)
+    if os.name == 'nt' or sys.platform == 'win32':
+        import pathlib
+        py_path = pathlib.Path(python)
+        pythonw = py_path.with_name('pythonw.exe')
+        if pythonw.is_file():
+            python = str(pythonw)
     command = [python, '-B', '-E', '-s', '-m', 'deployment.launch', '--component', args.component,
                '--config', installation.config['instance_config']]
     if args.stop:

@@ -51,6 +51,8 @@ def test_managed_windows_definitions_keep_least_privilege():
     for data in files.values():
         root=ET.fromstring(data);ns={'t':'http://schemas.microsoft.com/windows/2004/02/mit/task'}
         assert root.find('.//t:RunLevel',ns).text=='LeastPrivilege'
+        assert root.find('.//t:Command',ns).text.endswith('pythonw.exe')
+        assert root.find('.//t:Hidden',ns).text=='true'
         assert 'deployment.managed_launch' in root.find('.//t:Arguments',ns).text
         assert root.find('.//t:WorkingDirectory',ns).text==r'C:\Chief\bootstrap'
 
@@ -64,3 +66,31 @@ def test_managed_definition_rejects_unsafe_paths(target):
 def test_managed_launcher_cannot_live_inside_switched_slots():
     with pytest.raises(ValueError,match='Stable launcher'):
         definitions('linux','/home/fixture/managed/releases/source','fixture',instance_config='/home/fixture/instance.json',managed_installation='/home/fixture/managed')
+
+
+def test_managed_launch_selects_pythonw_on_windows(monkeypatch, tmp_path):
+    import deployment.managed_launch as ml
+    from unittest.mock import MagicMock
+    fake_inst = MagicMock()
+    fake_inst.selection.return_value = "deadbeef" * 8
+    fake_inst.source.return_value = (str(tmp_path), None)
+    python_exe = tmp_path / "Scripts" / "python.exe"
+    pythonw_exe = tmp_path / "Scripts" / "pythonw.exe"
+    python_exe.parent.mkdir(parents=True)
+    python_exe.write_text("")
+    pythonw_exe.write_text("")
+    fake_inst.runtime.return_value = str(python_exe)
+    fake_inst.config = {"instance_config": str(tmp_path / "instance.json")}
+    fake_inst.root = tmp_path
+
+    exec_args = []
+    monkeypatch.setattr("update_center.managed.ManagedInstallation", lambda root: fake_inst)
+    monkeypatch.setattr(ml.os, "execve", lambda py, cmd, env: exec_args.append((py, cmd)))
+    monkeypatch.setattr(ml.os, "chdir", lambda d: None)
+    monkeypatch.setattr(ml.os, "name", "nt")
+
+    ml.main(["--installation", str(tmp_path), "--component", "dashboard"])
+    assert len(exec_args) == 1
+    py_used, cmd_used = exec_args[0]
+    assert py_used.endswith("pythonw.exe")
+    assert cmd_used[0].endswith("pythonw.exe")
