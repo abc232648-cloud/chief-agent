@@ -35,7 +35,7 @@ def test_console_signout_csrf_cookie_revocation_and_redirect(dashboard):
         sign_out_btn.click()
 
         # Verify page redirects to /login
-        page.wait_for_url(re.compile(r'.*/login.*'), timeout=10000)
+        expect(page).to_have_url(re.compile(r'.*/login.*'), timeout=10000)
 
         # Verify request intercepted
         assert len(logout_requests) == 1
