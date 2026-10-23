@@ -86,6 +86,7 @@ def test_indexed_rename_matches_legacy_after_verified_restore(dashboard):
     assert len(history)==2 and history[0]['payload']['name']=='Current label'
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_unknown_date_and_rename(dashboard):
     from playwright.sync_api import sync_playwright, expect
     with sync_playwright() as pw:

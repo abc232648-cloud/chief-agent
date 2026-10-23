@@ -1,6 +1,8 @@
+import pytest
 from playwright.sync_api import expect, sync_playwright
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_work_shell_is_available_even_when_context_load_fails(dashboard):
     d = dashboard
     with sync_playwright() as p:
@@ -17,6 +19,7 @@ def test_work_shell_is_available_even_when_context_load_fails(dashboard):
             browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_owner_farm_ai_controls_do_not_wait_for_full_refresh(dashboard):
     d = dashboard
     with sync_playwright() as p:

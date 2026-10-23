@@ -54,6 +54,7 @@ def test_invalid_photos_rejected(raw):
     with pytest.raises(ValueError):photos.normalize_png(base64.b64encode(raw).decode())
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_upload_converts_to_bounded_metadata_free_png(dashboard):
     from playwright.sync_api import sync_playwright,expect
     d=dashboard;staff.append(d.store,d.credentials['principal'],event())

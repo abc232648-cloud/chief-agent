@@ -36,6 +36,7 @@ def test_intermediate_symlink_blocked(tmp_path,monkeypatch):
     with pytest.raises(PermissionError):read_registered(store,tmp_path,'reports',register(store,tmp_path/'logs/x.txt'))
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_bad_download_displays_error_instead_of_saving_json(dashboard):
     from playwright.sync_api import sync_playwright, expect
     from browser_navigation import navigate

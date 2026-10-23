@@ -59,7 +59,12 @@ async function loadFoundation(page){
 
     const rows=await api('/api/system-health');
 
-    box.innerHTML='<p>Observed health is independent of desired mode. UNKNOWN means health has not been established; it is not a passing test.</p>'+foundationTable([['Component',r=>r.node.id],['Observed health','status'],['Desired mode','desired_mode'],['Observation / dependency reason','reason']],rows);return;
+    const labels={HEALTHY:'Check passed',DEGRADED:'Needs attention',UNAVAILABLE:'Unavailable',UNKNOWN:'Not established'};
+    const columns=[['Component',r=>r.label||capabilityName(r.node.id)],['Check result',r=>r.monitoring==='NOT_CONFIGURED'?'Not configured':labels[r.status]||'Not established'],['What this check establishes','reason']];
+    const local=rows.filter(r=>r.scope==='LOCAL_READINESS');
+    const monitored=rows.filter(r=>r.scope!=='LOCAL_READINESS'&&r.monitoring!=='NOT_MONITORED');
+    const unmonitored=rows.filter(r=>r.monitoring==='NOT_MONITORED');
+    box.innerHTML='<p>These checks observe this installation. Enabled does not mean healthy. They do not call AI providers, spend money or repair services.</p><h2>Service observations</h2>'+foundationTable(columns,monitored)+'<h2>Local readiness checks</h2>'+foundationTable(columns,local)+'<details><summary>Components without a direct monitor ('+unmonitored.length+')</summary><p>Not monitored means no direct observation is available. It does not mean passed or failed. Required dependencies can still restrict operation.</p>'+foundationTable([['Component',r=>capabilityName(r.node.id)],['Monitoring',()=> 'Not monitored'],['Dependency assessment','reason']],unmonitored)+'</details>';return;
 
   }
 

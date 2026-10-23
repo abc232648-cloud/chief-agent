@@ -68,4 +68,10 @@ class SystemHealth:
         return tuple(results[node] for node in sorted(results))
 
     def describe(self):
-        return [asdict(result) for result in self.snapshot()]
+        rows=[]
+        for result in self.snapshot():
+            row=asdict(result)
+            row['monitoring']='MONITORED' if result.node in self.probes else 'NOT_MONITORED'
+            row['scope']='COMPONENT_HEALTH'
+            rows.append(row)
+        return rows

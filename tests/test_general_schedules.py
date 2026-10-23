@@ -88,6 +88,7 @@ def test_concurrent_delivery_creates_one_notice(dashboard):
         assert con.execute("SELECT count(*) FROM notifications WHERE title='Scheduled reminder'").fetchone()[0]==1
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 @pytest.mark.parametrize("width",[390,1280])
 def test_browser_create_and_pause_reminder(dashboard,width):
     from playwright.sync_api import sync_playwright, expect

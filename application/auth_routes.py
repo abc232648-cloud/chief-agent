@@ -38,14 +38,39 @@ def action_domain(store,identity):
 
 def requirement(method,path,body,store):
     read=method in {'GET','HEAD'};parts=path.strip('/').split('/')
+    if path == '/api/domains/selection':
+        if read:return ('audit.read', None, None, False)
+        from control.domain_selection import normalize, current_selection
+        selection=normalize(body)
+        current=current_selection(store)
+        return ('installation.manage', None, path, current is not None and current != selection)
     if path.startswith('/api/domains/'):
         return ('work.read' if read else 'work.request',parts[2],path,False)
     if path.startswith('/api/actions/'):
         identity=parts[-1]
         return ('work.approve',action_domain(store,identity),'action:'+identity,True)
     if path.startswith('/api/agent-controls/'):
-        pause=body=={'running':False}
-        return ('safety.pause' if pause else 'controls.manage',parts[-1],path,not pause)
+        # Determine allowed fields and enforce strict validation for agent control requests
+        allowed_keys = {'running', 'enabled', 'autostart'}
+        body_keys = set(body.keys())
+        # Reject any unknown fields
+        if not body_keys.issubset(allowed_keys):
+            return ('UNSUPPORTED', None, None, True)
+        # Ensure all provided values are booleans
+        for k in body_keys:
+            if not isinstance(body.get(k), bool):
+                return ('UNSUPPORTED', None, None, True)
+        # Exact pause request: only {'running': False}
+        if body_keys == {'running'} and body.get('running') is False:
+            # Emergency pause: no reauthentication, no extra authority beyond safety.pause
+            return ('safety.pause', parts[-1], path, False)
+        # Exact start request: only {'running': True}
+        if body_keys == {'running'} and body.get('running') is True:
+            # Routine start: existing control-management authority, no extra reauth
+            return ('controls.manage', parts[-1], path, False)
+        # Any request that modifies enabled or autostart (or mixes fields) requires control-management authority
+        # and a sensitive operation flag to trigger reauthentication.
+        return ('controls.manage', parts[-1], path, True)
     if path.startswith('/api/applications/') and path.endswith('/retry'):
         return ('work.approve','jobs','application:'+parts[2],True)
     if path.startswith('/api/facts/') and method=='POST' and body.get('status')=='USER_CONFIRMED':

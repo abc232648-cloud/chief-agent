@@ -171,6 +171,7 @@ def test_transport_redacts_provider_errors_and_requires_exact_model(connected,mo
     assert 'synthetic-private-key' not in str(exc.value)
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_farm_home_routes_owner_to_actual_activation_controls(connected):
     from playwright.sync_api import sync_playwright,expect
     d=connected.d
@@ -190,6 +191,7 @@ def test_farm_home_routes_owner_to_actual_activation_controls(connected):
         finally:browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_models_page_assigns_only_farm_after_explicit_qualification(connected):
     from playwright.sync_api import sync_playwright,expect
     d=connected.d

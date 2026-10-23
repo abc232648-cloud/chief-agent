@@ -103,6 +103,7 @@ def test_dispute_rejects_amount_and_non_obligation_reference(dashboard):
             books.append(d.store,owner,entry(**{'kind':'DISPUTE_DEBT','amount_minor':0,'reference':debt['event_id'],**changes}))
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_opening_debt_is_not_sale(dashboard):
     from playwright.sync_api import sync_playwright, expect
     with sync_playwright() as pw:

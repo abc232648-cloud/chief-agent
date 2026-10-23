@@ -1,19 +1,75 @@
 let currentAgent=null, agentDefinitions=[], sessionSignInEnabled=false;
 const systemPages=[['overview','Home'],['domains','Agents'],['actions','Approvals'],['notifications','Notifications'],['reports','Reports'],['audit','Activity'],['scheduler','Schedules'],['settings','Settings'],['ai','AI routing']];
-const statusText=value=>({UNKNOWN:'Not established',SUBMISSION_UNKNOWN:'Submission confirmation missing — review required',WORKER_NOT_CONNECTED:'Worker connection lost or not started',IDLE:'Ready · no task running',WORKING:'Working',PAUSED:'Paused',DISABLED:'Access disabled',NO_ACTION:'No action was selected',INTERRUPTED:'Interrupted by service restart'}[value]||String(value||'No status recorded').replaceAll('_',' '));
+const statusText=value=>({UNKNOWN:'Not established',SETUP_REQUIRED:'Setup required',SUBMISSION_UNKNOWN:'Submission confirmation missing — review required',WORKER_NOT_CONNECTED:'Worker connection lost or not started',IDLE:'Ready · no task running',WORKING:'Working',PAUSED:'Paused',DISABLED:'Access disabled',NO_ACTION:'No action was selected',INTERRUPTED:'Interrupted by service restart'}[value]||String(value||'No status recorded').replaceAll('_',' '));
 const dateText=value=>value?new Date(typeof value==='number'?value*1000:value).toLocaleString():'No activity recorded';
 const durationText=value=>Math.floor(value/3600)+'h '+Math.floor(value%3600/60)+'m '+Math.floor(value%60)+'s';
 function renderNavigation(selected) {renderChiefNavigation(selected);}
-async function initializeChief(){await refreshChiefContext();await show('overview');await refreshNotifications();}
+let editingDomainSelection=false;
+function editDomainSelection(){
+  if(!canGlobal("installation.manage"))return;
+  editingDomainSelection=true;
+  const dialog=document.getElementById("domainSelectionDialog");
+  dialog.querySelectorAll("input").forEach(input=>input.checked=false);
+  document.getElementById("confirmDomainSelectionBtn").disabled=true;
+  document.getElementById("domainSelectionStatus").textContent="";
+  dialog.showModal();
+}
+function checkDomainSelection(overviewData){
+  const dialog=document.getElementById('domainSelectionDialog');
+  if(!dialog)return;
+  if(!overviewData?.domain_selection && canGlobal('installation.manage')){
+    if(typeof dialog.showModal==='function' && !dialog.open){
+      const checked=dialog.querySelector('input[name="domainChoice"]:checked');
+      if(checked) checked.checked=false;
+      const btn=document.getElementById('confirmDomainSelectionBtn');
+      if(btn) btn.disabled=true;
+      dialog.showModal();
+    }
+  } else if(dialog.open && !editingDomainSelection){
+    dialog.close();
+  }
+}
+function initDomainSelectionModal(){
+  const form=document.getElementById('domainSelectionForm');
+  const dialog=document.getElementById('domainSelectionDialog');
+  const btn=document.getElementById('confirmDomainSelectionBtn');
+  const status=document.getElementById('domainSelectionStatus');
+  if(!form || !dialog || !btn)return;
+  dialog.addEventListener('close',()=>{editingDomainSelection=false;});
+  form.addEventListener('change',()=>{
+    const selected=form.querySelector('input[name="domainChoice"]:checked');
+    btn.disabled=!selected;
+  });
+  form.addEventListener('submit',async e=>{
+    e.preventDefault();
+    const selected=form.querySelector('input[name="domainChoice"]:checked');
+    if(!selected)return;
+    btn.disabled=true;
+    if(status) status.textContent='Configuring workspace focus…';
+    try{
+      const res=await postJson('/api/domains/selection',{selection:selected.value});
+      if(status) status.textContent=res.message||'Configured.';
+      dialog.close();
+      await refreshChiefContext();
+      await loadChief();
+      renderNavigation(currentAgent||'overview');
+      applyChiefVisibility();
+    }catch(err){
+      if(status) status.textContent=err.message||String(err);
+      btn.disabled=false;
+    }
+  });
+}
+async function initializeChief(){await refreshChiefContext();initDomainSelectionModal();await show('overview');await refreshNotifications();}
 function controlButtons(agent){return '<div class="agentControls">'+[['enabled','Access enabled'],['autostart','Start with Chief Agent']].map(([key,label])=>'<button class="switch" role="switch" aria-checked="'+!!agent[key]+'" data-action="agent-control" data-id="'+esc(agent.id)+'" data-key="'+key+'" data-value="'+!agent[key]+'">'+label+' <b>'+ (agent[key]?'On':'Off')+'</b></button>').join('')+'<button class="action" data-action="agent-control" data-id="'+esc(agent.id)+'" data-key="running" data-value="'+!agent.running+'"'+(!agent.enabled?' disabled':'')+'>'+(agent.running?'Pause agent':'Start agent')+'</button></div>';}
-function agentCard(agent,controls=false,openLink=true){return '<article class="card agentCard"><p class="eyebrow">SPECIALIST AGENT</p><h2>'+esc(agent.label)+'</h2><p class="pill">'+esc(statusText(agent.status))+'</p><p>'+esc(agent.description)+'</p><dl><dt>Current task</dt><dd>'+esc(agent.current_task||'No task running')+'</dd><dt>Last activity</dt><dd>'+esc(dateText(agent.last_activity))+'</dd><dt>Recorded working time</dt><dd>'+esc(durationText(agent.working_seconds))+'</dd></dl>'+(controls?controlButtons(agent):'')+(openLink?'<button class="primary" data-action="open-agent" data-id="'+esc(agent.id)+'">Open '+esc(agent.label)+'</button>':'')+'</article>';}
-async function loadChief(){const d=await api('/api/ui/overview');agentDefinitions=d.agents;
+function agentCard(agent,controls=false,openLink=true){return '<article class="card agentCard"><p class="eyebrow">SPECIALIST AGENT</p><h2>'+esc(agent.label)+'</h2><p class="pill">'+esc(statusText(agent.status))+'</p>'+(agent.setup_message?'<p>'+esc(agent.setup_message)+'</p>':'')+'<p>'+esc(agent.description)+'</p><dl><dt>Current task</dt><dd>'+esc(agent.current_task||'No task running')+'</dd><dt>Last activity</dt><dd>'+esc(dateText(agent.last_activity))+'</dd><dt>Recorded working time</dt><dd>'+esc(durationText(agent.working_seconds))+'</dd></dl>'+(controls?controlButtons(agent):'')+(openLink?'<button class="primary" data-action="open-agent" data-id="'+esc(agent.id)+'">Open '+esc(agent.label)+'</button>':'')+'</article>';}
+async function loadChief(){const d=await api('/api/ui/overview');agentDefinitions=d.agents;checkDomainSelection(d);
   document.getElementById('chiefMetrics').innerHTML=[['Enabled agents',d.agents.filter(a=>a.enabled).length],['Working now',d.agents.filter(a=>a.status==='WORKING').length],['Awaiting approval',d.counts.actions],['Unread notifications',d.counts.notifications]].map(([label,n])=>'<div class="card"><p class="muted">'+label+'</p><strong class="stat">'+n+'</strong></div>').join('');
   document.getElementById('chiefAgents').innerHTML=d.agents.map(a=>agentCard(a)).join('');
   document.getElementById('chiefAttention').innerHTML='<p>'+esc(d.worker_connected?'Worker connected. Agent controls govern what may run.':'Worker is not reporting a recent heartbeat. Check the service before expecting work.')+'</p><p>Service started: '+esc(dateText(d.service_started_at))+'</p><button class="action" data-action="show" data-target="actions">Review approvals ('+d.counts.actions+')</button><button class="action" data-action="show" data-target="notifications">Open notifications</button>';
 }
 async function loadDomains(){const d=await api('/api/ui/overview');agentDefinitions=d.agents;document.getElementById('domainList').innerHTML=d.agents.map(a=>agentCard(a,true)).join('');}
-async function openAgent(id){await show('agentDetail',id);}
+async function openAgent(id){if(id==='jobs')await show('jobOverview','jobs');else await show('agentDetail',id);}
 async function loadAgentHome(){const revision=navigationRevision,selected=currentAgent;
   const active=()=>revision===navigationRevision&&selected===currentAgent&&!document.getElementById('agentDetail').classList.contains('hidden');
   if(!active())return;
@@ -53,7 +109,8 @@ function chiefActions(button){const b=button.dataset;return {
  'farm-ai-setup':async()=>{let failure=null;try{await show('farmRecords');}catch(error){failure=error;}const card=document.getElementById('farmAssistantCard');openFarmSection('farmAssistantCard');card.scrollIntoView({block:'start'});card.setAttribute('tabindex','-1');card.focus({preventScroll:true});if(failure)throw failure;},
  'toggle-sidebar':()=>{const closed=document.body.classList.toggle('sidebarCollapsed');localStorage.setItem('chiefSidebar',closed?'collapsed':'open');button.setAttribute('aria-expanded',String(!closed));},
  'open-agent':()=>openAgent(b.id),
- 'agent-control':async()=>{const result=await postJson('/api/agent-controls/'+b.id,{[b.key]:b.value==='true'});document.getElementById('domainResult').textContent=result.message;await loadDomains();if(currentAgent)await loadAgentHome();},
+ 'edit-domain-selection':()=>editDomainSelection(),
+ 'agent-control':async()=>{const result=await postJson('/api/agent-controls/'+b.id,{[b.key]:b.value==='true'});document.getElementById('domainResult').textContent=result.message;await loadDomains();if(currentAgent==='jobs')await loadJobOverview();else if(currentAgent)await loadAgentHome();else await loadChief();},
  'notice-read':()=>updateNotice(b.id,b.value==='true'),
  'notice-open':async()=>{await updateNotice(b.id,true);await show(b.target);document.getElementById('notificationDropdown').open=false;},
  'read-all':()=>updateNotice('all',true),

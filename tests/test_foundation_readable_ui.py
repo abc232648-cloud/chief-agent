@@ -1,4 +1,6 @@
 """Owner pages explain actual limits without exposing internal catalog dumps."""
+import pytest
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_foundation_pages_are_readable_and_links_reach_real_pages(dashboard):
     from playwright.sync_api import sync_playwright,expect
     with sync_playwright() as p:

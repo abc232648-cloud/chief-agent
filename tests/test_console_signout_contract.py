@@ -1,9 +1,11 @@
 """Tests for on-farm Chief Console sign-out verification, CSRF enforcement, and error resilience."""
+import pytest
 import re
 from playwright.sync_api import sync_playwright, expect
 from tests.test_identity_http import request
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_console_signout_csrf_cookie_revocation_and_redirect(dashboard):
     """Verify sign-out submits X-Chief-CSRF header, revokes server session, and redirects to login."""
     d = dashboard
@@ -50,6 +52,7 @@ def test_console_signout_csrf_cookie_revocation_and_redirect(dashboard):
         browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_console_signout_failed_revocation_shows_retryable_error_and_does_not_redirect(dashboard):
     """Verify sign-out does not swallow logout errors, displays dashboard error, and keeps user on page."""
     d = dashboard
@@ -92,6 +95,7 @@ def test_console_signout_failed_revocation_shows_retryable_error_and_does_not_re
         browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_console_signout_csrf_error_shows_retryable_error(dashboard):
     """Verify that if /api/auth/logout fails with CSRF rejection, sign-out fails truthfully without redirecting."""
     d = dashboard

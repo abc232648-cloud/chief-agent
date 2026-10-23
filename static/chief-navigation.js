@@ -13,14 +13,14 @@ function renderChiefNavigation(selected){
   document.getElementById('workspaceContext').textContent=agent?'SPECIALIST WORKSPACE':'SYSTEM WORKSPACE';
   const button=([id,label])=>canPage(id)?'<button data-action="show" data-target="'+esc(id)+'"'+(selected===id?' aria-current="page"':'')+'>'+esc(label)+'</button>':'';
   const group=([label,pages])=>{const content=pages.map(button).join('');return content?'<details class="navSection" open><summary>'+esc(label)+'</summary>'+content+'</details>':'';};
-  const domains='<details class="navSection" open><summary>Domains</summary>'+agentDefinitions.map(d=>'<details class="domainNav" data-domain="'+esc(d.id)+'"'+(currentAgent===d.id?' open':'')+'><summary>'+esc(d.label)+'</summary><button data-action="open-agent" data-id="'+esc(d.id)+'">Agent home</button>'+(d.pages||[]).map(button).join('')+'</details>').join('')+'</details>';
+  const domains='<details class="navSection" open><summary>Domains</summary>'+agentDefinitions.map(d=>{const pages=d.id==='jobs'?(d.pages||[]).filter(p=>p[0]!=='jobOverview'):(d.pages||[]);return '<details class="domainNav" data-domain="'+esc(d.id)+'"'+(currentAgent===d.id?' open':'')+'><summary>'+esc(d.label)+'</summary><button data-action="open-agent" data-id="'+esc(d.id)+'">Agent home</button>'+pages.map(button).join('')+'</details>';}).join('')+'</details>';
   document.getElementById('navLinks').innerHTML=group(chiefGroups[0])+domains+chiefGroups.slice(1).map(group).join('');
   document.getElementById('notificationDropdown').hidden=!canPage('notifications');
 }
 function uiActionAllowed(b){
   const a=b.action;
   if(['user-create','user-disable','users-refresh'].includes(a))return !!chiefContext?.user_management?.roles.length;
-  if(['model-register','model-check'].includes(a))return canGlobal('installation.manage');
+  if(['model-register','model-check','edit-domain-selection'].includes(a))return canGlobal('installation.manage');
   if(a==='workspace-home')return currentAgent?canDomain('work.read',currentAgent):canPage('overview');
   if(a==='show')return canPage(b.target);
   if(a==='farm-ai-setup')return canPage('farmRecords');

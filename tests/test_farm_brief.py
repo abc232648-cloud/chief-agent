@@ -68,6 +68,7 @@ def test_schedule_rejects_invalid_or_duplicate_requirements(dashboard,monkeypatc
     with pytest.raises(ValueError):brief.configure(d.store,owner,{**p,'requirements':p['requirements']*2})
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_daily_brief_phone_and_laptop(dashboard):
     d=dashboard
     bookkeeping.append(d.store,d.credentials['principal'],entry(counterparty='PRIVATE_BRIEF_BUYER'))

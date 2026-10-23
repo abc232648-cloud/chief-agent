@@ -15,13 +15,14 @@ class AgentControls:
         self.store=store;self.registry=registry
         self.components=components
         with store._connect() as con:
-            if getattr(store,'operational',False):
+            if getattr(store, 'operational', False):
                 for domain in self.registry.domains:
-                    if not con.execute('SELECT 1 FROM agent_controls WHERE domain=?',(domain,)).fetchone():raise ValueError('Operational domain controls require explicit preparation.')
+                    if not con.execute('SELECT 1 FROM agent_controls WHERE domain=?', (domain,)).fetchone():
+                        raise ValueError('Operational domain controls require explicit preparation.')
                 return
             con.executescript(SCHEMA)
             for domain in self.registry.domains:
-                con.execute('INSERT OR IGNORE INTO agent_controls(domain) VALUES(?)',(domain,))
+                con.execute('INSERT OR IGNORE INTO agent_controls(domain) VALUES(?)', (domain,))
 
     def allowed(self,domain):
         with self.store._connect() as con:
@@ -46,18 +47,23 @@ class AgentControls:
         with self.store._connect() as con:
             return self._components_allowed(agent.domain,con)
 
-    def change(self,domain,payload):
+    def change(self,domain,payload,con=None):
         self.registry.resolve(domain)
         if not payload or set(payload)-{'enabled','autostart','running'} or any(type(v) is not bool for v in payload.values()):
             raise ValueError('Supply enabled, autostart or running as true/false.')
-        with self.store._connect() as con:
-            row=dict(con.execute('SELECT * FROM agent_controls WHERE domain=?',(domain,)).fetchone())
+        def _run_change(connection):
+            row=dict(connection.execute('SELECT * FROM agent_controls WHERE domain=?',(domain,)).fetchone())
             row.update(payload)
-            if not row['enabled']:row['running']=False
-            con.execute('UPDATE agent_controls SET enabled=?,autostart=?,running=? WHERE domain=?',(row['enabled'],row['autostart'],row['running'],domain))
-        from database.store_extensions import add_audit
-        add_audit(self.store,'agents','Changed agent controls',actor='user',data={'agent':domain,**payload})
-        return {'status':'UPDATED','message':'New work follows this setting. A running action finishes its current guarded operation.'}
+            if not row['enabled']:
+                row['running']=False
+            connection.execute('UPDATE agent_controls SET enabled=?,autostart=?,running=? WHERE domain=?',(row['enabled'],row['autostart'],row['running'],domain))
+            from database.store_extensions import add_audit
+            add_audit(self.store,'agents','Changed agent controls',actor='user',data={'agent':domain,**payload},con=connection)
+            return {'status':'UPDATED','message':'New work follows this setting. A running action finishes its current guarded operation.'}
+        if con is not None:
+            return _run_change(con)
+        with self.store._connect() as connection:
+            return _run_change(connection)
 
     def startup(self):
         with self.store._connect() as con:
@@ -96,7 +102,7 @@ class AgentControls:
             result.append({**definition,**row,'status':status,'last_activity':(history[0]['finished'] or history[0]['started']) if history else None,
                 'current_task':active['task'] if active else None,'working_seconds':round((totals.get(domain) or 0)+(now-active['started'] if active and healthy else 0)),
                 'recent_activity':history[:10]})
-        return {'agents':result,'worker_connected':healthy,'heartbeat_at':heartbeat or None,'service_started_at':float(state.get('worker_started',0)) or None}
+        return {'agents':result,'worker_connected':healthy,'heartbeat_at':heartbeat or None,'service_started_at':float(state.get('worker_started',0)) or None,'domain_selection':state.get('domain_selection')}
 
     def claim_command(self):
         with self.store._connect() as con:

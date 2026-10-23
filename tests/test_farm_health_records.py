@@ -67,6 +67,7 @@ def test_expired_actual_treatment_warning_and_audit_atomicity(dashboard,monkeypa
     assert health.overview(d.store,p)['total']==1
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_http_and_browser_entry_correction(dashboard):
     from playwright.sync_api import sync_playwright,expect
     d=dashboard;flock(d)

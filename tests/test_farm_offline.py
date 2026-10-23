@@ -14,6 +14,7 @@ from identity.service import IdentityService
 PHRASE='Synthetic offline fixture passphrase only'
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 @pytest.mark.parametrize('status', [200, 401, 403, 503])
 def test_offline_shell_fallback_preserves_origin_authority(dashboard, monkeypatch, status):
     d = dashboard
@@ -57,6 +58,7 @@ def work_photo(d):
     return work,{'event_id':str(uuid.uuid4()),'work_id':work['event_id'],'image_base64':base64.b64encode(png()).decode()}
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_offline_restart_encrypted_queue_and_explicit_sync(dashboard):
     d=dashboard;e,payload=configured(d)
     with sync_playwright() as p:
@@ -90,6 +92,7 @@ def test_offline_restart_encrypted_queue_and_explicit_sync(dashboard):
         finally:browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_wrong_account_conflicts_and_lost_response_never_duplicate(dashboard):
     d=dashboard;_,payload=configured(d);service=IdentityService(d.store)
     service.create_user(d.credentials['principal'],'other-offline',PASSWORD,'Worker',('farming',))
@@ -123,6 +126,7 @@ def test_wrong_account_conflicts_and_lost_response_never_duplicate(dashboard):
         finally:browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_offline_media_is_encrypted_and_only_clears_after_authoritative_listing(dashboard):
     d=dashboard;work,payload=work_photo(d)
     with sync_playwright() as p:
@@ -141,6 +145,7 @@ def test_offline_media_is_encrypted_and_only_clears_after_authoritative_listing(
         finally:browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_media_upload_receipt_is_retained_until_independent_reconciliation(dashboard):
     d=dashboard;work,payload=work_photo(d)
     with sync_playwright() as p:
@@ -165,6 +170,7 @@ def test_media_upload_receipt_is_retained_until_independent_reconciliation(dashb
         finally:browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_media_authoritative_metadata_mismatch_fails_closed(dashboard):
     d=dashboard;_,payload=work_photo(d)
     with sync_playwright() as p:

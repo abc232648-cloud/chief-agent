@@ -1,3 +1,4 @@
+import pytest
 import json
 from domains.jobs.record_coverage import summarize
 from identity.service import IdentityService
@@ -26,6 +27,7 @@ def test_snapshot_presence_and_revocation_never_grant_authority():
     assert result['authority']=='NONE'
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_http_privacy_read_only_and_browser_coverage(dashboard):
     from playwright.sync_api import sync_playwright,expect
     d=dashboard;d.store.add_job({'id':'coverage-job','title':'Synthetic role','company':'Synthetic employer'})

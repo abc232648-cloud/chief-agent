@@ -33,6 +33,7 @@ def test_times_corrections_and_worker_privacy(dashboard):
     with pytest.raises(PermissionError):labour.overview(d.store,worker)
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_labour_entry(dashboard):
     from playwright.sync_api import sync_playwright,expect
     with sync_playwright() as pw:
@@ -46,6 +47,7 @@ def test_browser_labour_entry(dashboard):
         finally:browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_correction_then_expense_link_preserves_cost(dashboard):
     from playwright.sync_api import sync_playwright,expect
     d=dashboard;p=d.credentials['principal'];w=work();labour.append(d.store,p,w)
@@ -83,6 +85,7 @@ def test_browser_correction_then_expense_link_preserves_cost(dashboard):
         finally:browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_correction_waits_for_record_refresh(dashboard):
     """A slow refresh must not expose old actionable rows after a save."""
     from playwright.sync_api import sync_playwright, expect

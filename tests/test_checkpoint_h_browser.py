@@ -1,13 +1,15 @@
 """Actual browser acceptance; a blocked launch remains a failure, never a pass."""
+import pytest
 from playwright.sync_api import sync_playwright,expect
 from tests.browser_navigation import navigate
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_h_grouped_navigation_health_and_unqualified_runtime(dashboard):
     with sync_playwright() as p:
         browser=p.chromium.launch(headless=True)
         page=browser.new_page();page.goto(dashboard.url)
         expect(page.locator('#navLinks')).to_contain_text('Work & Control')
-        navigate(page,'health');expect(page.locator('#healthContent')).to_contain_text('UNKNOWN')
+        navigate(page,'health');expect(page.locator('#healthContent')).to_contain_text('Not established')
         navigate(page,'runtime');expect(page.locator('#runtimeContent')).to_contain_text('No runtime is qualified or selected')
         assert page.locator('#runtimeContent button').count()==0
         navigate(page,'devices');expect(page.locator('#devicesContent')).to_contain_text('Device connections are not available yet')
@@ -19,6 +21,7 @@ def test_h_grouped_navigation_health_and_unqualified_runtime(dashboard):
         browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_h_worker_sees_only_scoped_workspace(dashboard):
     from identity.service import IdentityService
     from tests.checkpoint_f_fixture import PASSWORD
@@ -40,6 +43,7 @@ def test_h_worker_sees_only_scoped_workspace(dashboard):
         context.close();browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_late_navigation_cannot_replace_newer_agent_selection(dashboard):
     with sync_playwright() as p:
         browser=p.chromium.launch(headless=True)
@@ -64,6 +68,7 @@ def test_late_navigation_cannot_replace_newer_agent_selection(dashboard):
         browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_late_agent_details_cannot_reset_newer_navigation(dashboard):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -72,7 +77,7 @@ def test_late_agent_details_cannot_reset_newer_navigation(dashboard):
             page.goto(dashboard.url)
             expect(page.locator('#chiefAgents')).to_contain_text('Job Agent')
             held = []
-            page.route('**/api/domains/jobs', lambda route: held.append(route))
+            page.route('**/api/ui/job-state', lambda route: held.append(route))
             page.evaluate("() => { window.pendingAgent = openAgent('jobs'); }")
             for _ in range(200):
                 if held: break

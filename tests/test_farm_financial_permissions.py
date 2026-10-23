@@ -45,6 +45,7 @@ def test_owner_toggles_enforced_without_new_login_and_cannot_grant_approval(dash
         permissions.configure(d.store,owner,{**payload,'event_id':str(uuid.uuid4())})
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_financial_permission_page_and_manager_endpoint_denial(dashboard):
     from playwright.sync_api import sync_playwright, expect
     d=dashboard;owner=d.credentials['principal'];service=IdentityService(d.store)

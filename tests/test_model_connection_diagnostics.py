@@ -38,6 +38,7 @@ def test_key_unlock_failure_never_contacts_provider(tmp_path,monkeypatch):
     assert result['code']=='KEY_UNAVAILABLE' and 'SECRET' not in json.dumps(result)
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_job_home_has_workspace_links_without_reopening_itself(dashboard):
     from playwright.sync_api import sync_playwright,expect
     with sync_playwright() as p:
@@ -45,12 +46,13 @@ def test_job_home_has_workspace_links_without_reopening_itself(dashboard):
         try:
             page=browser.new_page();page.goto(dashboard.url)
             page.locator('#chiefAgents button[data-id="jobs"]').click()
-            expect(page.locator('#agentHome h1')).to_have_text('Job Agent')
-            assert page.locator('#agentHome button[data-action="open-agent"]').count()==0
-            assert page.locator('#agentHome button[data-action="show"]').count()>0
+            expect(page.locator('#jobOverview h1')).to_have_text('Job Agent')
+            assert page.locator('#jobOverview button[data-action="open-agent"]').count()==0
+            expect(page.locator('#jobWorkspaceButtons').get_by_role('button',name='Opportunities',exact=True)).to_be_visible()
         finally:browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 @pytest.mark.parametrize('agent,page_id,title',[('jobs','sources','Job Agent'),('farming','farmRecords','Farm Agent')])
 @pytest.mark.parametrize('home_selector',['#workspaceName','button.brand'])
 def test_agent_header_and_brand_return_to_agent_home(dashboard,agent,page_id,title,home_selector):
@@ -60,10 +62,12 @@ def test_agent_header_and_brand_return_to_agent_home(dashboard,agent,page_id,tit
         try:
             page=browser.new_page();page.goto(dashboard.url)
             page.locator('#chiefAgents button[data-id="'+agent+'"]').click()
-            expect(page.locator('#agentHome h1')).to_have_text(title)
+            home='#jobOverview' if agent=='jobs' else '#agentHome'
+            expect(page.locator(home+' h1')).to_have_text(title)
             page.locator('#navLinks button[data-target="'+page_id+'"]').click()
             expect(page.locator('#'+page_id)).to_be_visible()
             page.locator(home_selector).click()
-            expect(page.locator('#agentDetail')).to_be_visible()
-            expect(page.locator('#agentHome h1')).to_have_text(title)
+            expect(page.locator('#jobOverview' if agent=='jobs' else '#agentDetail')).to_be_visible()
+            home='#jobOverview' if agent=='jobs' else '#agentHome'
+            expect(page.locator(home+' h1')).to_have_text(title)
         finally:browser.close()

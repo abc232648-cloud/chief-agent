@@ -50,6 +50,7 @@ def test_ai_component_denial_uses_persisted_state(dashboard,node):
     with pytest.raises(PermissionError):live_ai.guard(d.store,p)
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_finance_reference_selection_is_visible_and_never_saves(dashboard):
     from playwright.sync_api import sync_playwright,expect
     d=dashboard;p=d.credentials['principal'];sale=entry(kind='SALE')

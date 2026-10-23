@@ -50,6 +50,7 @@ def test_operator_cli_writes_existing_schema_only(store,monkeypatch,capsys):
     assert read(store)['events'][0]['source_sha256']==e['source_sha256']
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_update_history_browser_labels_records_as_observations(dashboard):
     from playwright.sync_api import sync_playwright,expect
     from tests.browser_navigation import navigate

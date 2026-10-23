@@ -1,5 +1,6 @@
 """Checkpoint A import direction, including relative and literal dynamic imports."""
 import ast
+import os
 import importlib.util
 from pathlib import Path
 
@@ -34,7 +35,11 @@ def belongs(module, package):
 
 def source_graph():
     graph = {}
-    for path in ROOT.rglob('*.py'):
+    paths = []
+    for directory, dirs, files in os.walk(ROOT):
+        dirs[:] = [d for d in dirs if d not in {'venv', '.venv', 'node_modules', '.git', '__pycache__', 'tests', 'work'}]
+        paths.extend(Path(directory) / name for name in files if name.endswith('.py'))
+    for path in paths:
         relative = path.relative_to(ROOT)
         if relative.parts[0] in {'tests', 'work'} or '__pycache__' in relative.parts:
             continue

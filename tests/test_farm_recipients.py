@@ -95,6 +95,7 @@ def test_revocation_between_plan_and_dispatch(dashboard,monkeypatch):
         assert {r['recipient'] for r in recipients.rows(con,recipients.DELIVERY)}=={owner.id}
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_owner_browser_recipient_settings(dashboard):
     from playwright.sync_api import sync_playwright,expect
     d=dashboard;owner=d.credentials['principal']

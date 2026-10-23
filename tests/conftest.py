@@ -165,3 +165,12 @@ def synthetic_farm_timezone(monkeypatch):
     from zoneinfo import ZoneInfo
     import domains.farming.timezone as farm_time
     monkeypatch.setattr(farm_time, "host_zone", lambda: ZoneInfo("Africa/Lagos"))
+
+
+@pytest.fixture
+def configured_both_workspace(dashboard):
+    """Explicit existing-installation state for tests of post-onboarding UI."""
+    from test_dashboard_runtime import request
+    code, _, result = request(dashboard, '/api/domains/selection', 'POST', {'selection': 'both'})
+    assert code == 200 and result['domain_selection'] == 'both'
+    return dashboard

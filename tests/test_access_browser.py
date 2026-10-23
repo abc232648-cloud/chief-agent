@@ -41,6 +41,7 @@ def assert_private_session(path):
     assert any(r['sid'] in {acl['owner'],'S-1-3-4'} and r['rights'] & 1 for r in grants),acl
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_sources_controls_in_actual_dashboard(dashboard):
     with sync_playwright() as p:
         browser=p.chromium.launch(headless=True);page=browser.new_page()

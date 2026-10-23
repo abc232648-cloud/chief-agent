@@ -152,6 +152,7 @@ def test_saved_plan_pagination_and_concurrent_stale_write(dashboard):
     assert not {r['payload']['event_id'] for r in first['records']} & {r['payload']['event_id'] for r in second['records']}
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 @pytest.mark.parametrize('width', [390, 1366])
 def test_browser_planning_preserves_drafts_and_saved_versions(dashboard, width):
     from playwright.sync_api import sync_playwright, expect

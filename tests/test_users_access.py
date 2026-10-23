@@ -79,6 +79,7 @@ def test_last_owner_and_unknown_scope_fail_closed(dashboard):
     assert request(d, '/api/auth/session', raw=raw)[0] == 200
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_owner_user_management_browser(dashboard):
     from playwright.sync_api import sync_playwright, expect
     d=dashboard
@@ -108,6 +109,7 @@ def test_owner_user_management_browser(dashboard):
             browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 @pytest.mark.parametrize('role', ['Worker'])
 def test_worker_cannot_open_users_in_browser(dashboard, role):
     from playwright.sync_api import sync_playwright, expect
@@ -158,6 +160,7 @@ def test_scoped_management_never_reaches_other_domains_or_privileged_roles(dashb
         assert con.execute('SELECT enabled FROM human_identities WHERE id=?',(mixed,)).fetchone()[0] == 1
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_manager_browser_exposes_only_scoped_worker_management(dashboard):
     from playwright.sync_api import sync_playwright, expect
     d=dashboard; service=IdentityService(d.store)
