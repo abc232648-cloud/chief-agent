@@ -44,6 +44,7 @@ def test_question_scope_and_live_provider_pending(dashboard):
     with pytest.raises(ValueError):assistant.ask(d.store,d.credentials['principal'],{'question':'x'*1501})
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_farm_brand_question_browser_and_logout(dashboard):
     from playwright.sync_api import sync_playwright,expect
     d=dashboard;service=IdentityService(d.store)

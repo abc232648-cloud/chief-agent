@@ -22,10 +22,22 @@ def get(handler,store,root,path,query,*,registry,services=None):
         handler.json(describe(store));return True
     params={k:v[-1] for k,v in parse_qs(query).items()}
     if path in ('/api/component-controls','/api/system-health') and services is not None:
-        handler.json(services.controls.describe() if path=='/api/component-controls' else services.health.describe());return True
+        if path=='/api/component-controls':handler.json(services.controls.describe())
+        else:
+            # Application supplies additional local checks; Core remains generic.
+            rows=services.health.describe()
+            local_health=getattr(services,"local_health",None)
+            if local_health is not None:rows+=local_health()
+            handler.json(rows)
+        return True
     if path=='/api/summary-settings':
         from notifications.report import summary_settings
         handler.json(summary_settings(store,registry=registry));return True
+    if path == '/api/domains/selection':
+        with store._connect() as con:
+            row = con.execute("SELECT value FROM control_state WHERE key='domain_selection'").fetchone()
+            val = row[0] if row else None
+        handler.json({'domain_selection': val});return True
     if path=='/api/chief':
         overview=AgentControls(store,registry).overview();overview['counts']=store.counts()
         overview['job_counts']={'jobs':overview['counts']['jobs'],'applications':overview['counts']['applications']}
@@ -103,6 +115,15 @@ def post(handler,store,root,path,body,*,registry,services=None):
     if path=='/api/summary-settings':
         from notifications.report import summary_settings
         handler.json(summary_settings(store,body,registry=registry));return True
+    if path == '/api/domains/selection':
+        from .domain_selection import select
+        from identity.service import IdentityService
+        service = IdentityService(store)
+        def authorize(changed_existing):
+            service.authorize(handler.human, 'installation.manage', sensitive=changed_existing)
+        result = select(store, registry, body, authorize=authorize)
+        handler.json(result)
+        return True
     if path.startswith('/api/agent-controls/'):
         handler.json(AgentControls(store,registry).change(parts[-1],body));return True
     if path=='/api/notification-preferences':handler.json(notifications.preferences(store,body));return True

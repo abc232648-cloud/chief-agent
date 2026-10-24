@@ -7,6 +7,7 @@ from tests.test_farm_journal import record
 from domains.farming import journal
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 @pytest.mark.parametrize('chief_role,farm_role,setup_visible,finance_visible',[
     ('Worker','WORKER',False,False),('Worker','SUPERVISOR',False,False),
     ('Manager','GENERAL_MANAGER',True,True)])

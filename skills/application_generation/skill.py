@@ -102,7 +102,7 @@ def generate_application_draft(gateway, job: dict[str, Any], candidate_facts: di
     payload = json.dumps({"job": job, "candidate_facts": _truthful_facts(candidate_facts),
                           "selected_cv_metadata": base_cv or {},
                           "selected_cv_text": base_cv_text[:12000]}, ensure_ascii=False, sort_keys=True)
-    response = gateway.generate(AIRequest(SYSTEM_PROMPT, payload, temperature=0.0, max_tokens=768))
+    response = gateway.generate(AIRequest(SYSTEM_PROMPT, payload, temperature=0.0, max_tokens=768, purpose='jobs.draft'))
     draft = _extract(response.text)
     validate_evidence(draft, _truthful_facts(candidate_facts), job)
     return draft, response

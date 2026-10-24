@@ -25,7 +25,8 @@ def test_prepare_production_promotes_verified_isolated_snapshot(tmp_path,monkeyp
     browser=_browser_runtime(tmp_path)
     calls=[]
 
-    def fake_isolated(root,source_root_arg,source_manifest_arg,username,password,*,organization_name=None,farm_name=None):
+    def fake_isolated(root,source_root_arg,source_manifest_arg,username,password,*,organization_name=None,farm_name=None,require_domain_selection=False):
+        assert require_domain_selection is True
         root=Path(root);root.mkdir(mode=0o700)
         db=root/'preview.sqlite3'
         with closing(sqlite3.connect(db)) as con:
@@ -99,3 +100,22 @@ def test_prepare_production_requires_qualified_browser_and_valid_https_host(tmp_
     with pytest.raises(ValueError,match='public host'):
         prepare_instance.prepare_production(tmp_path/'production',tmp_path/'instance.json',tmp_path,tmp_path/'manifest','owner','pw',
             public_host='localhost',browser_runtime=browser)
+
+
+def test_fresh_preparation_waits_for_explicit_workspace_choice(tmp_path):
+    from database.store import Store
+    from application.composition import default_registry
+    from control.agents import AgentControls
+    from control.domain_selection import select, current_selection
+    source=tmp_path/'source';source.mkdir()
+    content=b'SYNTHETIC = True\n';(source/'app.py').write_bytes(content)
+    digest=hashlib.sha256(content).hexdigest()
+    manifest=tmp_path/'manifest.json'
+    manifest.write_text(json.dumps({'files':{'app.py':digest},'source_tree_sha256':hashlib.sha256(('app.py\0'+digest).encode()).hexdigest()}))
+    prepared=prepare_instance.prepare_isolated(tmp_path/'isolated',source,manifest,'owner','Synthetic-Password-42!',require_domain_selection=True)
+    store=Store(prepared['database']);registry=default_registry()
+    controls=AgentControls(store,registry)
+    assert current_selection(store) is None
+    assert not controls.allowed('jobs') and not controls.allowed('farming')
+    select(store,registry,{'selection':'job_only'},authorize=lambda sensitive:None)
+    assert controls.allowed('jobs') and not controls.allowed('farming')

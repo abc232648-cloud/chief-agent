@@ -59,6 +59,7 @@ def test_finance_write_failure_rolls_back_and_same_id_can_retry(dashboard,monkey
     assert books.append(d.store,owner,payload)['status']=='ALREADY_RECORDED'
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_statement_fetches_all_pages_without_truncating_balances(dashboard):
     from playwright.sync_api import sync_playwright,expect
     d=dashboard;owner=d.credentials['principal']

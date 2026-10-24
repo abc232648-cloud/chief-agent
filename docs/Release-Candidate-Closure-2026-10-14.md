@@ -1,3 +1,5 @@
+> HISTORICAL RECORD — superseded for installation selection by [the current release candidate](../RELEASE_CANDIDATE.md). Earlier clearance does not authorize the current candidate.
+
 # Release candidate closure — 2026-10-14
 
 This record reconciles the private 2026-10-13 handover with the source that was pushed immediately afterward. The private handover remains an evidence package and is not committed into any repository.

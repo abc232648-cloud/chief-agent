@@ -171,7 +171,8 @@ def test_contract_capability_prepare_production(tmp_path, monkeypatch):
     browser_cfg = tmp_path / "browser.json"
     browser_cfg.write_text(json.dumps({"executable": str(exe), "sha256": digest, "version": "140.0.0.1"}), encoding="utf-8")
 
-    def fake_isolated(root, source_root_arg, source_manifest_arg, username, password, *, organization_name=None, farm_name=None):
+    def fake_isolated(root, source_root_arg, source_manifest_arg, username, password, *, organization_name=None, farm_name=None, require_domain_selection=False):
+        assert require_domain_selection is True
         root = Path(root)
         root.mkdir(mode=0o700)
         db = root / "preview.sqlite3"

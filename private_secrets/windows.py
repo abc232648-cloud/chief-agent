@@ -37,7 +37,11 @@ def provision(directory,key,value):
     for item in (root,*root.parents):
         if item.is_symlink() or item.is_junction():raise PermissionError('Credential paths must not follow links.')
     root.mkdir(parents=True,exist_ok=True)
-    sid=subprocess.check_output(['powershell.exe','-NoProfile','-NonInteractive','-Command','[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value'],text=True).strip()
+    ps_cmd = ['powershell.exe', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', '[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value']
+    si = subprocess.STARTUPINFO()
+    si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    si.wShowWindow = subprocess.SW_HIDE
+    sid = subprocess.check_output(ps_cmd, text=True, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000), startupinfo=si).strip()
     if not re.fullmatch(r'S-\d+(?:-\d+)+',sid):raise OSError('Cannot identify the credential owner.')
     advapi=ctypes.WinDLL('advapi32',use_last_error=True);kernel=ctypes.WinDLL('kernel32',use_last_error=True)
     descriptor=ctypes.c_void_p()

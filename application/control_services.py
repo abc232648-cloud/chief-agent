@@ -18,6 +18,7 @@ class ControlServices:
     reporting: ReportServices | None = None
     lifecycle: ModuleLifecycle | None = None
     exposure: ModuleExposure | None = None
+    local_health: object = None
 
 
 def compose_control_services(store, catalogs=None):
@@ -59,4 +60,6 @@ def compose_control_services(store, catalogs=None):
         except ValueError: return False  # Legacy non-event-compatible records stay local.
         return True
     store._notification_publisher = publish_notice if catalogs.interfaces is not None else None
-    return ControlServices(controls, health, ReportServices(catalogs.capabilities), lifecycle, exposure)
+    from .local_health import checks
+    from operations.time_integrity import utc_now
+    return ControlServices(controls, health, ReportServices(catalogs.capabilities), lifecycle, exposure, lambda: checks(store, utc_now))

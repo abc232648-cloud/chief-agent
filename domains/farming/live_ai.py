@@ -32,7 +32,12 @@ CAPABILITY = 'farming.assistant.ask'
 CONTROL_COMPONENTS = ('farm-assistant', 'farming', 'chief.model_registry', 'chief.gateway',
                       'chief.database', 'chief.decision_ledger', 'chief.evidence', 'chief.policy')
 AGENT = SimpleNamespace(id='farm-assistant', domain='farming', capabilities=frozenset({CAPABILITY}))
-ASSIGNMENT = Assignment('farming', 'farm-assistant', ('farming.qwen',))
+SUPPORTED_PROVIDERS = {'groq', 'mistral', 'openai', 'anthropic', 'gemini', 'deepseek', 'xai', 'openrouter', 'ollama'}
+
+def assignment_for(provider: str) -> Assignment:
+    return Assignment('farming', 'farm-assistant', (f'farming.{provider}',))
+
+ASSIGNMENT = assignment_for('groq')
 _slots = threading.BoundedSemaphore(2)
 
 
@@ -55,7 +60,11 @@ def owner(store, principal):
 
 
 def registry(store, config):
-    return ModelRegistry((Provider('groq'),), (Model('farming.qwen', 'groq', config['model'], Cost.FREE),), store=store)
+    provider = config.get('provider', 'groq')
+    cost_str = config.get('cost', 'FREE')
+    cost = Cost.FREE if cost_str == 'FREE' else (Cost.PAID if cost_str == 'PAID' else Cost.UNKNOWN)
+    model_id = f'farming.{provider}'
+    return ModelRegistry((Provider(provider),), (Model(model_id, provider, config['model'], cost),), store=store)
 
 
 def guard(store, principal):
@@ -90,40 +99,30 @@ class Transport:
     def __init__(self, config, *, store=None):
         self.config = config
         self.store = store
+        self.provider = config.get('provider', 'groq')
 
     def generate(self, request):
         from gateway.availability import record_observation
+        from gateway.providers import HttpProviderAdapter
         stage = 'credentials'
         try:
             path, saved = ModelSetup(Path(os.environ['CHIEF_STATE_ROOT']))._record(self.config['registration'])
-            if saved['provider'] != 'groq' or saved['provider_model'] != self.config['model'] or saved['cost'] != 'FREE':
-                raise ValueError()
-            key = imported.resolve(path, saved['backend'])
+            if saved['provider'] != self.provider or saved['provider_model'] != self.config['model']:
+                raise ValueError('Provider or model mismatch.')
+            
+            def resolver():
+                return imported.resolve(path, saved['backend']) if saved.get('key_configured') else None
+
             stage = 'request'
-            body = json.dumps({'model': self.config['model'], 'messages': [
-                {'role': 'system', 'content': request.system}, {'role': 'user', 'content': request.user}],
-                'temperature': 0, 'max_completion_tokens': 600, 'reasoning_format': 'hidden'}).encode()
-            if len(body)>32768:
-                raise ValueError()
-            req = urllib.request.Request('https://api.groq.com/openai/v1/chat/completions', data=body,
-                headers={'Authorization': 'Bearer '+key, 'Content-Type': 'application/json'})
-            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
-            with opener.open(req, timeout=15) as response:
-                data = response.read(65537)
-                if response.status != 200 or len(data) > 65536:
-                    raise ValueError()
-            value = json.loads(data)
-            text = value['choices'][0]['message']['content']
-            if value.get('model') != self.config['model'] or not isinstance(text, str) or not text.strip() or len(text) > 6000 or key in text:
-                raise ValueError()
-            if value['choices'][0]['message'].get('tool_calls'):
-                raise ValueError()
-            record_observation(self.store, 'Farm Groq', 'READY', domain='farming')
-            return AIResponse('groq', self.config['model'], text)
+            budget = self.config.get('max_token_budget')
+            adapter = HttpProviderAdapter(self.provider, self.config['model'], key_resolver=resolver, max_token_budget=budget)
+            response = adapter.generate(request)
+            record_observation(self.store, f'Farm {self.provider.capitalize()}', 'READY', domain='farming')
+            return response
         except Exception as exc:
-            status = getattr(exc, 'code', None)
+            status = getattr(exc, 'status_code', getattr(exc, 'code', None))
             code = 'KEY_UNAVAILABLE' if stage == 'credentials' else {401:'AUTH_REJECTED',403:'ACCESS_DENIED',404:'MODEL_UNAVAILABLE',429:'RATE_LIMITED'}.get(status,'UNAVAILABLE')
-            record_observation(self.store, 'Farm Groq', code, domain='farming')
+            record_observation(self.store, f'Farm {self.provider.capitalize()}', code, domain='farming')
             # Never propagate provider bodies, headers, credentials or prompts.
             raise ProviderUnavailable('Farm AI connection failed; no fallback was used.') from None
 
@@ -134,22 +133,41 @@ def configure(store, principal, body):
     if body == {'operation': 'disable'}:
         config = {**(old or {}), 'status': 'DISABLED'}
     else:
-        if not isinstance(body, dict) or set(body) != {'operation', 'registration', 'free_account_confirmed'} or body['operation'] != 'qualify' or body['free_account_confirmed'] is not True:
-            raise ValueError('Choose a saved Qwen registration and confirm a free-plan account before testing.')
+        if not isinstance(body, dict) or body.get('operation') != 'qualify':
+            raise ValueError('Supply qualify operation with saved registration.')
+        if not body.get('free_account_confirmed') and not body.get('paid_plan_confirmed'):
+            raise ValueError('Confirm pricing status and consequences before activating.')
         if os.environ.get('CHIEF_INSTANCE_MODE', 'preview').lower() == 'preview':
             raise PermissionError('External AI checks are disabled in preview mode.')
+        
         _, saved = ModelSetup(Path(os.environ['CHIEF_STATE_ROOT']))._record(body['registration'])
-        if saved['provider'] != 'groq' or saved['cost'] != 'FREE' or not saved['key_configured'] or not re.fullmatch(r'qwen/[A-Za-z0-9._-]{1,100}', saved['provider_model']):
-            raise ValueError('Select a Groq Qwen registration with a protected key and free pricing declaration.')
-        config = {'status': 'ACTIVE', 'registration': saved['id'], 'model': saved['provider_model'], 'free_account_confirmed': True}
+        provider = saved['provider']
+        if provider not in SUPPORTED_PROVIDERS:
+            raise ValueError(f'Unsupported provider: {provider}')
+        if provider != 'ollama' and not saved['key_configured']:
+            raise ValueError(f'A private API key is required for {provider.capitalize()}.')
+
+        config = {
+            'status': 'ACTIVE',
+            'registration': saved['id'],
+            'provider': provider,
+            'model': saved['provider_model'],
+            'cost': saved['cost'],
+            'free_account_confirmed': bool(body.get('free_account_confirmed')),
+            'paid_plan_confirmed': bool(body.get('paid_plan_confirmed')),
+            'consequence_summary_acknowledged': bool(body.get('consequence_summary_acknowledged', True)),
+            'max_token_budget': body.get('max_token_budget')
+        }
         guard(store, principal)
         _reserve(store, principal)
+        prov_assignment = assignment_for(provider)
+        model_key = f'farming.{provider}'
         with worker_context(AGENT, component_allowed=lambda *_: bool(guard(store, principal))):
             try:
-                ModelRouter(registry(store, config), ASSIGNMENT, {'farming.qwen': Transport(config, store=store)}, capability=CAPABILITY).generate(
-                    AIRequest('You are Farm Agent. This is a synthetic connection test. No tools or actions.', 'Reply briefly: connection working.', max_tokens=30))
+                router = ModelRouter(registry(store, config), prov_assignment, {model_key: Transport(config, store=store)}, capability=CAPABILITY)
+                router.generate(AIRequest('You are Farm Agent. This is a synthetic connection test. No tools or actions.', 'Reply briefly: connection working.', max_tokens=30, purpose='farming.connection_test'))
             except GatewayError:
-                raise ValueError('Qwen qualification failed. Check account access, the model identifier and model policy. No fallback was used.') from None
+                raise ValueError(f'{provider.capitalize()} qualification failed. Check account access, the model identifier and model policy. No fallback was used.') from None
     principal = owner(store, principal)
     with store._connect() as con:
         con.execute('BEGIN IMMEDIATE')
@@ -159,7 +177,7 @@ def configure(store, principal, body):
         config.update(id=uuid.uuid4().hex, actor=principal.id, received_at=utc_text(utc_now()))
         con.execute('INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES(?,?,?,?)', ('farming', KIND, json.dumps(config), time.time()))
         IdentityService(store)._event(con, principal, 'FARM_AI_CONFIGURED', 'farming', config['id'], config['status'])
-    return {'status': config['status'], 'model': config.get('model'), 'action_authority': 'NONE'}
+    return {'status': config['status'], 'provider': config.get('provider'), 'model': config.get('model'), 'action_authority': 'NONE'}
 
 
 def status(store, principal):
@@ -167,15 +185,19 @@ def status(store, principal):
         principal = setup.authorize(store, con, principal, 'read')
     config = configuration(store)
     active = bool(config and config['status'] == 'ACTIVE' and os.environ.get('CHIEF_INSTANCE_MODE','preview').lower() != 'preview')
+    provider = config.get('provider', 'groq') if config else 'groq'
     if active:
         try:
             guard(store, principal)
-            active = registry(store, config).eligible('farming.qwen', ASSIGNMENT)
+            active = registry(store, config).eligible(f'farming.{provider}', assignment_for(provider))
         except PermissionError:
             active = False
-    return {'status': 'LIVE_AI_CONFIGURED' if active else 'LIVE_AI_PENDING', 'model': config.get('model') if config else None,
+    prov_name = provider.capitalize()
+    return {'status': 'LIVE_AI_CONFIGURED' if active else 'LIVE_AI_PENDING',
+            'provider': config.get('provider') if config else None,
+            'model': config.get('model') if config else None,
             'can_configure': principal.role == 'Owner' and '*' in principal.domains,
-            'notice': 'Qwen answers are guidance, not verified facts or permission to act. Questions and permitted context are sent to Groq.' if active else 'Built-in guidance only. The Owner must qualify a private Qwen connection.'}
+            'notice': f'{prov_name} answers are guidance, not verified facts or permission to act. Questions and permitted context are sent to {prov_name}.' if active else 'Built-in guidance only. The Owner must qualify a private model connection.'}
 
 
 def answer(store, principal, question, data):
@@ -194,8 +216,11 @@ def answer(store, principal, question, data):
                 'Answer only work-related questions. Do not invent measurements or expose other people\'s information. You have no tools, access to credentials, approval authority or equipment control. '
                 'Do not claim to have saved records or performed actions. For animal illness or treatment, advise contacting a qualified veterinarian; do not prescribe drugs or doses. '
                 'Farm reports are user-reported, not verified measurements. Use the authorized context for reporting-schedule status; if deadlines are absent, do not invent them. Use the reporting timezone in the authorized context; do not assume a country or timezone.',
-                json.dumps({'question': question, 'authorized_context': data}), max_tokens=600)
-            response = ModelRouter(registry(store, config), ASSIGNMENT, {'farming.qwen': Transport(config, store=store)}, capability=CAPABILITY).generate(request)
+                json.dumps({'question': question, 'authorized_context': data}), max_tokens=600, purpose='farming.ask')
+            provider = config.get('provider', 'groq')
+            prov_assignment = assignment_for(provider)
+            model_key = f'farming.{provider}'
+            response = ModelRouter(registry(store, config), prov_assignment, {model_key: Transport(config, store=store)}, capability=CAPABILITY).generate(request)
         # Never return an answer based on access or configuration revoked in flight.
         from .assistant import context
         _, current = context(store, principal)

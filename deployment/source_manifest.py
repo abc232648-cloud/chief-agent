@@ -17,11 +17,19 @@ from operations import backup
 
 
 def _git(root, *args):
+    kwargs = {}
+    if os.name == 'nt':
+        kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        si.wShowWindow = subprocess.SW_HIDE
+        kwargs['startupinfo'] = si
     result = subprocess.run(
         ['git', '-C', str(root), *args],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
+        **kwargs,
     )
     if result.returncode:
         message = result.stderr.decode('utf-8', errors='replace').strip()

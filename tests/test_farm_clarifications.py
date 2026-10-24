@@ -199,6 +199,7 @@ def test_cross_domain_revoked_session_api_and_csrf(dashboard):
     assert request(d,'/api/farm/clarifications','POST',p,raw=d.credentials['raw'],extra={'Origin':'http://untrusted.invalid'})[0]==403
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_cards_mobile_and_desktop_escape_notes(dashboard,tmp_path):
     from playwright.sync_api import sync_playwright, expect
     import os
@@ -291,6 +292,7 @@ def test_new_feed_observation_records_once_without_changing_old(dashboard):
         assert rows[0]['payload']==journal.validate(old) and rows[1]['payload']['quantity']=='3'
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_manager_answer_form_and_finance_isolation(dashboard):
     from playwright.sync_api import sync_playwright,expect
     d=dashboard;old=feed(d);item=create(d,'feed');owner=d.credentials['principal']

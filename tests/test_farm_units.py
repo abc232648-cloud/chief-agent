@@ -30,6 +30,7 @@ def test_missing_sizes_and_wrong_stock_rejected(dashboard):
         with pytest.raises(ValueError):journal.append(d.store,p,record(kind=kind,quantity='2',conversion={'unit':unit,'quantity':'2','policy_revision':settings['event_id']}))
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_crates_preview_and_saved_base_quantity(dashboard):
     from playwright.sync_api import sync_playwright, expect
     d=dashboard;p=d.credentials['principal'];costing_policy.configure(d.store,p,assumptions(eggs_per_crate=30))
@@ -63,6 +64,7 @@ def test_physical_count_conversion_keeps_approval_and_original_size(dashboard):
         counts.append(d.store,p,count(e,quantity='100',conversion={'unit':'bags','quantity':'2','policy_revision':settings['event_id']}))
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_physical_bag_count_preview(dashboard):
     from tests.test_farm_reconciliation import stock
     from domains.farming import reconciliation as counts

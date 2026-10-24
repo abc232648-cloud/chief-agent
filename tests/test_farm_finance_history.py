@@ -40,6 +40,7 @@ def test_trace_endpoint_role_and_domain_boundaries(dashboard):
     with pytest.raises(FileNotFoundError):finance.linked_history(d.store,owner,'missing-record-id')
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_readable_linked_history(dashboard):
     from playwright.sync_api import sync_playwright,expect
     d=dashboard;chain(d)

@@ -46,13 +46,21 @@ def overview(store,ctx):
     allowed={d['id'] for d in ctx['domains']}
     data=AgentControls(store,default_registry()).overview()
     agents=[a for a in data['agents'] if a['id'] in allowed]
+    for agent in agents:
+        if agent['id'] == 'farming' and agent['enabled']:
+            from .farm_release import require_farm_runtime
+            try:
+                require_farm_runtime()
+            except PermissionError as exc:
+                agent['status'] = 'SETUP_REQUIRED'
+                agent['setup_message'] = str(exc) + ' Complete Farm setup in the installation configuration before starting Farm operations.'
     counts={'actions':0,'notifications':0}
     if 'jobs' in allowed:
         from .auth_routes import action_domain
         counts['actions']=sum(action_domain(store,a['id'])=='jobs' for a in store.actions())
     if ctx['global_permissions']['audit.read']:counts['notifications']=store.counts()['notifications']
     return {'agents':agents,'counts':counts,'worker_connected':data['worker_connected'],
-            'service_started_at':data['service_started_at'] if ctx['global_permissions']['audit.read'] else None}
+            'service_started_at':data['service_started_at'] if ctx['global_permissions']['audit.read'] else None,'domain_selection':data.get('domain_selection')}
 
 
 def job_state(store, *, include_notifications=False):

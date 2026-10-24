@@ -54,6 +54,7 @@ def test_historical_import_does_not_change_physical_count_difference(dashboard):
     assert journal.overview(d.store,p)['balances'][0]['recorded_balance']=='150'
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_distinguishes_history_from_current_stock(dashboard):
     from playwright.sync_api import sync_playwright, expect
     d=dashboard;p=d.credentials['principal']

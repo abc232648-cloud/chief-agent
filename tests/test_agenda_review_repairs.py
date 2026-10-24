@@ -1,4 +1,5 @@
 """Synthetic independent review reproductions; candidate source is unchanged."""
+import pytest
 from domains.farming import clarifications as c, journal, bookkeeping as books
 from tests.test_farm_clarifications import feed, create, respond, accept
 from tests.test_farm_journal import record
@@ -46,6 +47,7 @@ def test_itemised_correction_requires_balanced_nonempty_breakdown(dashboard):
     with d.store._connect() as con:assert len(books.rows(con))==1
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_itemised_sale_correction(dashboard):
     from playwright.sync_api import sync_playwright,expect
     d=dashboard;owner=d.credentials['principal']
@@ -75,6 +77,7 @@ def test_browser_itemised_sale_correction(dashboard):
         finally:browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_historical_question_preserves_unit_metadata(dashboard):
     import json
     from playwright.sync_api import sync_playwright,expect

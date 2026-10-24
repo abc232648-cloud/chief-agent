@@ -1,3 +1,4 @@
+import pytest
 from application.composition import default_registry
 from playwright.sync_api import sync_playwright,expect
 from browser_navigation import navigate
@@ -5,6 +6,7 @@ from domains.runtime import DomainRuntime
 from worker.runner import run_once
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_farm_agent_has_minimal_workspace_and_preserves_worker_records(dashboard):
     runtime=DomainRuntime(dashboard.store, registry=default_registry())
     runtime.queue('farming','record_soil_test',{'plot':'Fixture plot','sample_date':'2026-01-01','ph':6.4,'source':'Test source','confirmed':True})

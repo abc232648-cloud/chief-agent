@@ -34,7 +34,14 @@ CHIEF_AGENT_BASELINE_COMMIT = "a9a1f33e42f1cfc7c73811ffd13ae3db0963cb47"
 def _detect_current_commit(root: Path) -> str:
     try:
         import subprocess
-        res = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, check=False)
+        kwargs = {}
+        if os.name == "nt":
+            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            si.wShowWindow = subprocess.SW_HIDE
+            kwargs["startupinfo"] = si
+        res = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, check=False, **kwargs)
         c = res.stdout.strip().lower()
         if len(c) == 40 and all(ch in "0123456789abcdef" for ch in c):
             return c

@@ -175,6 +175,7 @@ def test_crash_after_dispatch_does_not_repeat(dashboard,transport):
     assert len(transport['calls'])==1
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_manual_preview(dashboard,transport):
     from playwright.sync_api import sync_playwright,expect
     from tests.browser_navigation import navigate

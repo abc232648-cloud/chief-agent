@@ -1,4 +1,5 @@
 """Synthetic shared-browser acceptance: old financial DOM must not survive account change."""
+import pytest
 from playwright.sync_api import sync_playwright,expect
 from identity.service import IdentityService
 from domains.farming import bookkeeping
@@ -7,6 +8,7 @@ from tests.checkpoint_f_fixture import PASSWORD
 
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_other_account_login_removes_previous_financial_view(dashboard):
     d=dashboard;identity=IdentityService(d.store)
     identity.create_user(d.credentials['principal'],'switch-worker',PASSWORD,'Worker',('farming',))

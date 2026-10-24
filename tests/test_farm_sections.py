@@ -4,6 +4,7 @@ from playwright.sync_api import sync_playwright, expect
 from identity.service import IdentityService
 from tests.checkpoint_f_fixture import PASSWORD
 
+@pytest.mark.usefixtures('configured_both_workspace')
 @pytest.mark.parametrize('width,route',[(390,'/work'),(1366,'/work'),(1366,'/')])
 def test_collapsed_sections_preserve_drafts_and_keyboard_navigation(dashboard,width,route):
     d=dashboard
@@ -34,6 +35,7 @@ def test_collapsed_sections_preserve_drafts_and_keyboard_navigation(dashboard,wi
         finally:browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_worker_expand_does_not_reveal_privileged_sections(dashboard):
     d=dashboard;s=IdentityService(d.store)
     s.create_user(d.credentials['principal'],'compact-worker',PASSWORD,'Worker',('farming',));raw,_=s.login('compact-worker',PASSWORD)
@@ -50,6 +52,7 @@ def test_worker_expand_does_not_reveal_privileged_sections(dashboard):
         finally:browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_owner_can_revisit_bookkeeping_from_chief_home(dashboard):
     with sync_playwright() as p:
         browser=p.chromium.launch(headless=True)

@@ -24,7 +24,9 @@ async function show(id, agent=currentAgent) {
   currentAgent=agent;
   if(!canPage(id))throw new Error('This page is not available to your current role and domain scope.');
   if(id==='overview') currentAgent=null;
-  if(['health','components','capabilities','models','policies','runtime','integrations','devices','updates','settings','users','domains','ai','notifications','reports','audit'].includes(id))currentAgent=null;
+  if(id==='jobOverview') currentAgent='jobs';
+  if(id==='agentDetail' && agent==='jobs') return show('jobOverview','jobs');
+  if(['health','components','capabilities','models','policies','runtime','integrations','devices','updates','settings','users','domains','ai','scheduler','notifications','reports','audit'].includes(id))currentAgent=null;
   if(agentDefinitions.some(a=>(a.pages||[]).some(p=>p[0]===id))) currentAgent=agentDefinitions.find(a=>(a.pages||[]).some(p=>p[0]===id)).id;
   renderNavigation(id);
   const sections = [...document.querySelectorAll('main > section')];
@@ -44,7 +46,37 @@ async function load(id) {
     facts:loadFacts, audit:loadAudit, scheduler:loadScheduler, settings:loadSettings, domains:loadDomains, notifications:loadNotifications, agentDetail:loadAgentHome};
   if (loaders[id]) await loaders[id]();
 }
-async function loadJobOverview(){let d=await api('/api/ui/job-state');for(const [id,key] of Object.entries({jobsCount:'jobs',apps:'applications',actionsCount:'actions',notifs:'notifications'}))document.getElementById(id).textContent=d.counts[key];document.getElementById('workerStatus').innerHTML='<b>'+esc(statusText(d.worker.status))+'</b> — '+esc(d.worker.message)+'<br><span class="muted">Updated '+esc(d.worker.updated_at)+'</span>';document.getElementById('commands').innerHTML=d.commands.length?d.commands.map(x=>'<div class="item"><b>#'+x.id+'</b> <span class="pill">'+esc(statusText(x.status))+'</span><br>'+esc(x.instruction)+(x.result?'<pre>'+esc(x.result)+'</pre>':'')+'</div>').join(''):'No commands yet.'}
+async function loadJobOverview(){
+  const revision=navigationRevision;
+  const active=()=>revision===navigationRevision&&currentAgent==='jobs'&&!document.getElementById('jobOverview').classList.contains('hidden');
+  let d=await api('/api/ui/job-state');
+  if(!active())return;
+  for(const [id,key] of Object.entries({jobsCount:'jobs',apps:'applications',actionsCount:'actions',notifs:'notifications'})){
+    const el=document.getElementById(id);
+    if(el) el.textContent=d.counts[key];
+  }
+  const workerEl=document.getElementById('workerStatus');
+  if(workerEl) workerEl.innerHTML='<b>'+esc(statusText(d.worker.status))+'</b> — '+esc(d.worker.message)+'<br><span class="muted">Updated '+esc(d.worker.updated_at)+'</span>';
+  const cmdEl=document.getElementById('commands');
+  if(cmdEl) cmdEl.innerHTML=d.commands.length?d.commands.map(x=>'<div class="item"><b>#'+x.id+'</b> <span class="pill">'+esc(statusText(x.status))+'</span><br>'+esc(x.instruction)+(x.result?'<pre>'+esc(x.result)+'</pre>':'')+'</div>').join(''):'No commands yet.';
+  try{
+    const uiData=await api('/api/ui/overview');
+    if(!active())return;
+    const agent=(uiData.agents||[]).find(a=>a.id==='jobs');
+    if(agent){
+      const controlsCard=document.getElementById('jobAgentControlsCard');
+      if(controlsCard) controlsCard.innerHTML=agentCard(agent,true,false);
+      const wsButtons=document.getElementById('jobWorkspaceButtons');
+      if(wsButtons){
+        wsButtons.innerHTML=(agent.pages||[]).filter(p=>p[0]!=='jobOverview').map(([pid,label])=>'<button class="action" data-action="show" data-target="'+esc(pid)+'">'+esc(label)+'</button>').join('');
+      }
+      const recentAct=document.getElementById('jobRecentActivity');
+      if(recentAct){
+        recentAct.innerHTML=(agent.recent_activity||[]).length?agent.recent_activity.map(r=>'<div class="item"><b>'+esc(r.task)+'</b><p>'+esc(statusText(r.outcome))+' · '+esc(dateText(r.started))+'</p></div>').join(''):'<p>No recorded activity yet.</p>';
+      }
+    }
+  }catch(e){throw e;}
+}
 function actionPreview(action) {
   let payload={};try{payload=JSON.parse(action.payload_json||'{}');payload=payload.payload||payload}catch{}
   const fields=Array.isArray(payload.fields)?payload.fields:[];
@@ -146,7 +178,27 @@ function bindActions() {
       'toggle-cv': () => toggleCV(id, enabled === 'true'),
       'fact-status': () => factStatus(id, status),
       'toggle-profile': () => toggleProfile(id, enabled === 'true'),
-      'delete-profile': () => deleteProfile(id)
+      'delete-profile': () => deleteProfile(id),
+      'sign-out': async () => {
+        try {
+          const session = await api('/api/auth/session');
+          if (!session || !session.csrf) {
+            throw new Error('unable to obtain session CSRF token.');
+          }
+          const res = await api('/api/auth/logout', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-Chief-CSRF': session.csrf},
+            body: '{}'
+          });
+          if (res && res.status === 'SIGNED_OUT') {
+            location.href = '/login';
+            return;
+          }
+          throw new Error('server did not confirm session revocation.');
+        } catch (err) {
+          throw new Error('Sign-out failed: ' + (err.message || 'unable to revoke session. Please retry.'));
+        }
+      }
     };
     if (!actions[action]) return;
     clearError();
@@ -159,6 +211,18 @@ function bindActions() {
 function initDashboard() {
   bindActions();
   document.body.classList.toggle('sidebarCollapsed',localStorage.getItem('chiefSidebar')==='collapsed');
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a');
+    if (a && a.href && !a.href.startsWith('javascript:')) {
+      try {
+        const u = new URL(a.href, location.origin);
+        if (u.origin !== location.origin) {
+          e.preventDefault();
+          window.open(u.href, '_blank', 'noopener,noreferrer');
+        }
+      } catch {}
+    }
+  });
   initializeChief().catch(reportError);
   setInterval(()=>{refreshNotifications().catch(reportError); if(!document.getElementById('overview').classList.contains('hidden'))loadChief().then(applyChiefVisibility).catch(reportError); if(!document.getElementById('jobOverview').classList.contains('hidden'))loadJobOverview().then(applyChiefVisibility).catch(reportError);},5000);
 }

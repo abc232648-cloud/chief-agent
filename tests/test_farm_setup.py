@@ -83,6 +83,7 @@ def test_setup_http_and_pagination(dashboard,monkeypatch):
     assert request(d,'/api/farm/setup',raw=raw)[0]==403
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_setup_and_stable_stock_entry(dashboard):
     from playwright.sync_api import sync_playwright, expect
     with sync_playwright() as playwright:

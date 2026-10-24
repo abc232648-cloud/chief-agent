@@ -108,6 +108,7 @@ def test_physical_history_protects_dates_and_invalid_units_are_rejected(dashboar
     assert request(d,'/api/farm/physical-counts','POST',count(e,unit=[]),d.credentials['raw'])[0]==400
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_count_and_explicit_owner_approval(dashboard):
     from playwright.sync_api import sync_playwright,expect
     d=dashboard;stock(d)

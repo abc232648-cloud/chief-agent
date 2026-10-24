@@ -1,3 +1,4 @@
+import pytest
 from browser_navigation import navigate
 """Actual Chromium/HTTP/SQLite tests. External AI and submission are test doubles."""
 import json
@@ -7,6 +8,7 @@ from types import SimpleNamespace
 from playwright.sync_api import sync_playwright, expect
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_complete_dashboard_browser_pass(dashboard,monkeypatch):
     from worker.command_processor import CommandProcessor
     from worker.runner import run_once,run_approved_once
@@ -52,13 +54,13 @@ def test_complete_dashboard_browser_pass(dashboard,monkeypatch):
         expect(page.locator('#actionsCount')).to_have_text('2')
         expect(page.locator('#notifs')).to_have_text('1')
         expect(page.locator('#dashboardError')).to_be_hidden()
-        targets=['overview','domains','actions','notifications','reports','audit','scheduler','settings','ai','agentDetail','jobOverview','jobs','applications','applicationArchive','sources','cvs','profiles','facts']
+        targets=['overview','domains','actions','notifications','reports','audit','scheduler','settings','ai','jobOverview','jobs','applications','applicationArchive','sources','cvs','profiles','facts']
         for target in targets:
             navigate(page,target)
             expect(page.locator(f'section#{target}')).to_be_visible()
             expect(page.locator('main section:not(.hidden)')).to_have_count(1)
             expect(page.locator(f'section#{target}')).not_to_contain_text('Loading…')
-        assert len(targets)==18
+        assert len(targets)==17
         # Fixed desktop navigation must scroll on short windows, and stack on mobile.
         page.set_viewport_size({'width':1280,'height':500})
         navigate(page,'settings')
@@ -137,6 +139,7 @@ def test_complete_dashboard_browser_pass(dashboard,monkeypatch):
         browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_handles_failed_and_malformed_api_without_losing_command(dashboard):
     with sync_playwright() as p:
         browser=p.chromium.launch(headless=True)

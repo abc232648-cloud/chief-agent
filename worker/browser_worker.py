@@ -137,7 +137,7 @@ class BrowserJobWorker:
             segment=text[offset:offset+4000]
             links=[link for link in listing_payload.get('links',[]) if link.get('text') and link['text'] in segment][:30]
             payload=json.dumps({'source':source_name,'source_url':source_url,'page_title':listing_payload.get('title',''),'page_text':segment,'links':links},ensure_ascii=False)
-            response=self.gateway.generate(AIRequest(EXTRACT_SYSTEM_PROMPT,payload,temperature=0.0,max_tokens=768))
+            response=self.gateway.generate(AIRequest(EXTRACT_SYSTEM_PROMPT,payload,temperature=0.0,max_tokens=768,purpose='jobs.extract'))
             data=json.loads(response.text.strip().removeprefix('```json').removesuffix('```').strip())
             if not isinstance(data,dict) or not isinstance(data.get('jobs'),list):raise ValueError('Job extractor returned invalid JSON')
             for job in data['jobs']:

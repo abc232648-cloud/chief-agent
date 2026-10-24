@@ -30,6 +30,7 @@ def test_receipt_ids_paths_duplicate_limits_and_confirmation(dashboard):
     assert result['summaries']['NGN']['received']=='0'
     assert 'image_base64' not in json.dumps(result)
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_stored_financial_markup_is_inert(dashboard):
     from playwright.sync_api import sync_playwright,expect
     d=dashboard;attack='<img src=x onerror="window.financePwned=1">'

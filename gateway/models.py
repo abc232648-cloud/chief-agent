@@ -5,6 +5,7 @@ class AIRequest:
     user: str
     temperature: float = 0.0
     max_tokens: int | None = None
+    purpose: str | None = None
 @dataclass
 class AIResponse:
     provider: str

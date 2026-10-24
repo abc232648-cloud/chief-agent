@@ -58,6 +58,7 @@ def test_receipts_private_bounded_backup_and_no_ddl(dashboard):
         assert con.execute("SELECT count(*) FROM domain_records WHERE kind=?",(finance.RECEIPTS,)).fetchone()[0]==1
     with d.store._connect() as con:assert schema==list(map(tuple,con.execute('SELECT type,name,sql FROM sqlite_master ORDER BY name')))
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_financial_browser_contact_invoice_export_and_dashboard(dashboard):
     from playwright.sync_api import sync_playwright,expect
     d=dashboard;c=contact(d);books.append(d.store,d.credentials['principal'],detailed(c))
@@ -92,6 +93,7 @@ def test_period_currency_void_and_export_revision(dashboard):
     assert report['summaries']['NGN']['sales']=='0'
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_creates_contact_line_item_and_private_receipt(dashboard):
     from playwright.sync_api import sync_playwright,expect
     with sync_playwright() as p:

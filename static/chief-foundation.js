@@ -12,7 +12,7 @@ document.addEventListener('click',event=>{if(event.target.closest('button[data-a
 
 function modelSetupForm(){return '<article class="card"><h2>Add model / provider</h2><p>Saved inactive and unassigned. Adding a model does not change current routing. Use the provider’s exact model identifier; this does not download model weights or install runtimes.</p><label for="setupProvider">Provider identifier (groq, mistral, or another provider)</label><input id="setupProvider" maxlength="40" autocomplete="off"><label for="setupModel">Model identifier</label><input id="setupModel" maxlength="200" autocomplete="off"><label for="setupCost">Pricing status (not verified)</label><select id="setupCost"><option value="UNKNOWN">Unknown — review required</option><option value="FREE">Free — operator declaration</option><option value="PAID">Paid — activation blocked</option></select><label for="setupKey">API key (optional; stored encrypted, never displayed again)</label><input id="setupKey" type="password" maxlength="4096" autocomplete="new-password" spellcheck="false"><label for="setupPassword">Confirm your Chief password</label><input id="setupPassword" type="password" autocomplete="current-password"><button type="button" class="primary" data-action="model-register">Save inactive model</button><p id="modelSetupResult" role="status"></p></article>';}
 
-function modelRegistrations(rows){return '<h2>Imported models awaiting review</h2><p>Saving a connection does not assign it. Use Agent assignment below to test and activate Farm AI. Connection checks alone do not activate a model.</p>'+rows.map(r=>'<article class="card"><h3>'+esc(r.provider_model)+'</h3><p>'+esc(r.provider)+' · '+esc(r.cost)+' · DISABLED / unassigned · Key '+(r.key_configured?'stored privately':'not supplied')+'</p>'+((['groq','mistral'].includes(r.provider)&&r.key_configured)?'<button type="button" data-action="model-check" data-id="'+esc(r.id)+'">Check connection</button>':'')+'</article>').join('');}
+function modelRegistrations(rows){return '<h2>Imported models awaiting review</h2><p>Saving a connection does not assign it. Use Agent assignment below to test and activate Farm AI. Connection checks alone do not activate a model.</p>'+rows.map(r=>'<article class="card"><h3>'+esc(r.provider_model)+'</h3><p>'+esc(r.provider)+' · '+esc(r.cost)+' · DISABLED / unassigned · Key '+(r.key_configured?'stored privately':'not supplied')+'</p>'+((['groq','mistral','openai','anthropic','gemini','deepseek','xai','openrouter','ollama'].includes(r.provider)&&(r.key_configured||r.provider==='ollama'))?'<button type="button" data-action="model-check" data-id="'+esc(r.id)+'">Check diagnostic connection</button>':'')+'</article>').join('');}
 
 const foundationPages=new Set(['health','components','capabilities','models','policies','runtime','integrations','devices','updates','evidence','ledger','runbooks']);
 
@@ -59,7 +59,12 @@ async function loadFoundation(page){
 
     const rows=await api('/api/system-health');
 
-    box.innerHTML='<p>Observed health is independent of desired mode. UNKNOWN means health has not been established; it is not a passing test.</p>'+foundationTable([['Component',r=>r.node.id],['Observed health','status'],['Desired mode','desired_mode'],['Observation / dependency reason','reason']],rows);return;
+    const labels={HEALTHY:'Check passed',DEGRADED:'Needs attention',UNAVAILABLE:'Unavailable',UNKNOWN:'Not established'};
+    const columns=[['Component',r=>r.label||capabilityName(r.node.id)],['Check result',r=>r.monitoring==='NOT_CONFIGURED'?'Not configured':labels[r.status]||'Not established'],['What this check establishes','reason']];
+    const local=rows.filter(r=>r.scope==='LOCAL_READINESS');
+    const monitored=rows.filter(r=>r.scope!=='LOCAL_READINESS'&&r.monitoring!=='NOT_MONITORED');
+    const unmonitored=rows.filter(r=>r.monitoring==='NOT_MONITORED');
+    box.innerHTML='<p>These checks observe this installation. Enabled does not mean healthy. They do not call AI providers, spend money or repair services.</p><h2>Service observations</h2>'+foundationTable(columns,monitored)+'<h2>Local readiness checks</h2>'+foundationTable(columns,local)+'<details><summary>Components without a direct monitor ('+unmonitored.length+')</summary><p>Not monitored means no direct observation is available. It does not mean passed or failed. Required dependencies can still restrict operation.</p>'+foundationTable([['Component',r=>capabilityName(r.node.id)],['Monitoring',()=> 'Not monitored'],['Dependency assessment','reason']],unmonitored)+'</details>';return;
 
   }
 
@@ -212,13 +217,28 @@ async function renderModelAssignment(box,rows){
 
   if(!status.can_configure){const note=document.createElement('p');note.textContent='Only the Owner can change the Farm AI assignment.';card.append(note);box.append(card);return;}
 
-  const label=document.createElement('label');label.textContent='Saved Qwen connection';const select=document.createElement('select');select.id='assignmentConnection';label.append(select);
+  const label=document.createElement('label');label.textContent='Saved model connection';const select=document.createElement('select');select.id='assignmentConnection';label.append(select);
 
-  farmOptions(select,rows.filter(r=>r.provider==='groq'&&r.provider_model.startsWith('qwen/')&&r.cost==='FREE'&&r.key_configured).map(r=>[r.id,r.provider_model+' — '+r.id.slice(-8)]),'Choose saved connection');card.append(label);
+  const validRows = rows.filter(r=>['groq','mistral','openai','anthropic','gemini','deepseek','xai','openrouter','ollama'].includes(r.provider)&&(r.key_configured||r.provider==='ollama'));
+  farmOptions(select,validRows.map(r=>[r.id,r.provider.toUpperCase()+': '+r.provider_model+' ('+r.cost+') — '+r.id.slice(-8)]),'Choose saved connection');card.append(label);
 
-  const help=document.createElement('p');help.textContent='Use the exact provider model identifier, including qwen/. If no connection appears, save a Groq Qwen connection with a private key and confirmed free pricing first. Job routing stays unchanged.';card.append(help);
+  const summaryBox=document.createElement('div');summaryBox.id='consequenceSummary';summaryBox.className='card';
+  summaryBox.innerHTML='<h3>Setup consequence summary</h3><p id="summaryDetail">Select a saved model connection above to review consequences before activation.</p>';
+  card.append(summaryBox);
 
-  const confirmation=document.createElement('label');const check=document.createElement('input');check.type='checkbox';check.id='assignmentFree';confirmation.append(check,document.createTextNode('I confirmed this Groq account uses the free plan. No paid fallback.'));card.append(confirmation);
+  select.onchange=()=>{
+    const chosen=validRows.find(r=>r.id===select.value);
+    if(!chosen){summaryBox.querySelector('#summaryDetail').textContent='Select a saved model connection above to review consequences before activation.';return;}
+    summaryBox.innerHTML='<h3>Setup consequence summary: '+esc(chosen.provider.toUpperCase())+' ('+esc(chosen.provider_model)+')</h3>'+
+      '<dl>'+
+      '<dt>Transmission</dt><dd>Farm work questions and role-scoped context are transmitted to '+esc(chosen.provider)+'. Strict TLS verification enforced.</dd>'+
+      '<dt>Action authority</dt><dd><b>NONE.</b> Guidance only. No tools, equipment control, or operational record writes.</dd>'+
+      '<dt>Pricing & spending guard</dt><dd>Declared cost status is <b>'+esc(chosen.cost)+'</b>. No unapproved paid fallback.</dd>'+
+      '<dt>Qualification requirement</dt><dd>A live synthetic qualification test will be executed before activation.</dd>'+
+      '</dl>';
+  };
+
+  const confirmation=document.createElement('label');const check=document.createElement('input');check.type='checkbox';check.id='assignmentConfirmed';confirmation.append(check,document.createTextNode('I reviewed the consequence summary and confirmed pricing/access terms.'));card.append(confirmation);
 
   const pwlabel=document.createElement('label');pwlabel.textContent='Confirm your Chief password';const password=document.createElement('input');password.type='password';password.id='assignmentPassword';password.autocomplete='current-password';pwlabel.append(password);card.append(pwlabel);
 
@@ -226,7 +246,19 @@ async function renderModelAssignment(box,rows){
 
   const button=document.createElement('button');button.type='button';button.className='primary';button.textContent='Test and activate for Farm Agent';
 
-  button.onclick=async()=>{button.disabled=true;try{if(agent.value!=='farming'||!select.value||!check.checked)throw new Error('Choose a saved Qwen connection and confirm the free account.');if(!password.value)throw new Error('Confirm your Chief password.');await postJson('/api/auth/reauthenticate',{password:password.value});password.value='';await postJson('/api/farm/assistant/configure',{operation:'qualify',registration:select.value,free_account_confirmed:true});result.textContent='Farm Agent connection tested and active. Job assignment unchanged.';info.textContent=(await api('/api/farm/assistant')).notice;}catch(error){result.textContent=error.message;}finally{password.value='';button.disabled=false;}};
+  button.onclick=async()=>{
+    button.disabled=true;
+    try{
+      if(agent.value!=='farming'||!select.value||!check.checked)throw new Error('Choose a saved connection and confirm the consequence summary.');
+      if(!password.value)throw new Error('Confirm your Chief password.');
+      await postJson('/api/auth/reauthenticate',{password:password.value});password.value='';
+      const chosen=validRows.find(r=>r.id===select.value);
+      await postJson('/api/farm/assistant/configure',{operation:'qualify',registration:select.value,free_account_confirmed:(chosen&&chosen.cost==='FREE'),paid_plan_confirmed:(chosen&&chosen.cost==='PAID'),consequence_summary_acknowledged:true});
+      result.textContent='Farm Agent connection tested and active. Job assignment unchanged.';
+      info.textContent=(await api('/api/farm/assistant')).notice;
+    }catch(error){result.textContent=error.message;}
+    finally{password.value='';button.disabled=false;}
+  };
 
   card.append(button,result);box.append(card);
 

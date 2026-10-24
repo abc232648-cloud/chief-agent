@@ -68,6 +68,7 @@ def test_invalid_finance_fields(dashboard,changes):
     with pytest.raises(ValueError):books.append(dashboard.store,dashboard.credentials['principal'],entry(**changes))
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_records_currency_amount_without_float_rounding(dashboard):
     from playwright.sync_api import sync_playwright,expect
     d=dashboard

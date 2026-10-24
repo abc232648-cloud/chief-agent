@@ -19,7 +19,7 @@ Rules:
 
 
 def discover_sources(gateway, instruction: str, *, max_sources: int = 12) -> dict:
-    response = gateway.generate(AIRequest(SOURCE_DISCOVERY_PROMPT, instruction, temperature=0.0, max_tokens=512))
+    response = gateway.generate(AIRequest(SOURCE_DISCOVERY_PROMPT, instruction, temperature=0.0, max_tokens=512, purpose='jobs.discover_sources'))
     data = json.loads(response.text.strip().removeprefix("```json").removesuffix("```").strip())
     if not isinstance(data, dict) or not isinstance(data.get("sources"), list):
         raise ValueError("Source discovery returned invalid JSON")

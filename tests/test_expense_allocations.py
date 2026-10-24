@@ -85,6 +85,7 @@ def test_unknown_duplicate_and_non_flock_rejected(dashboard):
     assert allocations.overview(d.store, p)['history'] == []
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_permissions_and_browser(dashboard):
     from playwright.sync_api import sync_playwright, expect
     d = dashboard; p = d.credentials['principal']; expense, flocks = seed(d); svc = IdentityService(d.store)

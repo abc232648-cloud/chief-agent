@@ -72,7 +72,15 @@ def test_development_manifest_must_match_verified_bytes(tmp_path,change):
 def test_complete_current_source_archive_is_verified(tmp_path):
     import json
     root=Path(__file__).resolve().parents[1]
-    files={str(f.relative_to(root).as_posix()):f.read_bytes() for f in root.rglob('*') if f.is_file() and '__pycache__' not in f.parts and '.pytest_cache' not in f.parts}
+    import os
+    files={}
+    for directory,dirs,names in os.walk(root):
+        # Developer tooling is not product source. Do not follow links or read
+        # virtual environments; private-file rejection remains the verifier's job.
+        dirs[:]=[d for d in dirs if d not in {'venv','.venv','.git','node_modules','__pycache__','.pytest_cache'} and not (Path(directory)/d).is_symlink()]
+        for name in names:
+            f=Path(directory)/name
+            if f.is_file() and not f.is_symlink():files[f.relative_to(root).as_posix()]=f.read_bytes()
     path=tmp_path/'actual-source.zip';tree=make_zip(path,{'chief-agent/'+n:data for n,data in files.items()})
     manifest={'source_tree_sha256':tree,'files':{n:hashlib.sha256(data).hexdigest() for n,data in files.items()}}
     with zipfile.ZipFile(path,'a') as z:z.writestr('SOURCE_MANIFEST.json',json.dumps(manifest))

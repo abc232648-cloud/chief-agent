@@ -152,6 +152,7 @@ for(const bad of [{...good,deadline:0},{...good,contract:'other'},{...good,comma
     subprocess.run([node,str(script)],check=True,capture_output=True,text=True)
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 @pytest.mark.parametrize('width',[390,1280])
 def test_handshake_browser_and_history(dashboard,receiver,width):
     from playwright.sync_api import sync_playwright,expect

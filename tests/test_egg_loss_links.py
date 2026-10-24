@@ -76,6 +76,7 @@ def test_stock_and_time_mismatch(dashboard):
         with pytest.raises(ValueError):links.append(d.store,p,command(other,l))
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_permissions_csrf_and_browser(dashboard):
     from playwright.sync_api import sync_playwright,expect
     d=dashboard;p=d.credentials['principal'];c,l=seed(d);svc=IdentityService(d.store)

@@ -15,7 +15,7 @@ def agent_trace(correlation, outcome, elapsed_ms, model):
     """Closed metadata vocabulary; never accept prompts, provider text or keys."""
     if not isinstance(correlation,str) or not re.fullmatch(r'[0-9a-f]{32}',correlation):
         raise ValueError('Invalid trace reference.')
-    if outcome not in AGENT_OUTCOMES or model not in {'builtin','farming.qwen','none'}:
+    if outcome not in AGENT_OUTCOMES or (model not in {'builtin','farming.qwen','none'} and not (isinstance(model, str) and model.startswith('farming.'))):
         raise ValueError('Invalid trace category.')
     if type(elapsed_ms) is not int or not 0<=elapsed_ms<=86400000:
         raise ValueError('Invalid trace duration.')
@@ -29,7 +29,7 @@ def _allowed(record):
         text=record.getMessage()
         if record.exc_info:return False
         normal=re.fullmatch(r'[A-Z_]+ correlation=[0-9a-f]{32}',text) and text.split()[0] in CODES
-        trace=re.fullmatch(r'FARM_GUIDANCE_(BUILTIN|LIVE|BLOCKED|FAILED) correlation=[0-9a-f]{32} elapsed_ms=([0-9]{1,8}) model=(builtin|farming\.qwen|none)',text)
+        trace=re.fullmatch(r'FARM_GUIDANCE_(BUILTIN|LIVE|BLOCKED|FAILED) correlation=[0-9a-f]{32} elapsed_ms=([0-9]{1,8}) model=(builtin|farming\.[a-z0-9_.-]+|none)',text)
         return bool(normal or (trace and int(trace.group(2))<=86400000))
     except (TypeError,ValueError):
         return False

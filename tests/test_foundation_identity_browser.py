@@ -1,3 +1,4 @@
+import pytest
 from datetime import timedelta
 import re
 from playwright.sync_api import sync_playwright,expect
@@ -16,6 +17,7 @@ def age(d,minutes):
     return value
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_visible_idle_tab_and_background_polls_do_not_renew(dashboard):
     d=dashboard
     with sync_playwright() as p:
@@ -31,6 +33,7 @@ def test_visible_idle_tab_and_background_polls_do_not_renew(dashboard):
         browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_only_trusted_interaction_sends_activity(dashboard):
     d=dashboard
     with sync_playwright() as p:
@@ -45,6 +48,7 @@ def test_only_trusted_interaction_sends_activity(dashboard):
         browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_rotation_and_logout_apply_across_tabs_without_action_replay(dashboard):
     d=dashboard
     with sync_playwright() as p:

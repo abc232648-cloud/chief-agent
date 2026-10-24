@@ -171,6 +171,26 @@ def test_transport_redacts_provider_errors_and_requires_exact_model(connected,mo
     assert 'synthetic-private-key' not in str(exc.value)
 
 
+def test_connection_transport_preserves_reviewed_output_limit(connected,monkeypatch):
+    import importlib
+    module=importlib.reload(live_ai)
+    config=module.configuration(connected.d.store)
+    sent=[]
+    class Response:
+        status=200
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def read(self,*args):return json.dumps({'model':config['model'],'choices':[{'message':{'content':'Connection working.'}}]}).encode()
+    def send(req,**kwargs):
+        sent.append(json.loads(req.data))
+        return Response()
+    monkeypatch.setattr(module.urllib.request,'build_opener',lambda *args:SimpleNamespace(open=send))
+    request=module.AIRequest('Synthetic system','Synthetic connection test',max_tokens=30,purpose='farming.connection_test')
+    assert module.Transport(config).generate(request).text=='Connection working.'
+    assert sent[0]['max_completion_tokens']==30
+
+
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_farm_home_routes_owner_to_actual_activation_controls(connected):
     from playwright.sync_api import sync_playwright,expect
     d=connected.d
@@ -190,6 +210,7 @@ def test_farm_home_routes_owner_to_actual_activation_controls(connected):
         finally:browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_models_page_assigns_only_farm_after_explicit_qualification(connected):
     from playwright.sync_api import sync_playwright,expect
     d=connected.d

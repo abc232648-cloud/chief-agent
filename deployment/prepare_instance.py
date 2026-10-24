@@ -8,7 +8,7 @@ import sqlite3
 import uuid
 
 
-def prepare_isolated(root,source_root,source_manifest,username,password,*,organization_name=None,farm_name=None):
+def prepare_isolated(root,source_root,source_manifest,username,password,*,organization_name=None,farm_name=None,require_domain_selection=False):
     from database.store import Store
     from domains.storage import initialize
     from control.agents import AgentControls
@@ -38,7 +38,10 @@ def prepare_isolated(root,source_root,source_manifest,username,password,*,organi
     if organization_name is not None:
         from .ownership_bootstrap import bootstrap_initial
         ownership_result=bootstrap_initial(store,owner,organization_name,farm_name)
-    with store._connect() as con:schema=fingerprint(con)
+    with store._connect() as con:
+        if require_domain_selection:
+            con.execute("UPDATE agent_controls SET enabled=0,autostart=0,running=0 WHERE domain IN ('jobs','farming')")
+        schema=fingerprint(con)
     result={'status':'PREVIEW_PREPARED','database':str(store.path),'schema_sha256':schema,'owner_id':owner,'worker_enabled':False,'restores_promoted':False}
     if ownership_result is not None:result.update(ownership_result)
     return result
@@ -103,7 +106,7 @@ def prepare_production(root,config,source_root,source_manifest,username,password
     if work.exists() or candidate.exists():raise FileExistsError('Preparation workspace collision.')
 
     prepared=prepare_isolated(work,source_root,source_manifest,username,password,
-                              organization_name=organization_name,farm_name=farm_name)
+                              organization_name=organization_name,farm_name=farm_name,require_domain_selection=True)
     schema=prepared['schema_sha256'];source_db=Path(prepared['database'])
     candidate.mkdir(mode=0o700)
     target_db=candidate/'state.sqlite3'

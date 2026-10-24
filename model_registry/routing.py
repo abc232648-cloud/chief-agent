@@ -15,6 +15,8 @@ class ModelRouter:
 
     def generate(self,request):
         if not isinstance(request,AIRequest):raise TypeError('AIRequest is required.')
+        from gateway.entrypoints import validate_purpose
+        validate_purpose(request, self.default, self.capability)
         context=current_context()
         if context is None:
             if not self.allow_unscoped:raise PermissionError('Active model consumer context required.')

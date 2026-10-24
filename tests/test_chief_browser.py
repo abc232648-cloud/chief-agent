@@ -1,7 +1,9 @@
+import pytest
 from playwright.sync_api import sync_playwright,expect
 from browser_navigation import navigate
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_chief_agent_controls_notifications_and_report_browser(dashboard):
     dashboard.store.add_notification('Fixture notification','A specific actionable message','CRITICAL',domain='jobs')
     report=dashboard.app.ROOT/'logs';report.mkdir();(report/'fixture.txt').write_text('Downloadable audit fixture')

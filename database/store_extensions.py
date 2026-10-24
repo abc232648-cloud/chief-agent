@@ -50,7 +50,7 @@ def init_extensions(store):
         con.executescript(SCHEMA_EXT)
 
 
-def add_audit(store, category: str, action: str, status: str = 'COMPLETED', details: str = '', data: dict[str, Any] | None = None, actor='system'):
+def add_audit(store, category: str, action: str, status: str = 'COMPLETED', details: str = '', data: dict[str, Any] | None = None, actor='system', con=None):
     from identity.context import current_human
     from operations.correlation import references
     data={**(data or {}),**references()}
@@ -58,6 +58,10 @@ def add_audit(store, category: str, action: str, status: str = 'COMPLETED', deta
     if human is not None:
         actor=human.id
         data={**(data or {}),'human_id':human.id,'human_session_id':human.session_id}
+    if con is not None:
+        con.execute('INSERT INTO audit_log(category,actor,action,status,details,data_json) VALUES(?,?,?,?,?,?)',
+                    (category, actor, action, status, details, json.dumps(redact(data or {}), ensure_ascii=False)))
+        return
     with store._connect() as con:
         con.execute('INSERT INTO audit_log(category,actor,action,status,details,data_json) VALUES(?,?,?,?,?,?)',
                     (category, actor, action, status, details, json.dumps(redact(data or {}), ensure_ascii=False)))

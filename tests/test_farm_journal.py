@@ -116,6 +116,7 @@ def test_disabled_farm_or_record_component_blocks_entries(dashboard):
     with pytest.raises(PermissionError): journal.append(d.store, owner, record())
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_entry_and_correction(dashboard):
     from playwright.sync_api import sync_playwright, expect
     with sync_playwright() as p:

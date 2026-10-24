@@ -166,6 +166,7 @@ def test_insecure_nonlocal_setup_refused_before_storage(dashboard,monkeypatch):
     assert ModelSetup(Path(os.environ['CHIEF_STATE_ROOT'])).list()==[]
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_failed_save_and_navigation_clear_keys(dashboard,monkeypatch):
     from playwright.sync_api import sync_playwright,expect
     def unavailable(*a):raise SecretUnavailable('Protected key storage is unavailable.')
@@ -186,6 +187,7 @@ def test_browser_failed_save_and_navigation_clear_keys(dashboard,monkeypatch):
         browser.close()
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_save_clears_secret_fields_and_preserves_routing(dashboard,monkeypatch):
     from playwright.sync_api import sync_playwright,expect
     monkeypatch.setattr(imported,'provision',lambda *a:'synthetic-backend')

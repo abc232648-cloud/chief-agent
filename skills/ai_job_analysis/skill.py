@@ -122,6 +122,6 @@ def analyze_job_with_ai(
         ensure_ascii=False,
         sort_keys=True,
     )
-    response = gateway.generate(AIRequest(SYSTEM_PROMPT, payload, temperature=0.0, max_tokens=768))
+    response = gateway.generate(AIRequest(SYSTEM_PROMPT, payload, temperature=0.0, max_tokens=768, purpose='jobs.analyze'))
     analysis, summary_text = _extract_response(response.text)
     return analysis, summary_text, response

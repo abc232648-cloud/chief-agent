@@ -30,6 +30,7 @@ def test_pinned_valuation_history_permissions_and_unknown_units(dashboard):
     with pytest.raises(PermissionError):policy.overview(d.store,manager)
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_costing_settings_and_missing_evidence(dashboard):
     from playwright.sync_api import sync_playwright, expect
     with sync_playwright() as pw:
@@ -65,6 +66,7 @@ def test_recorded_price_needs_source_and_estimates_never_become_expenses(dashboa
     with pytest.raises(ValueError):policy.configure(d.store,p,assumptions(price_basis='UNKNOWN',price_source=''))
 
 
+@pytest.mark.usefixtures('configured_both_workspace')
 def test_browser_price_entry_uses_currency_and_exact_display(dashboard):
     from playwright.sync_api import sync_playwright, expect
     d=dashboard;owner=d.credentials['principal']

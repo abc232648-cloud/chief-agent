@@ -53,6 +53,6 @@
     finally{activityPending=false;}
   }
   for(const event of ['pointerdown','keydown'])document.addEventListener(event,interaction,{capture:true,passive:true});
-  document.addEventListener('DOMContentLoaded',()=>{const button=document.createElement('button');button.textContent='Sign out';button.type='button';button.onclick=async()=>{const response=await window.fetch('/api/auth/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});if(response.ok){if(channel)channel.postMessage('signed-out');location.href=loginRoute;}};(document.querySelector('.topbar')||document.body).append(button);});
+  document.addEventListener('DOMContentLoaded',()=>{if(document.querySelector('button[data-action="sign-out"], #signOutBtn'))return;const button=document.createElement('button');button.textContent='Sign out';button.type='button';button.onclick=async()=>{const response=await window.fetch('/api/auth/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});if(response.ok){if(channel)channel.postMessage('signed-out');location.href=loginRoute;}};(document.querySelector('.topbar')||document.body).append(button);});
   session().catch(()=>{});
 })();
