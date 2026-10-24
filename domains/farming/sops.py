@@ -120,7 +120,7 @@ def publish(store, principal, payload):
     base_required = {'event_id', 'operation', 'sop_id', 'version', 'title', 'purpose', 'steps', 'warnings'}
     if not base_required.issubset(set(p)) or p.get('operation') != 'PUBLISH':
         raise ValueError('Supply exactly the SOP publication fields.')
-    allowed = base_required | {'status', 'framework_mappings', 'attachments', 'notes'}
+    allowed = base_required | {'status', 'framework_mappings', 'attachments', 'notes', 'from_draft_id'}
     if not set(p).issubset(allowed):
         raise ValueError('Unknown fields in SOP publication.')
     identifier(p['event_id']); identifier(p['sop_id']); p['version'] = version(p['version'])
@@ -158,6 +158,17 @@ def publish(store, principal, payload):
                 raise ValueError('Submission identifier conflict.')
             return {'status': 'ALREADY_RECORDED', 'sop_ref': reference(p['sop_id'], p['version']),
                     'updated_at': prior_event['received_at']}
+        if 'from_draft_id' in p:
+            drafts = [r for r in draft_rows(con) if r['payload']['draft_id'] == p['from_draft_id']]
+            if not drafts:
+                raise ValueError('Referenced draft not found.')
+            latest_draft = drafts[-1]['payload']
+            if latest_draft.get('review_status') != 'APPROVED':
+                raise ValueError('Only approved drafts may be published.')
+            if latest_draft['sop_id'] != p['sop_id'] or latest_draft['version'] != p['version']:
+                raise ValueError('Published SOP identity does not match approved draft.')
+            p['approved_revision'] = latest_draft.get('reviewed_revision', latest_draft.get('revision', 1))
+
         prior_version = next((r for r in history if r['payload']['sop_id'] == p['sop_id'] and r['payload']['version'] == p['version'] and r['payload'].get('operation') == 'PUBLISH'), None)
         if prior_version:
             raise ValueError('Published SOP versions are immutable; publish a new version instead.')
@@ -233,13 +244,32 @@ def delete_sop(store, principal, payload):
         published = next((r for r in history if r['payload']['sop_id'] == payload['sop_id'] and r['payload']['version'] == v), None)
         if not published:
             raise ValueError('Specified SOP version does not exist.')
+
+        # Scrub and delete physical attachments belonging to this SOP version
+        storage_dir = (store.path.resolve().parent / 'sop-attachments').resolve()
+        att_rows = con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=?", (ATTACHMENT_KIND,)).fetchall()
+        for ar in att_rows:
+            aval = json.loads(ar[0])['payload']
+            if aval.get('sop_id') == payload['sop_id'] and aval.get('version') == v:
+                for match in storage_dir.glob(f"{aval['attachment_id']}.*"):
+                    try:
+                        match.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+
         received_at = utc_text(utc_now())
         p = {
             'event_id': payload['event_id'],
             'operation': 'DELETE',
             'sop_id': payload['sop_id'],
             'version': v,
-            'title': published['payload'].get('title', 'Deleted SOP'),
+            'title': '[Deleted Procedure]',
+            'purpose': '[This procedure was permanently deleted by the Farm Owner. Content scrubbed from storage.]',
+            'steps': [],
+            'warnings': [],
+            'attachments': [],
+            'deleted_by': principal.id,
+            'deleted_at': received_at,
         }
         record = {'version': 1, 'payload': p, 'actor_id': principal.id,
                   'session_id': principal.session_id, 'received_at': received_at}
@@ -255,7 +285,7 @@ def delete_sop(store, principal, payload):
 
 
 def draft_save(store, principal, payload):
-    """Create or update a draft procedure for management review."""
+    """Create or update a draft procedure for management review with revision tracking."""
     if not isinstance(payload, dict):
         raise ValueError('Supply draft payload.')
     required = {'draft_id', 'sop_id', 'version', 'title', 'purpose', 'steps'}
@@ -268,24 +298,29 @@ def draft_save(store, principal, payload):
     d['steps'] = _text_list(d['steps'], limit=40, item_limit=1000, name='Draft steps')
     d['warnings'] = [bounded_text(w, 800) for w in d.get('warnings', [])] if isinstance(d.get('warnings'), list) else []
     d['framework_mappings'] = [bounded_text(m, 50) for m in d.get('framework_mappings', [])] if isinstance(d.get('framework_mappings'), list) else []
-    d['review_status'] = 'PENDING_REVIEW'
+    d['review_status'] = d.get('review_status', 'PENDING_REVIEW')
     d['operation'] = 'DRAFT'
 
     with store._connect() as con:
         con.execute('BEGIN IMMEDIATE')
         principal = setup.authorize(store, con, principal, 'setup')
         setup.available(store, con)
+        prior_drafts = [r for r in draft_rows(con) if r['payload']['draft_id'] == d['draft_id']]
+        prior_rev = prior_drafts[-1]['payload'].get('revision', 1) if prior_drafts else 0
+        if 'expected_revision' in d and prior_drafts and d['expected_revision'] != prior_rev:
+            raise ValueError('Concurrent edit conflict: draft revision mismatch.')
+        d['revision'] = prior_rev + 1
         received_at = utc_text(utc_now())
         record = {'version': 1, 'payload': d, 'actor_id': principal.id,
                   'session_id': principal.session_id, 'received_at': received_at}
         con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",
                     (DRAFT_KIND, json.dumps(record, sort_keys=True), time.time()))
         IdentityService(store)._event(con, principal, 'FARM_SOP_DRAFT_SAVED', 'farming', d['draft_id'], 'RECORDED')
-    return {'status': 'RECORDED', 'draft_id': d['draft_id'], 'sop_ref': reference(d['sop_id'], d['version']), 'updated_at': received_at}
+    return {'status': 'RECORDED', 'draft_id': d['draft_id'], 'sop_ref': reference(d['sop_id'], d['version']), 'revision': d['revision'], 'updated_at': received_at}
 
 
 def draft_review(store, principal, payload):
-    """Owner/Manager reviews a draft procedure and records approval/rejection."""
+    """Owner/Manager reviews a draft procedure and binds decision to exact revision."""
     if not isinstance(payload, dict):
         raise ValueError('Supply draft review payload.')
     required = {'draft_id', 'decision', 'reviewer_notes'}
@@ -301,12 +336,16 @@ def draft_review(store, principal, payload):
         con.execute('BEGIN IMMEDIATE')
         principal = setup.authorize(store, con, principal, 'setup')
         setup.available(store, con)
-        drafts = draft_rows(con)
-        target = next((d for d in drafts if d['payload']['draft_id'] == payload['draft_id']), None)
-        if not target:
+        drafts = [r for r in draft_rows(con) if r['payload']['draft_id'] == payload['draft_id']]
+        if not drafts:
             raise ValueError('Draft not found.')
+        target = drafts[-1]
+        target_rev = target['payload'].get('revision', 1)
+        if 'expected_revision' in payload and payload['expected_revision'] != target_rev:
+            raise ValueError('Stale draft revision; review the updated draft before making a decision.')
         p = dict(target['payload'])
         p['review_status'] = decision
+        p['reviewed_revision'] = target_rev
         p['reviewer_notes'] = notes
         p['reviewed_by'] = principal.id
         p['reviewed_at'] = utc_text(utc_now())
@@ -315,7 +354,7 @@ def draft_review(store, principal, payload):
         con.execute("INSERT INTO domain_records(domain,kind,data_json,created_at) VALUES('farming',?,?,?)",
                     (DRAFT_KIND, json.dumps(record, sort_keys=True), time.time()))
         IdentityService(store)._event(con, principal, 'FARM_SOP_DRAFT_REVIEWED', 'farming', payload['draft_id'], 'RECORDED')
-    return {'status': 'RECORDED', 'draft_id': payload['draft_id'], 'decision': decision, 'updated_at': p['reviewed_at']}
+    return {'status': 'RECORDED', 'draft_id': payload['draft_id'], 'decision': decision, 'reviewed_revision': target_rev, 'updated_at': p['reviewed_at']}
 
 
 def draft_list(store, principal):
@@ -350,6 +389,8 @@ def upload_attachment(store, principal, sop_id, sop_version, filename, content_b
     from control.files import validate_document
     identifier(sop_id)
     v = version(sop_version)
+    if '..' in Path(filename).parts or '/' in filename or '\\' in filename:
+        raise ValueError('Unsafe attachment filename.')
     suffix, data = validate_document(filename, content_b64)
     if suffix not in {'.pdf', '.docx', '.txt'}:
         raise ValueError('Supported attachment formats are PDF, DOCX and TXT.')
@@ -359,16 +400,32 @@ def upload_attachment(store, principal, sop_id, sop_version, filename, content_b
         principal = setup.authorize(store, con, principal, 'setup')
         setup.available(store, con)
 
-        # Store in private attachments directory under store parent
-        storage_dir = store.path.resolve().parent / 'sop-attachments'
+        storage_dir = (store.path.resolve().parent / 'sop-attachments').resolve()
         storage_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+        # Link and reparse rejection on storage directory
+        for p in (storage_dir, *storage_dir.parents):
+            if p.is_symlink() or (hasattr(p, 'is_junction') and p.is_junction()):
+                raise PermissionError('Linked storage paths are not permitted.')
+
         file_hash = hashlib.sha256(data).hexdigest()
         att_id = 'sop-att-' + file_hash[:16]
-        target_path = storage_dir / (att_id + suffix)
+        target_path = (storage_dir / (att_id + suffix)).resolve()
+        if not target_path.is_relative_to(storage_dir):
+            raise PermissionError('Attachment path escapes storage container.')
 
         if not target_path.exists():
-            with open(target_path, 'wb') as f:
-                f.write(data)
+            import tempfile
+            tmp_fd, tmp_path = tempfile.mkstemp(prefix='.upload-', dir=storage_dir)
+            try:
+                with os.fdopen(tmp_fd, 'wb') as stream:
+                    stream.write(data)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(tmp_path, target_path)
+            except Exception:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+                raise
 
         att_meta = {
             'attachment_id': att_id,
@@ -390,25 +447,59 @@ def upload_attachment(store, principal, sop_id, sop_version, filename, content_b
 
 
 def get_attachment(store, principal, attachment_id):
-    """Retrieve validated private attachment bytes and metadata."""
+    """Retrieve validated private attachment bytes with role-scoped access and integrity verification."""
     with store._connect() as con:
-        setup.authorize(store, con, principal, 'read')
-        rows = con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id DESC", (ATTACHMENT_KIND,)).fetchall()
-    record = None
-    for r in rows:
-        val = json.loads(r[0])
-        if val['payload']['attachment_id'] == attachment_id:
-            record = val['payload']
-            break
-    if not record:
-        raise FileNotFoundError('Attachment record not found.')
+        principal = setup.authorize(store, con, principal, 'read')
+        role = setup.role(con, principal)
+        rows_att = con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind=? ORDER BY id DESC", (ATTACHMENT_KIND,)).fetchall()
+        record = None
+        for r in rows_att:
+            val = json.loads(r[0])
+            if val['payload']['attachment_id'] == attachment_id:
+                record = val['payload']
+                break
+        if not record:
+            raise FileNotFoundError('Attachment record not found.')
 
-    storage_dir = store.path.resolve().parent / 'sop-attachments'
+        # Check procedure status
+        sop_rows = con.execute("SELECT data_json FROM domain_records WHERE domain='farming' AND kind IN (?, ?) ORDER BY id DESC", (KIND, DRAFT_KIND)).fetchall()
+        sop_item = None
+        for sr in sop_rows:
+            sval = json.loads(sr[0])
+            spay = sval['payload']
+            if spay.get('sop_id') == record['sop_id'] and spay.get('version') == record['version']:
+                sop_item = spay
+                break
+
+        if sop_item:
+            # If deleted, attachment is permanently unavailable
+            if sop_item.get('operation') == 'DELETE' or sop_item.get('status') == 'DELETED':
+                raise FileNotFoundError('Attachment content was permanently deleted.')
+            # If draft, workers cannot access draft attachments
+            if sop_item.get('operation') == 'DRAFT' and role == 'WORKER':
+                raise PermissionError('Draft attachments are restricted to farm management.')
+
+    storage_dir = (store.path.resolve().parent / 'sop-attachments').resolve()
+    for p in (storage_dir, *storage_dir.parents):
+        if p.is_symlink() or (hasattr(p, 'is_junction') and p.is_junction()):
+            raise PermissionError('Linked storage paths are not permitted.')
+
     found = list(storage_dir.glob(f"{attachment_id}.*"))
     if not found or not found[0].is_file():
         raise FileNotFoundError('Attachment content missing from private storage.')
-    path = found[0]
-    return path.read_bytes(), record['mime_type'], record['filename']
+    path = found[0].resolve()
+    if not path.is_relative_to(storage_dir):
+        raise PermissionError('Attachment path escapes storage container.')
+    for p in (path, *path.parents):
+        if p.is_symlink() or (hasattr(p, 'is_junction') and p.is_junction()):
+            raise PermissionError('Linked storage paths are not permitted.')
+
+    data = path.read_bytes()
+    # Integrity check: content must match SHA256 recorded at upload
+    if hashlib.sha256(data).hexdigest() != record['sha256']:
+        raise ValueError('Attachment integrity verification failed: file content modified.')
+
+    return data, record['mime_type'], record['filename']
 
 
 def seed_starter_drafts(store, principal):
@@ -431,7 +522,7 @@ def seed_starter_drafts(store, principal):
                 'Never shut water lines off during daylight or warm hours without supervisor coordination.',
                 'Wear chemical splash goggles and gloves when measuring concentrated sanitizing solution.',
             ],
-            'framework_mappings': ['FMARD-GAP-01', 'CODEX-CAC-RCP-15'],
+            'framework_mappings': ['FMARD-GAP-01'],
         },
         {
             'draft_id': 'starter-poultry-lighting-01',
@@ -448,9 +539,9 @@ def seed_starter_drafts(store, principal):
             ],
             'warnings': [
                 'Do not alter lighting cycle hours abruptly without veterinary/production manager authorization.',
-                'Disconnect electrical lockouts before cleaning exhaust fan blades.',
+                'Ensure exhaust fan circuit is switched off, isolated and locked/tagged out at the breaker panel before inspecting or cleaning outer protective louvers; never attempt internal motor repairs.',
             ],
-            'framework_mappings': ['CODEX-CAC-RCP-15', 'FMARD-GAP-01'],
+            'framework_mappings': ['CODEX-EGG-02'],
         },
         {
             'draft_id': 'starter-poultry-biosecurity-01',
@@ -470,7 +561,7 @@ def seed_starter_drafts(store, principal):
                 'Strictly prohibit entry of external poultry products, egg cartons, or birds from other premises.',
                 'Report any wild bird carcasses or sightings near pens immediately to supervisor.',
             ],
-            'framework_mappings': ['WOAH-TAHC-CHAP6.5', 'FMARD-GAP-01'],
+            'framework_mappings': ['WOAH-BIO-01'],
         },
         {
             'draft_id': 'starter-poultry-veterinary-01',
@@ -490,7 +581,7 @@ def seed_starter_drafts(store, principal):
                 'Do not dispose of suspected infectious carcasses via open dump; use incinerator or deep covered burial pit only.',
                 'Do not self-prescribe broad-spectrum antibiotics without veterinary diagnostic approval.',
             ],
-            'framework_mappings': ['WOAH-TAHC-CHAP6.5', 'FMARD-GAP-02'],
+            'framework_mappings': ['WOAH-BIO-02', 'FMARD-GAP-02'],
         },
         {
             'draft_id': 'starter-poultry-medication-01',
@@ -510,12 +601,14 @@ def seed_starter_drafts(store, principal):
                 'Never harvest eggs or market broilers during active withdrawal period; violates NAFDAC food safety regulations.',
                 'Store all pharmaceuticals in locked, temperature-monitored cabinet away from feed supplies.',
             ],
-            'framework_mappings': ['NAFDAC-VMD-2019', 'NIST-CSF-DATA'],
+            'framework_mappings': ['NAFDAC-VMD-01', 'NAFDAC-VMD-02', 'NIST-INT-01'],
         },
     ]
 
     results = []
     for s in starters:
+        s['review_status'] = 'UNVERIFIED_STARTER_DRAFT'
+        s['notes'] = 'Starter operational template for farm adaptation. Unverified draft; requires Farm Manager and consulting veterinary review and authorization before publication.'
         res = draft_save(store, principal, s)
         results.append(res)
     return {'status': 'SEEDED', 'count': len(results), 'items': results}

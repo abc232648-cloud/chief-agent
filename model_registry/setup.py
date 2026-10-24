@@ -118,9 +118,9 @@ class ModelSetup:
         provider = record['provider']
         endpoint = ENDPOINTS.get(provider)
         if not endpoint:
-            raise ValueError('A saved key and a supported Groq or Mistral adapter are required.')
+            raise ValueError('A saved key and a supported provider connection are required.')
         if provider != 'ollama' and not record['key_configured']:
-            raise ValueError('A saved key and a supported Groq or Mistral adapter are required.')
+            raise ValueError('A saved key and a supported provider connection are required.')
         def failed(code, message):
             return {'status':'CHECK_FAILED','code':code,'message':message+' No model was activated.'}
         key = None
@@ -168,16 +168,16 @@ class ModelSetup:
                     if not isinstance(models, list):
                         raise ValueError()
                     target_model = record['provider_model']
-                    found = any(isinstance(item, dict) and (item.get('name') == target_model or item.get('name', '').startswith(target_model)) for item in models)
+                    found = any(isinstance(item, dict) and (item.get('name') == target_model or item.get('model') == target_model or item.get('name') == f'{target_model}:latest') for item in models)
                 else:
                     found = False
 
-            notice = 'Provider responded. This does not verify pricing, model suitability or action authority. Registration remains inactive.'
+            notice = 'Provider responded to catalog check. This intake check does not test live inference qualification, pricing limits, or execution authority. Registration remains inactive.'
             if provider == 'openrouter':
                 notice += ' Aggregator routing restrictions apply where supported; guarantees cannot be enforced invisibly.'
             return {'status': 'CONNECTED', 'model_listed': found, 'message': notice}
         except urllib.error.HTTPError as exc:
-            name = 'Groq/Mistral' if provider in {'groq', 'mistral'} else provider.capitalize()
+            name = provider.capitalize()
             messages={
                 401:('AUTH_REJECTED', f'{name} rejected authentication. Check or replace the key in the private key field.'),
                 403:('ACCESS_DENIED','The provider denied this account access. Check provider account/project permissions.'),

@@ -50,7 +50,7 @@ def ask(store, principal, payload):
     try:
         result = _ask(store, principal, payload)
         outcome = 'LIVE' if result['live_ai'] else 'BUILTIN'
-        model = 'farming.qwen' if result['live_ai'] else 'builtin'
+        model = f'farming.{result.get("provider", "model")}' if result['live_ai'] else 'builtin'
         return {**result, 'trace_id': trace_id}
     except PermissionError:
         outcome = 'BLOCKED'

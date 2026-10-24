@@ -230,15 +230,21 @@ def get_requirement(req_id: str) -> Optional[FrameworkRequirement]:
 
 
 def gap_analysis(store, principal, country_pack: str = 'nigeria'):
-    """Analyze compliance preparation posture against registered framework requirements."""
+    """Analyze compliance preparation posture with strict exact requirement mapping,
+    worker draft information shielding, and distinct evidence collection/review stages.
+    """
     from . import sops, tasks
     with store._connect() as con:
         setup.authorize(store, con, principal, 'read')
-        # Load published and drafted SOPs
+        caller_role = setup.role(con, principal)
         published_sops = list(sops.catalog(sops.rows(con)).values())
-        drafts = sops.draft_list_internal(con)
+        # Restrict draft visibility: Workers cannot see unpublished draft procedures or internal draft pipelines
+        is_worker = (caller_role == 'WORKER')
+        drafts = [] if is_worker else sops.draft_list_internal(con)
+        
+        # Load task records to check evidence collection and review
+        task_snapshots = tasks._snapshots(tasks.rows(con))
 
-    # Collect all requirements for the chosen country pack
     pack = COUNTRY_PACKS.get(country_pack.lower(), COUNTRY_PACKS['nigeria'])
     active_reqs: List[FrameworkRequirement] = []
     for fid in pack['framework_ids']:
@@ -246,14 +252,14 @@ def gap_analysis(store, principal, country_pack: str = 'nigeria'):
         if fw:
             active_reqs.extend(fw.requirements)
 
-    # Build mapping from req_id -> covered SOPs
     mapped_evidence = {req.req_id: [] for req in active_reqs}
     draft_evidence = {req.req_id: [] for req in active_reqs}
 
     for req in active_reqs:
+        # Require exact requirement ID mapping; whole-framework wildcard mapping is strictly prohibited
         for sop in published_sops:
             mappings = sop.get('framework_mappings') or []
-            if req.req_id in mappings or req.framework_id in mappings:
+            if req.req_id in mappings:
                 mapped_evidence[req.req_id].append({
                     'sop_id': sop['sop_id'],
                     'version': sop['version'],
@@ -263,7 +269,7 @@ def gap_analysis(store, principal, country_pack: str = 'nigeria'):
 
         for draft in drafts:
             mappings = draft.get('payload', {}).get('framework_mappings') or []
-            if req.req_id in mappings or req.framework_id in mappings:
+            if req.req_id in mappings:
                 draft_evidence[req.req_id].append({
                     'draft_id': draft['payload']['draft_id'],
                     'sop_id': draft['payload']['sop_id'],
@@ -279,33 +285,70 @@ def gap_analysis(store, principal, country_pack: str = 'nigeria'):
 
     for req in active_reqs:
         active_cov = [s for s in mapped_evidence[req.req_id] if s['status'] == 'ACTIVE']
-        draft_cov = draft_evidence[req.req_id]
+        draft_cov = draft_evidence[req.req_id] if not is_worker else []
 
-        if active_cov:
+        sop_mapped = len(active_cov) > 0
+        evidence_collected = False
+        evidence_reviewed = False
+
+        if sop_mapped:
+            # Check if any tasks reference active SOPs for this requirement
+            active_sop_refs = {f"{s['sop_id']}@{s['version']}" for s in active_cov} | {s['sop_id'] for s in active_cov}
+            matching_tasks = [
+                t for t in task_snapshots.values()
+                if t.get('sop_ref') in active_sop_refs and t.get('status') in {'AWAITING_VERIFICATION', 'VERIFIED', 'IN_PROGRESS'}
+            ]
+            if matching_tasks:
+                evidence_collected = True
+                # Evidence is reviewed when supervisor has formally verified the completed task
+                verified_tasks = [t for t in matching_tasks if t.get('status') == 'VERIFIED']
+                if verified_tasks:
+                    evidence_reviewed = True
+
+        if sop_mapped and evidence_collected and evidence_reviewed:
             status = 'COVERED'
+            readiness_stage = 'AUDIT_READY'
             covered_count += 1
-            recommended_action = 'Maintain scheduled task execution and periodic procedure review.'
+            recommended_action = 'Evidence verified; ready for regulatory/certification audit review.'
+        elif sop_mapped and evidence_collected:
+            status = 'COVERED'
+            readiness_stage = 'EVIDENCE_COLLECTED'
+            covered_count += 1
+            recommended_action = 'Task evidence logged; conduct manager review and audit sign-off.'
+        elif sop_mapped:
+            status = 'COVERED'
+            readiness_stage = 'PROCEDURE_MAPPED'
+            covered_count += 1
+            recommended_action = 'Procedure active; assign and record field execution tasks to collect compliance evidence.'
         elif draft_cov:
             status = 'IN_PROGRESS'
+            readiness_stage = 'IN_PROGRESS'
             in_progress_count += 1
             recommended_action = f'Complete human review and publish draft {draft_cov[0]["sop_id"]}@{draft_cov[0]["version"]}.'
         else:
             status = 'MISSING_EVIDENCE'
+            readiness_stage = 'UNMAPPED'
             missing_count += 1
             recommended_action = f'Create and publish an SOP for {req.recommended_sop_category} satisfying: {req.title}.'
 
-        analysis.append({
+        item = {
             'req_id': req.req_id,
             'framework_id': req.framework_id,
             'section': req.section,
             'title': req.title,
             'description': req.description,
             'evidence_needed': req.evidence_needed,
+            'sop_mapped': sop_mapped,
+            'evidence_collected': evidence_collected,
+            'evidence_reviewed': evidence_reviewed,
+            'readiness_stage': readiness_stage,
             'status': status,
             'covered_by_active_sops': active_cov,
-            'covered_by_drafts': draft_cov,
             'recommended_action': recommended_action,
-        })
+        }
+        if not is_worker:
+            item['covered_by_drafts'] = draft_cov
+        analysis.append(item)
 
     total = len(active_reqs)
     readiness_percentage = round((covered_count / total * 100), 1) if total > 0 else 0.0
@@ -313,6 +356,7 @@ def gap_analysis(store, principal, country_pack: str = 'nigeria'):
     return {
         'country_pack': pack['name'],
         'country_code': pack['code'],
+        'role_view': caller_role,
         'summary': {
             'total_requirements': total,
             'covered': covered_count,
@@ -321,11 +365,11 @@ def gap_analysis(store, principal, country_pack: str = 'nigeria'):
             'preparation_readiness_pct': readiness_percentage,
         },
         'certification_preparation_pathway': [
-            {'step': 1, 'name': 'Draft Approved Procedures', 'detail': 'Author or adapt starter drafts for missing biosecurity, water, medication, and ventilation routines.'},
-            {'step': 2, 'name': 'Manager/Owner Human Review', 'detail': 'Formally review each draft in Chief console with reviewer notes before publication.'},
-            {'step': 3, 'name': 'Publish Immutable Versions', 'detail': 'Publish reviewed procedures with pinned semantic versions (e.g. 1.0.0).'},
-            {'step': 4, 'name': 'Assign and Execute Field Tasks', 'detail': 'Dispatch daily tasks referencing exact procedure versions; verify worker completions.'},
-            {'step': 5, 'name': 'Audit Package Export', 'detail': 'Generate deterministic records and evidence logs for external auditor or regulatory inspector.'}
+            {'stage': 1, 'name': 'Draft Operational Procedures', 'detail': 'Author or adapt starter drafts for missing biosecurity, water, medication, and ventilation routines.'},
+            {'stage': 2, 'name': 'Manager/Owner Human Review', 'detail': 'Formally review each draft in Chief console with reviewer notes before publication.'},
+            {'stage': 3, 'name': 'Publish Immutable Versions', 'detail': 'Publish reviewed procedures with pinned semantic versions (e.g. 1.0.0).'},
+            {'stage': 4, 'name': 'Assign and Execute Field Tasks', 'detail': 'Dispatch daily tasks referencing exact procedure versions; record completions with required evidence.'},
+            {'stage': 5, 'name': 'Supervisor Evidence Review & Audit Export', 'detail': 'Supervisors review and sign off on completed task evidence logs for external auditor or regulatory inspector.'}
         ],
         'requirements': analysis,
         'notice': 'This analysis provides deterministic evidence tracking for certification preparation. No automatic or legal certification is granted by this system.'
