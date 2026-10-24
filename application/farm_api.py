@@ -6,7 +6,7 @@ from urllib.parse import urlsplit, parse_qs
 
 def dispatch(handler, store, principal, path, method, body):
     parsed = urlsplit(handler.path)
-    if parsed.path not in {'/api/farm/expense-allocations','/api/farm/egg-loss-links','/api/farm/clarifications','/api/farm/worker-reports','/api/farm/tasks','/api/farm/incidents','/api/farm/sops','/api/farm/sops/assigned','/api/farm/planning','/api/farm/planning/preview','/api/farm/health-records','/api/farm/treatment-restrictions','/api/farm/labour','/api/farm/units','/api/farm/costing','/api/farm/costing/policy','/api/farm/financial-permissions','/api/farm/physical-counts','/api/farm/notification-recipients','/api/farm/brief','/api/farm/brief/schedule','/api/farm/finance','/api/farm/journal', '/api/farm/setup', '/api/farm/bookkeeping', '/api/farm/staff', '/api/farm/assistant', '/api/farm/assistant/configure', '/api/farm/photos'} and not parsed.path.startswith(('/api/farm/photos/','/api/farm/receipts/','/api/farm/finance/history/')):
+    if parsed.path not in {'/api/farm/expense-allocations','/api/farm/egg-loss-links','/api/farm/clarifications','/api/farm/worker-reports','/api/farm/tasks','/api/farm/incidents','/api/farm/sops','/api/farm/sops/assigned','/api/farm/sops/library','/api/farm/sops/drafts','/api/farm/sops/drafts/review','/api/farm/sops/drafts/seed','/api/farm/sops/withdraw','/api/farm/sops/delete','/api/farm/sops/attachments','/api/farm/frameworks','/api/farm/frameworks/gap-analysis','/api/farm/frameworks/country-packs','/api/farm/planning','/api/farm/planning/preview','/api/farm/health-records','/api/farm/treatment-restrictions','/api/farm/labour','/api/farm/units','/api/farm/costing','/api/farm/costing/policy','/api/farm/financial-permissions','/api/farm/physical-counts','/api/farm/notification-recipients','/api/farm/brief','/api/farm/brief/schedule','/api/farm/finance','/api/farm/journal', '/api/farm/setup', '/api/farm/bookkeeping', '/api/farm/staff', '/api/farm/assistant', '/api/farm/assistant/configure', '/api/farm/photos'} and not parsed.path.startswith(('/api/farm/photos/','/api/farm/receipts/','/api/farm/finance/history/','/api/farm/sops/attachments/')):
         return False
     require_farm_runtime()
     if parsed.path == '/api/farm/worker-reports':
@@ -40,17 +40,71 @@ def dispatch(handler, store, principal, path, method, body):
         else:
             handler.json({'status': 'METHOD_NOT_ALLOWED'}, 405)
         return True
-    if parsed.path in {'/api/farm/sops', '/api/farm/sops/assigned'}:
+    if parsed.path.startswith('/api/farm/sops'):
         from domains.farming import sops
-        if parsed.path.endswith('/assigned'):
+        if parsed.path == '/api/farm/sops/assigned':
             if method in {'GET', 'HEAD'}: handler.json(sops.assigned(store, principal))
             else: handler.json({'status': 'METHOD_NOT_ALLOWED'}, 405)
-        elif method in {'GET', 'HEAD'}:
-            handler.json(sops.overview(store, principal))
-        elif method == 'POST':
-            handler.json(sops.publish(store, principal, body))
+        elif parsed.path == '/api/farm/sops/library':
+            if method in {'GET', 'HEAD'}: handler.json(sops.library(store, principal))
+            else: handler.json({'status': 'METHOD_NOT_ALLOWED'}, 405)
+        elif parsed.path == '/api/farm/sops/drafts':
+            if method in {'GET', 'HEAD'}: handler.json(sops.draft_list(store, principal))
+            elif method == 'POST': handler.json(sops.draft_save(store, principal, body))
+            else: handler.json({'status': 'METHOD_NOT_ALLOWED'}, 405)
+        elif parsed.path == '/api/farm/sops/drafts/review':
+            if method == 'POST': handler.json(sops.draft_review(store, principal, body))
+            else: handler.json({'status': 'METHOD_NOT_ALLOWED'}, 405)
+        elif parsed.path == '/api/farm/sops/drafts/seed':
+            if method == 'POST': handler.json(sops.seed_starter_drafts(store, principal))
+            else: handler.json({'status': 'METHOD_NOT_ALLOWED'}, 405)
+        elif parsed.path == '/api/farm/sops/withdraw':
+            if method == 'POST': handler.json(sops.withdraw(store, principal, body))
+            else: handler.json({'status': 'METHOD_NOT_ALLOWED'}, 405)
+        elif parsed.path == '/api/farm/sops/delete':
+            if method == 'POST': handler.json(sops.delete_sop(store, principal, body))
+            else: handler.json({'status': 'METHOD_NOT_ALLOWED'}, 405)
+        elif parsed.path == '/api/farm/sops/attachments':
+            if method == 'POST':
+                handler.json(sops.upload_attachment(store, principal, body.get('sop_id'), body.get('version'), body.get('filename'), body.get('content_b64')))
+            else: handler.json({'status': 'METHOD_NOT_ALLOWED'}, 405)
+        elif parsed.path.startswith('/api/farm/sops/attachments/'):
+            att_id = parsed.path.split('/')[-1]
+            if method in {'GET', 'HEAD'}:
+                data, mime, fname = sops.get_attachment(store, principal, att_id)
+                handler.send_response(200)
+                handler.send_header('Content-Type', mime)
+                handler.send_header('Content-Length', str(len(data)))
+                handler.send_header('Content-Disposition', f'attachment; filename="{fname}"')
+                handler.end_headers()
+                if method == 'GET':
+                    handler.wfile.write(data)
+            else: handler.json({'status': 'METHOD_NOT_ALLOWED'}, 405)
+        elif parsed.path == '/api/farm/sops':
+            if method in {'GET', 'HEAD'}:
+                handler.json(sops.overview(store, principal))
+            elif method == 'POST':
+                handler.json(sops.publish(store, principal, body))
+            else:
+                handler.json({'status': 'METHOD_NOT_ALLOWED'}, 405)
         else:
-            handler.json({'status': 'METHOD_NOT_ALLOWED'}, 405)
+            handler.json({'status': 'NOT_FOUND'}, 404)
+        return True
+    if parsed.path.startswith('/api/farm/frameworks'):
+        from domains.farming import frameworks
+        q = parse_qs(parsed.query)
+        pack = q.get('country_pack', [None])[0]
+        if parsed.path == '/api/farm/frameworks':
+            if method in {'GET', 'HEAD'}: handler.json({'frameworks': frameworks.list_frameworks(pack)})
+            else: handler.json({'status': 'METHOD_NOT_ALLOWED'}, 405)
+        elif parsed.path == '/api/farm/frameworks/gap-analysis':
+            if method in {'GET', 'HEAD'}: handler.json(frameworks.gap_analysis(store, principal, country_pack=pack or 'nigeria'))
+            else: handler.json({'status': 'METHOD_NOT_ALLOWED'}, 405)
+        elif parsed.path == '/api/farm/frameworks/country-packs':
+            if method in {'GET', 'HEAD'}: handler.json({'country_packs': frameworks.list_country_packs()})
+            else: handler.json({'status': 'METHOD_NOT_ALLOWED'}, 405)
+        else:
+            handler.json({'status': 'NOT_FOUND'}, 404)
         return True
     if parsed.path == '/api/farm/expense-allocations':
         from domains.farming import expense_allocations

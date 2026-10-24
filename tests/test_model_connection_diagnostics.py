@@ -71,3 +71,95 @@ def test_agent_header_and_brand_return_to_agent_home(dashboard,agent,page_id,tit
             home='#jobOverview' if agent=='jobs' else '#agentHome'
             expect(page.locator(home+' h1')).to_have_text(title)
         finally:browser.close()
+
+
+
+@pytest.mark.parametrize('provider,expected_url,expected_header,model_key', [
+    ('groq', 'https://api.groq.com/openai/v1/models', ('Authorization', 'Bearer test-key'), 'data'),
+    ('mistral', 'https://api.mistral.ai/v1/models', ('Authorization', 'Bearer test-key'), 'data'),
+    ('openai', 'https://api.openai.com/v1/models', ('Authorization', 'Bearer test-key'), 'data'),
+    ('anthropic', 'https://api.anthropic.com/v1/models', ('x-api-key', 'test-key'), 'data'),
+    ('gemini', 'https://generativelanguage.googleapis.com/v1beta/models', ('x-goog-api-key', 'test-key'), 'models'),
+    ('deepseek', 'https://api.deepseek.com/models', ('Authorization', 'Bearer test-key'), 'data'),
+    ('xai', 'https://api.x.ai/v1/models', ('Authorization', 'Bearer test-key'), 'data'),
+    ('openrouter', 'https://openrouter.ai/api/v1/models', ('Authorization', 'Bearer test-key'), 'data'),
+])
+def test_cloud_provider_adapters_request_structure(tmp_path, monkeypatch, provider, expected_url, expected_header, model_key):
+    setup = ModelSetup(tmp_path)
+    monkeypatch.setattr(imported, 'provision', lambda *a: 'backend')
+    monkeypatch.setattr(imported, 'resolve', lambda *a: 'test-key')
+
+    target_model = 'test-model-id'
+    body = dict(provider=provider, provider_model=target_model, cost='UNKNOWN', api_key='test-key')
+    record = setup.add(body, actor='owner')
+
+    captured = {}
+    class FakeResponse:
+        status = 200
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def read(self, limit):
+            if model_key == 'data':
+                return json.dumps({'data': [{'id': target_model}]}).encode()
+            else:
+                return json.dumps({'models': [{'name': f'models/{target_model}'}]}).encode()
+
+    def fake_open(req, timeout):
+        captured['url'] = req.full_url
+        captured['header'] = req.get_header(expected_header[0].capitalize())
+        captured['timeout'] = timeout
+        return FakeResponse()
+
+    import urllib.request
+    monkeypatch.setattr(urllib.request, 'build_opener', lambda *handlers: SimpleNamespace(open=fake_open))
+
+    res = setup.check_connection(record['id'])
+    assert res['status'] == 'CONNECTED'
+    assert res['model_listed'] is True
+    assert captured['url'] == expected_url
+    assert captured['header'] == expected_header[1]
+    assert captured['timeout'] == 10
+    if provider == 'openrouter':
+        assert 'Aggregator routing restrictions' in res['message']
+
+
+def test_ollama_loopback_and_key_optional(tmp_path, monkeypatch):
+    setup = ModelSetup(tmp_path)
+    monkeypatch.setattr(imported, 'provision', lambda *a: 'backend')
+
+    record = setup.add(dict(provider='ollama', provider_model='llama3:latest', cost='UNKNOWN', api_key=''), actor='owner')
+    assert record['key_configured'] is False
+
+    captured = {}
+    class FakeResponse:
+        status = 200
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def read(self, limit):
+            return json.dumps({'models': [{'name': 'llama3:latest'}]}).encode()
+
+    def fake_open(req, timeout):
+        captured['url'] = req.full_url
+        captured['headers'] = dict(req.headers)
+        return FakeResponse()
+
+    import urllib.request
+    monkeypatch.setattr(urllib.request, 'build_opener', lambda *handlers: SimpleNamespace(open=fake_open))
+
+    res = setup.check_connection(record['id'])
+    assert res['status'] == 'CONNECTED'
+    assert res['model_listed'] is True
+    assert captured['url'] == 'http://127.0.0.1:11434/api/tags'
+
+
+def test_ollama_ssrf_blocked_on_non_loopback(tmp_path, monkeypatch):
+    setup = ModelSetup(tmp_path)
+    record = setup.add(dict(provider='ollama', provider_model='llama3', cost='UNKNOWN', api_key=''), actor='owner')
+
+    from model_registry import setup as mod
+    monkeypatch.setitem(mod.ENDPOINTS, 'ollama', 'http://169.254.169.254/latest/meta-data')
+
+    res = setup.check_connection(record['id'])
+    assert res['status'] == 'CHECK_FAILED'
+    assert res['code'] == 'SSRF_BLOCKED'
+    assert 'loopback' in res['message']

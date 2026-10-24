@@ -11,6 +11,7 @@ import tempfile
 import uuid
 import urllib.request
 import urllib.error
+import urllib.parse
 import ssl
 import socket
 from operations.backup import _plain
@@ -18,8 +19,17 @@ from operations.time_integrity import utc_now, utc_text
 from private_secrets import imported
 from private_secrets.service import _private_read
 
-ENDPOINTS = {'groq': 'https://api.groq.com/openai/v1/models',
-             'mistral': 'https://api.mistral.ai/v1/models'}
+ENDPOINTS = {
+    'groq': 'https://api.groq.com/openai/v1/models',
+    'mistral': 'https://api.mistral.ai/v1/models',
+    'openai': 'https://api.openai.com/v1/models',
+    'anthropic': 'https://api.anthropic.com/v1/models',
+    'gemini': 'https://generativelanguage.googleapis.com/v1beta/models',
+    'deepseek': 'https://api.deepseek.com/models',
+    'xai': 'https://api.x.ai/v1/models',
+    'openrouter': 'https://openrouter.ai/api/v1/models',
+    'ollama': 'http://127.0.0.1:11434/api/tags',
+}
 FIELDS = ('id', 'provider', 'provider_model', 'cost', 'state', 'created_at', 'created_by', 'key_configured')
 
 
@@ -105,30 +115,74 @@ class ModelSetup:
 
     def check_connection(self, identity):
         path, record = self._record(identity)
-        endpoint = ENDPOINTS.get(record['provider'])
-        if not endpoint or not record['key_configured']:
+        provider = record['provider']
+        endpoint = ENDPOINTS.get(provider)
+        if not endpoint:
+            raise ValueError('A saved key and a supported Groq or Mistral adapter are required.')
+        if provider != 'ollama' and not record['key_configured']:
             raise ValueError('A saved key and a supported Groq or Mistral adapter are required.')
         def failed(code, message):
             return {'status':'CHECK_FAILED','code':code,'message':message+' No model was activated.'}
+        key = None
+        if record['key_configured']:
+            try:
+                key = imported.resolve(path, record['backend'])
+            except Exception:
+                return failed('KEY_UNAVAILABLE','The stored key could not be unlocked by this Windows/Linux account. Save a new connection under the account running Chief.')
         try:
-            key = imported.resolve(path, record['backend'])
-        except Exception:
-            return failed('KEY_UNAVAILABLE','The stored key could not be unlocked by this Windows/Linux account. Save a new connection under the account running Chief.')
-        try:
-            request = urllib.request.Request(endpoint, headers={'Authorization': 'Bearer '+key, 'Accept': 'application/json'})
+            headers = {'Accept': 'application/json'}
+            if provider in {'groq', 'mistral', 'openai', 'deepseek', 'xai', 'openrouter'}:
+                headers['Authorization'] = 'Bearer ' + (key or '')
+            elif provider == 'anthropic':
+                headers['x-api-key'] = key or ''
+                headers['anthropic-version'] = '2023-06-01'
+            elif provider == 'gemini':
+                headers['x-goog-api-key'] = key or ''
+            elif provider == 'ollama':
+                parsed = urllib.parse.urlsplit(endpoint)
+                if parsed.hostname not in {'127.0.0.1', 'localhost', '::1'}:
+                    return failed('SSRF_BLOCKED', 'Local execution runtimes must target loopback (127.0.0.1) only.')
+                if key:
+                    headers['Authorization'] = 'Bearer ' + key
+
+            request = urllib.request.Request(endpoint, headers=headers)
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
             with opener.open(request, timeout=10) as response:
                 data = response.read(1024*1024+1)
                 if response.status != 200 or len(data) > 1024*1024:
                     raise ValueError()
-                models = json.loads(data)['data']
-                if not isinstance(models, list):
-                    raise ValueError()
-                found = any(isinstance(item, dict) and item.get('id') == record['provider_model'] for item in models)
-            return {'status': 'CONNECTED', 'model_listed': found,
-                    'message': 'Provider responded. This does not verify pricing, model suitability or action authority. Registration remains inactive.'}
+                parsed_json = json.loads(data)
+                if provider in {'groq', 'mistral', 'openai', 'anthropic', 'deepseek', 'xai', 'openrouter'}:
+                    models = parsed_json['data']
+                    if not isinstance(models, list):
+                        raise ValueError()
+                    found = any(isinstance(item, dict) and item.get('id') == record['provider_model'] for item in models)
+                elif provider == 'gemini':
+                    models = parsed_json.get('models', [])
+                    if not isinstance(models, list):
+                        raise ValueError()
+                    target_model = record['provider_model']
+                    found = any(isinstance(item, dict) and (item.get('name') == target_model or item.get('name') == f'models/{target_model}') for item in models)
+                elif provider == 'ollama':
+                    models = parsed_json.get('models', [])
+                    if not isinstance(models, list):
+                        raise ValueError()
+                    target_model = record['provider_model']
+                    found = any(isinstance(item, dict) and (item.get('name') == target_model or item.get('name', '').startswith(target_model)) for item in models)
+                else:
+                    found = False
+
+            notice = 'Provider responded. This does not verify pricing, model suitability or action authority. Registration remains inactive.'
+            if provider == 'openrouter':
+                notice += ' Aggregator routing restrictions apply where supported; guarantees cannot be enforced invisibly.'
+            return {'status': 'CONNECTED', 'model_listed': found, 'message': notice}
         except urllib.error.HTTPError as exc:
-            messages={401:('AUTH_REJECTED','Groq/Mistral rejected authentication. Check or replace the key in the private key field.'),403:('ACCESS_DENIED','The provider denied this account access. Check provider account/project permissions.'),429:('RATE_LIMITED','The provider rate limit was reached. Wait and retry; no fallback was used.')}
+            name = 'Groq/Mistral' if provider in {'groq', 'mistral'} else provider.capitalize()
+            messages={
+                401:('AUTH_REJECTED', f'{name} rejected authentication. Check or replace the key in the private key field.'),
+                403:('ACCESS_DENIED','The provider denied this account access. Check provider account/project permissions.'),
+                429:('RATE_LIMITED','The provider rate limit was reached. Wait and retry; no fallback was used.')
+            }
             code,message=messages.get(exc.code,('PROVIDER_HTTP_ERROR','The provider returned an unsuccessful HTTP response. Retry later or check provider service status.'))
             exc.close()
             return failed(code,message)
