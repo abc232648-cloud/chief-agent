@@ -46,7 +46,7 @@ def build_gateway(*, store=None) -> ModelRouter:
 
 def smoke_test() -> int:
     gateway = build_gateway()
-    response = gateway.generate(AIRequest("You are a connectivity test.", "Reply with exactly: GATEWAY_OK"))
+    response = gateway.generate(AIRequest("You are a connectivity test.", "Reply with exactly: GATEWAY_OK", max_tokens=32, purpose='jobs.connection_test'))
     print(f"provider={response.provider}")
     print(f"model={response.model}")
     print(f"fallback_used={response.fallback_used}")

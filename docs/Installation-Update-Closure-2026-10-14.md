@@ -1,3 +1,5 @@
+> HISTORICAL RECORD — superseded for installation selection by [the current release candidate](../RELEASE_CANDIDATE.md). Earlier clearance does not authorize the current candidate.
+
 # Installation/update closure — 2026-10-14
 
 This document supersedes the earlier `Chief-Update-Center.md` statements that dependency installation, release downloading, and managed service restart are wholly outside the update mechanism. Those statements describe the pre-closure implementation and remain useful historical design context.

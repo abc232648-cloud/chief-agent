@@ -102,7 +102,7 @@ class Transport:
             stage = 'request'
             body = json.dumps({'model': self.config['model'], 'messages': [
                 {'role': 'system', 'content': request.system}, {'role': 'user', 'content': request.user}],
-                'temperature': 0, 'max_completion_tokens': 600, 'reasoning_format': 'hidden'}).encode()
+                'temperature': 0, 'max_completion_tokens': request.max_tokens if request.max_tokens is not None else 600, 'reasoning_format': 'hidden'}).encode()
             if len(body)>32768:
                 raise ValueError()
             req = urllib.request.Request('https://api.groq.com/openai/v1/chat/completions', data=body,
@@ -147,7 +147,7 @@ def configure(store, principal, body):
         with worker_context(AGENT, component_allowed=lambda *_: bool(guard(store, principal))):
             try:
                 ModelRouter(registry(store, config), ASSIGNMENT, {'farming.qwen': Transport(config, store=store)}, capability=CAPABILITY).generate(
-                    AIRequest('You are Farm Agent. This is a synthetic connection test. No tools or actions.', 'Reply briefly: connection working.', max_tokens=30))
+                    AIRequest('You are Farm Agent. This is a synthetic connection test. No tools or actions.', 'Reply briefly: connection working.', max_tokens=30, purpose='farming.connection_test'))
             except GatewayError:
                 raise ValueError('Qwen qualification failed. Check account access, the model identifier and model policy. No fallback was used.') from None
     principal = owner(store, principal)
@@ -194,7 +194,7 @@ def answer(store, principal, question, data):
                 'Answer only work-related questions. Do not invent measurements or expose other people\'s information. You have no tools, access to credentials, approval authority or equipment control. '
                 'Do not claim to have saved records or performed actions. For animal illness or treatment, advise contacting a qualified veterinarian; do not prescribe drugs or doses. '
                 'Farm reports are user-reported, not verified measurements. Use the authorized context for reporting-schedule status; if deadlines are absent, do not invent them. Use the reporting timezone in the authorized context; do not assume a country or timezone.',
-                json.dumps({'question': question, 'authorized_context': data}), max_tokens=600)
+                json.dumps({'question': question, 'authorized_context': data}), max_tokens=600, purpose='farming.ask')
             response = ModelRouter(registry(store, config), ASSIGNMENT, {'farming.qwen': Transport(config, store=store)}, capability=CAPABILITY).generate(request)
         # Never return an answer based on access or configuration revoked in flight.
         from .assistant import context

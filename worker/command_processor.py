@@ -64,7 +64,7 @@ class CommandProcessor:
             ],
         }
         envelope = json.dumps({'instruction': instruction, 'context': context}, ensure_ascii=False)
-        response = self.gateway.generate(AIRequest(SYSTEM_PROMPT, envelope, temperature=0.0, max_tokens=512))
+        response = self.gateway.generate(AIRequest(SYSTEM_PROMPT, envelope, temperature=0.0, max_tokens=512, purpose='jobs.plan'))
         text = response.text.strip()
         try:
             plan = json.loads(text)
