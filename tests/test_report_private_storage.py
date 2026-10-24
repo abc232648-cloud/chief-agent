@@ -31,8 +31,15 @@ def test_other_installation_and_private_files_remain_blocked(tmp_path,monkeypatc
 def test_intermediate_symlink_blocked(tmp_path,monkeypatch):
     monkeypatch.setenv('CHIEF_STATE_ROOT',str(tmp_path));store=Store(tmp_path/'db.sqlite')
     real=tmp_path/'elsewhere';real.mkdir();(real/'x.txt').write_text('x')
-    try:(tmp_path/'logs').symlink_to(real,target_is_directory=True)
-    except OSError:pytest.skip('Symlink creation unavailable on this host')
+    try:
+        (tmp_path/'logs').symlink_to(real,target_is_directory=True)
+    except OSError:
+        import os
+        if os.name == 'nt':
+            import subprocess
+            subprocess.run(['cmd', '/c', 'mklink', '/J', str(tmp_path/'logs'), str(real)], check=True, capture_output=True)
+        else:
+            pytest.skip('Symlink creation unavailable on this host')
     with pytest.raises(PermissionError):read_registered(store,tmp_path,'reports',register(store,tmp_path/'logs/x.txt'))
 
 

@@ -76,7 +76,8 @@ def validate_document(name,encoded):
     if not isinstance(encoded,str) or len(encoded)>MAX_BYTES*4//3+8:raise ValueError('Maximum file size is 8 MiB.')
     import subprocess,sys
     try:
-        result=subprocess.run([sys.executable,'-m','control.files',Path(name).suffix.lower()],input=encoded.encode('ascii'),capture_output=True,timeout=15)
+        app_root=Path(__file__).resolve().parents[1]
+        result=subprocess.run([sys.executable,'-m','control.files',Path(name).suffix.lower()],input=encoded.encode('ascii'),capture_output=True,timeout=15,cwd=str(app_root))
     except (subprocess.TimeoutExpired,UnicodeError):raise ValueError('Document validation exceeded its time or encoding limit.')
     if result.returncode:raise ValueError('Document rejected: invalid, active, unsupported or exceeds parser limits.')
     return Path(name).suffix.lower(),base64.b64decode(encoded,validate=True)
